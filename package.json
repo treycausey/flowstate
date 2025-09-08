@@ -1,0 +1,40 @@
+{
+  "name": "aquarium-monitor",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "dev:4000": "next dev -p 4000",
+    "build": "next build",
+    "start": "next start",
+    "start:4000": "next start -p 4000",
+    "lint": "eslint .",
+    "test": "jest",
+    "analyze": "ANALYZE=true next build"
+  },
+  "dependencies": {
+    "next": "latest",
+    "react": "latest",
+    "react-dom": "latest"
+  },
+  "devDependencies": {
+    "@types/node": "latest",
+    "@types/react": "latest",
+    "@types/jest": "latest",
+    "eslint": "latest",
+    "eslint-config-next": "latest",
+    "@eslint/eslintrc": "latest",
+    "eslint-plugin-jest-dom": "latest",
+    "eslint-plugin-testing-library": "latest",
+    "jest": "latest",
+    "jest-environment-jsdom": "latest",
+    "jest-axe": "latest",
+    "fake-indexeddb": "latest",
+    "@next/bundle-analyzer": "latest",
+    "prettier": "latest",
+    "typescript": "latest",
+    "@testing-library/jest-dom": "latest",
+    "@testing-library/react": "latest",
+    "@testing-library/user-event": "latest"
+  }
+}

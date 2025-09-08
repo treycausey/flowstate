@@ -1,0 +1,167 @@
+@import '../styles/print.css';
+
+/*
+  Global design tokens and typography system
+  - System‑font stack for performance and offline correctness
+  - Fluid type scale via clamp()
+  - Sensible defaults for rhythm, measure, and controls
+*/
+
+:root {
+  /* Color tokens */
+  --bg: #ffffff;
+  --fg: #0f172a; /* slate-900 */
+  --ink: #111827; /* text ink for charts/lines */
+  --muted: #6b7280; /* slate-500 */
+  --accent: #0ea5e9; /* sky-500 */
+  --accent-ink: #075985; /* sky-800 */
+  --danger: #ef4444; /* red-500 */
+  --surface: #f8fafc; /* slate-50 */
+  --border: #e5e7eb; /* gray-200 */
+
+  /* Chart bands */
+  --band-ok: #ecfccb; /* light green */
+  --band-caution: #fef9c3; /* light yellow */
+  --band-ph: #e0f2fe; /* light sky */
+
+  /* Typography */
+  --font-sans: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, Noto Sans, Apple Color Emoji, Segoe UI Emoji, Segoe UI Symbol, Noto Color Emoji;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  --lh-tight: 1.25;
+  --lh: 1.5;
+  --lh-loose: 1.65;
+
+  /* Fluid type scale (approx. Major Third) */
+  --step--2: clamp(0.78rem, 0.77rem + 0.08vw, 0.84rem);
+  --step--1: clamp(0.89rem, 0.87rem + 0.15vw, 0.98rem);
+  --step-0: clamp(1.00rem, 0.97rem + 0.25vw, 1.13rem);
+  --step-1: clamp(1.20rem, 1.14rem + 0.39vw, 1.35rem);
+  --step-2: clamp(1.44rem, 1.34rem + 0.60vw, 1.62rem);
+  --step-3: clamp(1.73rem, 1.57rem + 0.89vw, 1.94rem);
+  --step-4: clamp(2.07rem, 1.84rem + 1.29vw, 2.33rem);
+
+  /* Spacing scale (8px baseline) */
+  --space-1: 0.25rem; /* 4 */
+  --space-2: 0.5rem;  /* 8 */
+  --space-3: 0.75rem; /* 12 */
+  --space-4: 1rem;    /* 16 */
+  --space-5: 1.5rem;  /* 24 */
+  --space-6: 2rem;    /* 32 */
+  --radius: 8px;
+  --shadow-1: 0 1px 2px rgba(15, 23, 42, 0.06), 0 1px 1px rgba(15, 23, 42, 0.04);
+}
+
+:root[data-theme="dark"] {
+  --bg: #0b0f14;
+  --fg: #e5e7eb;
+  --ink: #e5e7eb;
+  --muted: #9ca3af;
+  --accent: #22c55e; /* green-500 */
+  --accent-ink: #052e16; /* green-950 */
+  --danger: #f87171;
+  --surface: #0f172a; /* slate-900 */
+  --border: #1f2937; /* gray-800 */
+  --band-ok: rgba(134,239,172,0.18);
+  --band-caution: rgba(253,230,138,0.20);
+  --band-ph: rgba(125,211,252,0.18);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]),
+  :root[data-theme="system"] {
+    --bg: #0b0f14;
+    --fg: #e5e7eb;
+    --ink: #e5e7eb;
+    --muted: #9ca3af;
+    --accent: #22c55e;
+    --accent-ink: #052e16;
+    --danger: #f87171;
+    --surface: #0f172a;
+    --border: #1f2937;
+    --band-ok: rgba(134,239,172,0.18);
+    --band-caution: rgba(253,230,138,0.20);
+    --band-ph: rgba(125,211,252,0.18);
+  }
+}
+
+/* Base reset */
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: var(--step-0);
+  line-height: var(--lh);
+  background: var(--bg);
+  color: var(--fg);
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Typography */
+h1, h2, h3, h4, h5, h6 { font-weight: 650; line-height: var(--lh-tight); margin: 0 0 var(--space-3); }
+h1 { font-size: var(--step-4); letter-spacing: -0.015em; }
+h2 { font-size: var(--step-3); letter-spacing: -0.01em; }
+h3 { font-size: var(--step-2); }
+h4 { font-size: var(--step-1); }
+h5 { font-size: var(--step-0); }
+h6 { font-size: var(--step--1); }
+p { margin: 0 0 var(--space-4); max-width: 65ch; }
+small { font-size: var(--step--1); color: var(--muted); }
+
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; text-underline-offset: 2px; }
+
+/* Forms and controls */
+a, button, select, input, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+
+label { display: grid; gap: var(--space-2); font-size: var(--step--1); color: var(--muted); }
+input, select, textarea {
+  width: 100%;
+  padding: 0.6rem 0.7rem;
+  background: var(--surface);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-1);
+}
+input::placeholder, textarea::placeholder { color: var(--muted); }
+
+button, .button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5ch;
+  padding: 0.55rem 0.9rem;
+  background: var(--accent);
+  color: white;
+  border: 1px solid color-mix(in oklab, var(--accent) 70%, black);
+  border-radius: var(--radius);
+}
+button[disabled], .button[aria-disabled="true"] { opacity: 0.6; cursor: not-allowed; }
+
+.button--ghost { background: transparent; color: var(--accent); border-color: var(--accent); }
+
+/* Tables */
+table { width: 100%; border-collapse: collapse; font-size: var(--step--1); }
+th, td { padding: 0.5rem 0.25rem; border-bottom: 1px solid var(--border); }
+thead th { color: var(--muted); font-weight: 600; }
+th[align="right"], td[align="right"] { text-align: right; }
+
+/* Layout utilities */
+.container { max-width: 72rem; margin-inline: auto; padding: 0 var(--space-5); }
+.stack { display: grid; gap: var(--space-5); }
+.cluster { display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: center; }
+.section-title { font-size: var(--step-1); margin: var(--space-4) 0 var(--space-2); color: var(--fg); }
+
+/* Focus styles */
+*:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Chart tokens as CSS vars so SVGs can consume via currentColor or variables */
+.ink { color: var(--ink); }
+.danger { color: var(--danger); }
+
+/* Cards */
+.card { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); padding: var(--space-5); box-shadow: var(--shadow-1); }
