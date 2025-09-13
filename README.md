@@ -80,4 +80,4 @@ Conventions
 - Align changes to `tasks/tasks-prd-aquarium-water-tracker.md` and update tests.
 
 ## License
-TBD.
+MIT © 2025 Trey Causey. See `LICENSE` for details.

@@ -2,6 +2,7 @@
   "name": "aquarium-monitor",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "scripts": {
     "dev": "next dev",
     "dev:4000": "next dev -p 4000",
