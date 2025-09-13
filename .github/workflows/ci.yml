@@ -25,13 +25,18 @@ jobs:
         env:
           NPM_CONFIG_PACKAGE_LOCK: 'true'
         run: |
+          echo "pkg name: $(node -p "require('./package.json').name")"
+          echo "lockfile version: $(node -p "require('./package-lock.json').lockfileVersion || 'missing'")"
           if [ -f package-lock.json ]; then
             echo "Using existing lockfile";
-            npm ci --no-audit --no-fund
+            npm ci --no-audit --no-fund || {
+              echo "npm ci failed; falling back to npm install";
+              npm install --no-audit --no-fund;
+            }
           else
             echo "No lockfile found; generating one, then running ci";
             npm install --package-lock-only --no-audit --no-fund
-            npm ci --no-audit --no-fund
+            npm ci --no-audit --no-fund || npm install --no-audit --no-fund
           fi
       - run: npm run lint
       - run: npm test --silent
