@@ -21,9 +21,17 @@ jobs:
           node -v
           npm -v
           test -f package-lock.json && echo "lockfile present" || (echo "lockfile missing" && exit 1)
-      - name: Install (ci)
+      - name: Install dependencies
         env:
           NPM_CONFIG_PACKAGE_LOCK: 'true'
-        run: npm ci --no-audit --no-fund
+        run: |
+          if [ -f package-lock.json ]; then
+            echo "Using existing lockfile";
+            npm ci --no-audit --no-fund
+          else
+            echo "No lockfile found; generating one, then running ci";
+            npm install --package-lock-only --no-audit --no-fund
+            npm ci --no-audit --no-fund
+          fi
       - run: npm run lint
       - run: npm test --silent
