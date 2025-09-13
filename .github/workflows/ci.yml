@@ -12,7 +12,18 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - run: npm ci
+          cache: 'npm'
+          cache-dependency-path: package-lock.json
+      - name: Debug workspace
+        run: |
+          pwd
+          ls -la
+          node -v
+          npm -v
+          test -f package-lock.json && echo "lockfile present" || (echo "lockfile missing" && exit 1)
+      - name: Install (ci)
+        env:
+          NPM_CONFIG_PACKAGE_LOCK: 'true'
+        run: npm ci --no-audit --no-fund
       - run: npm run lint
       - run: npm test --silent
-
