@@ -1,5 +1,5 @@
 /* Basic service worker scaffold: app shell cache + network-first for pages */
-const CACHE_NAME = 'aquarium-shell-v1'
+const CACHE_NAME = 'flowstate-shell-v1'
 const APP_SHELL = ['/', '/manifest.webmanifest']
 
 self.addEventListener('install', (event) => {

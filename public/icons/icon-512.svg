@@ -1,6 +1,12 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
-  <rect width="512" height="512" fill="#0ea5e9"/>
-  <circle cx="256" cy="256" r="170" fill="#e0f2fe"/>
-  <text x="256" y="300" font-family="system-ui, sans-serif" font-size="160" text-anchor="middle" fill="#0369a1">AQ</text>
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0ea5e9"/>
+      <stop offset="100%" stop-color="#0284c7"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="64" fill="#0ea5e9"/>
+  <rect x="36" y="36" width="440" height="440" rx="56" fill="#e0f2fe"/>
+  <path d="M56 240c44 0 66-66 132-66s88 66 154 66 88-66 110-66" fill="none" stroke="url(#g)" stroke-width="24" stroke-linecap="round"/>
+  <path d="M56 304c44 0 66-66 132-66s88 66 154 66 88-66 110-66" fill="none" stroke="url(#g)" stroke-width="24" stroke-linecap="round"/>
 </svg>
-

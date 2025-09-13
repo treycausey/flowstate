@@ -1,13 +1,13 @@
-# AGENTS.md — Aquarium Monitor
+# AGENTS.md — Flowstate
 
 Audience: AI coding agents and contributors working in this repository.
 Scope: Applies to the entire repo unless superseded by a more specific AGENTS.md deeper in the tree.
 
 ## Product Overview
-Freshwater Aquarium Water Tracker (v1) — a local‑first, installable PWA that lets a single user track water chemistry for multiple tanks and see minimalist, Tufte‑inspired charts with optimal ranges and out‑of‑range highlights. All requirements and tasking live in `tasks/`.
+Flowstate (v1) — a local‑first, installable PWA that lets a single user track freshwater aquarium chemistry for multiple tanks and see minimalist, Tufte‑inspired charts with optimal ranges and out‑of‑range highlights. All requirements and tasking live in `tasks/`.
 
 Authoritative sources:
-- PRD: `tasks/prd-aquarium-water-tracker.md`
+- PRD: `tasks/prd-aquarium-water-tracker.md` (Flowstate v1)
 - Work plan and file map: `tasks/tasks-prd-aquarium-water-tracker.md`
 
 ## Core Principles (Do/Don’t)

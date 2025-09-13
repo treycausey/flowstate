@@ -6,8 +6,8 @@ import { TankProvider } from '@/components/TankProvider'
 import ThemeToggle from '@/components/ThemeToggle'
 
 export const metadata: Metadata = {
-  title: 'Aquarium Water Tracker',
-  description: 'Local-first PWA for freshwater aquarium chemistry logs',
+  title: 'Flowstate',
+  description: 'Flowstate — local-first freshwater aquarium chemistry tracker',
   manifest: '/manifest.webmanifest',
 }
 

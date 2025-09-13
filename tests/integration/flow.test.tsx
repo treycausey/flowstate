@@ -21,10 +21,14 @@ describe('integration: create → add reading → visualize', () => {
     fireEvent.change(screen.getByLabelText(/Ammonia/i), { target: { value: '0' } })
     fireEvent.change(screen.getByLabelText(/Nitrite/i), { target: { value: '0' } })
     fireEvent.change(screen.getByLabelText(/Nitrate/i), { target: { value: '12' } })
+    fireEvent.change(screen.getByLabelText(/Note/i), { target: { value: 'water change' } })
     jest.spyOn(window, 'alert').mockImplementation(() => {})
     fireEvent.click(screen.getByRole('button', { name: /save/i }))
     await waitFor(async () => {
-      expect((await listReadingsByTank(tank.id)).length).toBeGreaterThan(0)
+      const readings = await listReadingsByTank(tank.id)
+      expect(readings.length).toBeGreaterThan(0)
     })
+    // Note should render in the Recent Readings table
+    await waitFor(() => expect(screen.getByText(/water change/i)).toBeInTheDocument())
   })
 })

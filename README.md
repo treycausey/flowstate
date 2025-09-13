@@ -1,4 +1,4 @@
-# Aquarium Water Tracker (PWA)
+# Flowstate (PWA)
 
 Local-first web app to log freshwater aquarium chemistry and visualize trends with minimalist charts. Works offline via IndexedDB + Service Worker; no accounts or cloud.
 
@@ -81,4 +81,3 @@ Conventions
 
 ## License
 TBD.
-

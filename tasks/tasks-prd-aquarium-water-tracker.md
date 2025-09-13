@@ -1,4 +1,4 @@
-## Relevant Files
+## Relevant Files (Flowstate v1)
 
 - `app/page.tsx` - Dashboard with recent readings, per-tank quick actions.
 - `app/tanks/[tankId]/page.tsx` - Tank detail: small-multiples charts, metrics list, quick entry launcher.
@@ -121,4 +121,3 @@
   - [ ] 14.1 README with setup, build, and PWA install instructions.
   - [ ] 14.2 Data schema and export format documentation.
   - [ ] 14.3 Known limitations and next-steps (custom ranges, species presets).
-

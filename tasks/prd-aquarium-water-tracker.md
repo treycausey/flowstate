@@ -1,8 +1,8 @@
-# PRD: Freshwater Aquarium Water Tracker (v1)
+# PRD: Flowstate (v1) — Freshwater Aquarium Water Tracker
 
 ## 1) Overview
 
-Track and visualize key freshwater aquarium chemistry over time to help hobbyists maintain healthy tanks. The app provides a low‑friction, mobile‑first way to log pH, Ammonia (NH3/NH4+), Nitrite (NO2−), and Nitrate (NO3−), then shows Tufte‑inspired, minimal charts with clearly indicated optimal ranges and out‑of‑range events. v1 is local‑only (no account), installable PWA, and supports multiple tanks for a single user.
+Track and visualize key freshwater aquarium chemistry over time to help hobbyists maintain healthy tanks. Flowstate provides a low‑friction, mobile‑first way to log pH, Ammonia (NH3/NH4+), Nitrite (NO2−), and Nitrate (NO3−), then shows Tufte‑inspired, minimal charts with clearly indicated optimal ranges and out‑of‑range events. v1 is local‑only (no account), installable PWA, and supports multiple tanks for a single user.
 
 ## 2) Goals
 
@@ -110,4 +110,3 @@ Track and visualize key freshwater aquarium chemistry over time to help hobbyist
 - Should nitrate display an additional “caution” band (20–40 ppm) distinct from “optimal” and “high” for clarity?
 - Any specific fish species presets we should include later (e.g., Discus, African cichlids)?
 - Are there preferred color themes (light/dark) to include in v1?
-

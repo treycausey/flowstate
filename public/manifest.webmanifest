@@ -1,6 +1,6 @@
 {
-  "name": "Aquarium Water Tracker",
-  "short_name": "Aquarium",
+  "name": "Flowstate",
+  "short_name": "Flowstate",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",
@@ -20,4 +20,3 @@
     }
   ]
 }
-

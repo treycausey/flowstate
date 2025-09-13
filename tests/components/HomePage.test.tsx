@@ -6,6 +6,6 @@ jest.mock('@/components/HomeClient', () => () => null)
 describe('HomePage', () => {
   it('renders app title', () => {
     render(<HomePage />)
-    expect(screen.getByText(/Aquarium Water Tracker/i)).toBeInTheDocument()
+    expect(screen.getByText(/Flowstate/i)).toBeInTheDocument()
   })
 })

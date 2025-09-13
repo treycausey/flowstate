@@ -165,3 +165,22 @@ th[align="right"], td[align="right"] { text-align: right; }
 
 /* Cards */
 .card { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); padding: var(--space-5); box-shadow: var(--shadow-1); }
+
+/* Modal */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: color-mix(in oklab, var(--fg) 30%, transparent);
+  display: grid;
+  place-items: center;
+  padding: var(--space-5);
+  z-index: 50;
+}
+.modal {
+  width: min(92vw, 520px);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 10px 30px rgba(0,0,0,0.22);
+  padding: var(--space-5);
+}
