@@ -3,9 +3,6 @@
   "version": "0.1.0",
   "private": true,
   "license": "MIT",
-  "overrides": {
-    "strip-ansi": "7.1.0"
-  },
   "scripts": {
     "dev": "next dev",
     "dev:4000": "next dev -p 4000",
@@ -39,7 +36,7 @@
     "jest-axe": "latest",
     "jest-environment-jsdom": "latest",
     "prettier": "latest",
-    "strip-ansi": "^7.1.0",
+    "strip-ansi": "7.1.0",
     "typescript": "latest"
   }
 }
