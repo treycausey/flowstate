@@ -28,8 +28,8 @@ If an alternate stack is chosen, keep the same UX and data guarantees.
 ## Directory & Key Files (expected)
 See `tasks/tasks-prd-aquarium-water-tracker.md` for the full map. Highlights:
 - `app/page.tsx` — dashboard/recent readings.
-- `app/tanks/[tankId]/page.tsx` — tank detail with small‑multiples.
-- `app/tanks/[tankId]/report/page.tsx` — printable 30/90‑day report.
+- `app/tanks/page.tsx` — tank detail with small‑multiples (selection via query param).
+- `app/tanks/report/page.tsx` — printable 30/90‑day report (query param selects tank).
 - `components/QuickEntry.tsx` — single‑screen input for pH, NH3/NH4+, NO2‑, NO3‑ plus note.
 - `components/TankSwitcher.tsx`, `components/ReminderControls.tsx`.
 - `components/charts/MetricChart.tsx`, `components/charts/SmallMultiples.tsx`.

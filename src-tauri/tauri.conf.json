@@ -25,7 +25,7 @@
   "build": {
     "beforeDevCommand": "next dev -p 3000",
     "devPath": "http://localhost:3000",
-    "beforeBuildCommand": "next build && next export",
-    "distDir": "out"
+    "beforeBuildCommand": "next build",
+    "distDir": "../out"
   }
 }

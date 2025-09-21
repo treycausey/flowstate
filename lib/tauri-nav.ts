@@ -9,12 +9,11 @@ export function mapNavToPath(target: NavTarget, activeTankId?: string | null): s
     case 'settings':
       return '/settings'
     case 'charts':
-      return activeTankId ? `/tanks/${activeTankId}` : '/'
+      return activeTankId ? `/tanks?tankId=${activeTankId}` : '/tanks'
     case 'report':
-      return activeTankId ? `/tanks/${activeTankId}/report` : '/'
+      return activeTankId ? `/tanks/report?tankId=${activeTankId}` : '/tanks/report'
     default:
       // Allow direct paths when payload is a path
       return t.startsWith('/') ? t : null
   }
 }
-

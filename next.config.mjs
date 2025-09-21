@@ -1,11 +1,10 @@
-import type { NextConfig } from 'next'
-import path from 'path'
 import bundleAnalyzer from '@next/bundle-analyzer'
 
-const nextConfig: NextConfig = {
+/** @type {import('next').NextConfig} */
+const nextConfig = {
   reactStrictMode: true,
-  typedRoutes: true,
-  outputFileTracingRoot: path.join(__dirname),
+  output: 'export',
 }
+
 const withBundleAnalyzer = bundleAnalyzer({ enabled: process.env.ANALYZE === 'true' })
 export default withBundleAnalyzer(nextConfig)

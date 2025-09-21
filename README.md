@@ -31,8 +31,8 @@ Local-first app to log freshwater aquarium chemistry and visualize trends with m
 ## Project Structure (selected)
 - `app/` Next.js App Router
   - `page.tsx` — dashboard with Tank switcher, Quick Entry, reminders, recent readings
-  - `tanks/[tankId]/page.tsx` — tank detail with charts + list
-  - `tanks/[tankId]/report/page.tsx` — CSV export + print view
+  - `tanks/page.tsx` — tank detail with charts + list (select tank via `tankId` query)
+  - `tanks/report/page.tsx` — CSV export + print view (uses `tankId` query)
 - `components/`
   - `TankProvider.tsx`, `TankSwitcher.tsx`, `QuickEntry.tsx`, `ReadingList.tsx`
   - `ReminderControls.tsx`, `NotificationsToggle.tsx`
@@ -62,7 +62,7 @@ Conventions
 
 ## CSV Export
 - Headers: `tank,name,ts,pH,ammonia_ppm,nitrite_ppm,nitrate_ppm,note`
-- Source: `lib/export.ts` and UI in `app/tanks/[tankId]/report/page.tsx`
+- Source: `lib/export.ts` and UI in `app/tanks/report/page.tsx`
 
 ## Testing
 - Unit tests: `tests/lib/*.test.ts`

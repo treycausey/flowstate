@@ -1,8 +1,8 @@
 ## Relevant Files (Flowstate v1)
 
 - `app/page.tsx` - Dashboard with recent readings, per-tank quick actions.
-- `app/tanks/[tankId]/page.tsx` - Tank detail: small-multiples charts, metrics list, quick entry launcher.
-- `app/tanks/[tankId]/report/page.tsx` - Printable 30/90-day report view (print styles applied).
+- `app/tanks/page.tsx` - Tank detail: small-multiples charts, metrics list, quick entry launcher (select tank via `tankId` query).
+- `app/tanks/report/page.tsx` - Printable 30/90-day report view (print styles applied; tank via `tankId` query).
 - `components/QuickEntry.tsx` - Single-screen entry for pH, Ammonia, Nitrite, Nitrate with notes.
 - `components/TankSwitcher.tsx` - Picker for active tank; create/rename/archive controls.
 - `components/ReminderControls.tsx` - Per-tank cadence presets and custom N-day input.

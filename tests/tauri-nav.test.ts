@@ -11,17 +11,16 @@ describe('mapNavToPath', () => {
   })
 
   test('charts uses activeTankId or / fallback', () => {
-    expect(mapNavToPath('charts', 'abc')).toBe('/tanks/abc')
-    expect(mapNavToPath('charts', null)).toBe('/')
+    expect(mapNavToPath('charts', 'abc')).toBe('/tanks?tankId=abc')
+    expect(mapNavToPath('charts', null)).toBe('/tanks')
   })
 
   test('report uses activeTankId or / fallback', () => {
-    expect(mapNavToPath('report', 'abc')).toBe('/tanks/abc/report')
-    expect(mapNavToPath('report', undefined)).toBe('/')
+    expect(mapNavToPath('report', 'abc')).toBe('/tanks/report?tankId=abc')
+    expect(mapNavToPath('report', undefined)).toBe('/tanks/report')
   })
 
   test('passes through explicit paths', () => {
     expect(mapNavToPath('/tanks/xyz', 'abc')).toBe('/tanks/xyz')
   })
 })
-

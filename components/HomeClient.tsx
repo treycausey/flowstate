@@ -19,14 +19,14 @@ export default function HomeClient() {
           <Link
             className="button"
             aria-disabled={!activeTankId}
-            href={activeTankId ? `/tanks/${activeTankId}` : '#'}
+            href={activeTankId ? `/tanks?tankId=${activeTankId}` : '/tanks'}
           >
             View Charts
           </Link>
           <Link
             className="button button--ghost"
             aria-disabled={!activeTankId}
-            href={activeTankId ? `/tanks/${activeTankId}/report` : '#'}
+            href={activeTankId ? `/tanks/report?tankId=${activeTankId}` : '/tanks/report'}
           >
             Report
           </Link>
