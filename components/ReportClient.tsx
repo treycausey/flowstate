@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { listReadingsByTank, listTanks } from '@/lib/idb'
 import { readingsToCsv } from '@/lib/export'
+import { exportDump, importDump } from '@/lib/idb'
 import { filterReadingsByDays, summarizeOutOfRange } from '@/lib/report'
 import type { Tank, Reading } from '@/lib/models'
 
@@ -40,6 +41,39 @@ export default function ReportClient({ initialTankId }: { initialTankId?: string
   const filtered = filterReadingsByDays(readings, range === 'all' ? 'all' : Number(range))
   const outOfRange = summarizeOutOfRange(filtered)
 
+  const onExportJson = async () => {
+    const dump = await exportDump()
+    const blob = new Blob([JSON.stringify(dump, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    const date = new Date().toISOString().slice(0, 10)
+    a.href = url
+    a.download = `flowstate-export-${date}.json`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const onImportJson = async () => {
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = 'application/json'
+    input.onchange = async () => {
+      const file = input.files?.[0]
+      if (!file) return
+      const text = await file.text()
+      const data = JSON.parse(text)
+      await importDump(data)
+      // reload local state
+      const tanks = await listTanks()
+      const t = tanks[0]
+      setTank(t)
+      const rs = await listReadingsByTank(t.id)
+      setReadings(rs)
+      alert('Import complete')
+    }
+    input.click()
+  }
+
   return (
     <>
       <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
@@ -52,6 +86,8 @@ export default function ReportClient({ initialTankId }: { initialTankId?: string
           </select>
         </label>
         <button onClick={onExport}>Export CSV</button>
+        <button onClick={onExportJson}>Export JSON</button>
+        <button onClick={onImportJson}>Import JSON</button>
       </div>
       <section style={{ marginTop: 16 }}>
         <h2>Summary</h2>

@@ -11,12 +11,16 @@
     "start:4000": "next start -p 4000",
     "lint": "eslint .",
     "test": "jest",
-    "analyze": "ANALYZE=true next build"
+    "analyze": "ANALYZE=true next build",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build"
   },
   "dependencies": {
     "next": "latest",
     "react": "latest",
-    "react-dom": "latest"
+    "react-dom": "latest",
+    "@tauri-apps/api": "^1.6.0"
   },
   "devDependencies": {
     "@eslint/eslintrc": "latest",
@@ -37,6 +41,7 @@
     "jest-environment-jsdom": "latest",
     "prettier": "latest",
     "strip-ansi": "7.1.0",
-    "typescript": "latest"
+    "typescript": "latest",
+    "@tauri-apps/cli": "^1.5.8"
   }
 }

@@ -1,8 +1,11 @@
-# Flowstate (PWA)
+# Flowstate (PWA + Tauri Desktop)
 
-Local-first web app to log freshwater aquarium chemistry and visualize trends with minimalist charts. Works offline via IndexedDB + Service Worker; no accounts or cloud.
+Local-first app to log freshwater aquarium chemistry and visualize trends with minimalist charts.
 
-## Quick Start
+- Browser/PWA: IndexedDB + Service Worker; no accounts or cloud.
+- Desktop (Tauri): Real SQLite database file stored in the OS app data directory.
+
+## Quick Start (Web)
 - Prereqs: Node 18+ and npm
 - Install: `npm install`
 - Dev: `npm run dev` then open http://localhost:3000
@@ -36,7 +39,9 @@ Local-first web app to log freshwater aquarium chemistry and visualize trends wi
   - `charts/MetricChart.tsx`, `charts/SmallMultiples.tsx`, `charts/TankSeries.tsx`
 - `lib/`
   - `models.ts` — types, constants (kit steps, optimal ranges)
-  - `idb.ts` — IndexedDB schema + CRUD helpers
+  - `idb.ts` — unified storage entrypoint; routes to SQLite when running under Tauri, otherwise IndexedDB
+  - `idb-browser.ts` — browser-only IndexedDB helpers
+  - `sqlite.ts` — Tauri SQLite adapter
   - `validation.ts` — rounding/clamping to kit steps
   - `series.ts` — rolling averages, anomaly helpers
   - `reminders.ts` — in‑app scheduling (due, snooze, skip)
@@ -73,6 +78,24 @@ Conventions
 - Nitrate 20–40 ppm “caution” band is not separately styled in MetricChart.
 - Charts are basic SVG for v1; zoom/pan and richer tooltips are out of scope.
 - Notifications depend on browser support and user permission.
+
+## Desktop (Tauri)
+- Prereqs: Rust toolchain + `npm i -D @tauri-apps/cli`
+- Dev: `npm run tauri:dev` (spawns Next dev and Tauri window)
+- Build: `npm run tauri:build` (embeds `next export` output)
+
+Storage on desktop
+- SQLite file is created under the app’s local data directory (platform-specific path) with filename `flowstate.db`.
+- The web code detects Tauri at runtime and routes all storage calls to SQLite via `@tauri-apps/plugin-sql`.
+
+Migration from PWA
+- Automatic migration from browser IndexedDB to the desktop app is not possible across origins. Use CSV export (and a forthcoming JSON import) to carry data over.
+
+### Icons
+- Icon sources live in `src-tauri/icons/`. The repo contains a working placeholder set generated via `tauri icon`.
+- Replace `src-tauri/icons/icon.png` with a 1024×1024 PNG to brand the app, then regenerate:
+  - `npm run icons` (or `npx tauri icon src-tauri/icons/icon.png`)
+- The Tauri config points to `icon.png`, `icon.icns`, and `icon.ico` and will package them for macOS/Windows/Linux.
 
 ## Development Guidelines
 - Follow `AGENTS.md` for goals, standards, and Definition of Done.

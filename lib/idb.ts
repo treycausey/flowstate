@@ -1,222 +1,84 @@
-import { type Reading, type Settings, type Tank } from './models'
+import type { Reading, Settings, Tank } from './models'
+import * as idb from './idb-browser'
+import * as sqlite from './sqlite'
+import { isTauri } from './tauri'
 
-const DB_NAME = 'aquarium'
-const DB_VERSION = 1
+const api = isTauri() ? sqlite : idb
 
-type Stores = 'tanks' | 'readings' | 'settings'
-
-function uuid() {
-  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID()
-  // Fallback
-  return 'id-' + Math.random().toString(36).slice(2) + Date.now().toString(36)
-}
-
-function openDB(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, DB_VERSION)
-    req.onupgradeneeded = () => {
-      const db = req.result
-      if (!db.objectStoreNames.contains('tanks')) {
-        db.createObjectStore('tanks', { keyPath: 'id' })
-      }
-      if (!db.objectStoreNames.contains('readings')) {
-        const store = db.createObjectStore('readings', { keyPath: 'id' })
-        store.createIndex('by_tank', 'tankId', { unique: false })
-        store.createIndex('by_tank_ts', ['tankId', 'ts'], { unique: false })
-      }
-      if (!db.objectStoreNames.contains('settings')) {
-        db.createObjectStore('settings', { keyPath: 'key' })
-      }
-    }
-    req.onsuccess = () => resolve(req.result)
-    req.onerror = () => reject(req.error)
-  })
-}
-
-function tx<T extends Stores>(db: IDBDatabase, store: T, mode: IDBTransactionMode = 'readonly') {
-  return db.transaction(store, mode).objectStore(store)
-}
-
-export async function getAll<T>(store: Stores): Promise<T[]> {
-  const db = await openDB()
-  return new Promise<T[]>((resolve, reject) => {
-    const s = tx(db, store)
-    const req = s.getAll()
-    req.onsuccess = () => resolve(req.result as T[])
-    req.onerror = () => reject(req.error)
-  })
-}
+export const getAll = idb.getAll // browser-only helper (unused in sqlite)
 
 // Tanks
-export async function listTanks(): Promise<Tank[]> {
-  return getAll<Tank>('tanks')
+export function listTanks(): Promise<Tank[]> {
+  return api.listTanks()
 }
 
-export async function createTank(name: string, reminderCadence: number | null = null): Promise<Tank> {
-  const tank: Tank = {
-    id: uuid(),
-    name,
-    createdAt: new Date().toISOString(),
-    archivedAt: null,
-    reminderCadence,
-  }
-  const db = await openDB()
-  await new Promise<void>((resolve, reject) => {
-    const s = tx(db, 'tanks', 'readwrite')
-    const req = s.add(tank)
-    req.onsuccess = () => resolve()
-    req.onerror = () => reject(req.error)
-  })
-  return tank
+export function createTank(name: string, reminderCadence: number | null = null): Promise<Tank> {
+  return api.createTank(name, reminderCadence)
 }
 
-export async function renameTank(id: string, name: string): Promise<void> {
-  const db = await openDB()
-  await new Promise<void>((resolve, reject) => {
-    const s = tx(db, 'tanks', 'readwrite')
-    const getReq = s.get(id)
-    getReq.onsuccess = () => {
-      const tank = getReq.result as Tank | undefined
-      if (!tank) return reject(new Error('Tank not found'))
-      tank.name = name
-      const putReq = s.put(tank)
-      putReq.onsuccess = () => resolve()
-      putReq.onerror = () => reject(putReq.error)
-    }
-    getReq.onerror = () => reject(getReq.error)
-  })
+export function renameTank(id: string, name: string): Promise<void> {
+  return api.renameTank(id, name)
 }
 
-export async function archiveTank(id: string): Promise<void> {
-  const db = await openDB()
-  await new Promise<void>((resolve, reject) => {
-    const s = tx(db, 'tanks', 'readwrite')
-    const getReq = s.get(id)
-    getReq.onsuccess = () => {
-      const tank = getReq.result as Tank | undefined
-      if (!tank) return reject(new Error('Tank not found'))
-      tank.archivedAt = new Date().toISOString()
-      const putReq = s.put(tank)
-      putReq.onsuccess = () => resolve()
-      putReq.onerror = () => reject(putReq.error)
-    }
-    getReq.onerror = () => reject(getReq.error)
-  })
+export function archiveTank(id: string): Promise<void> {
+  return api.archiveTank(id)
 }
 
-export async function setTankReminderCadence(id: string, days: number | null): Promise<void> {
-  const db = await openDB()
-  await new Promise<void>((resolve, reject) => {
-    const s = tx(db, 'tanks', 'readwrite')
-    const getReq = s.get(id)
-    getReq.onsuccess = () => {
-      const tank = getReq.result as Tank | undefined
-      if (!tank) return reject(new Error('Tank not found'))
-      tank.reminderCadence = days
-      const putReq = s.put(tank)
-      putReq.onsuccess = () => resolve()
-      putReq.onerror = () => reject(putReq.error)
-    }
-    getReq.onerror = () => reject(getReq.error)
-  })
+export function setTankReminderCadence(id: string, days: number | null): Promise<void> {
+  return api.setTankReminderCadence(id, days)
 }
 
 // Readings
-export async function addReading(input: Omit<Reading, 'id'> & { id?: string }): Promise<Reading> {
-  const reading: Reading = { id: input.id ?? uuid(), ...input }
-  const db = await openDB()
-  await new Promise<void>((resolve, reject) => {
-    const s = tx(db, 'readings', 'readwrite')
-    const req = s.add(reading)
-    req.onsuccess = () => resolve()
-    req.onerror = () => reject(req.error)
-  })
-  return reading
+export function addReading(input: Omit<Reading, 'id'> & { id?: string }): Promise<Reading> {
+  return api.addReading(input)
 }
 
-export async function updateReading(reading: Reading): Promise<void> {
-  const db = await openDB()
-  await new Promise<void>((resolve, reject) => {
-    const s = tx(db, 'readings', 'readwrite')
-    const req = s.put(reading)
-    req.onsuccess = () => resolve()
-    req.onerror = () => reject(req.error)
-  })
+export function updateReading(reading: Reading): Promise<void> {
+  return api.updateReading(reading)
 }
 
-export async function deleteReading(id: string): Promise<void> {
-  const db = await openDB()
-  await new Promise<void>((resolve, reject) => {
-    const s = tx(db, 'readings', 'readwrite')
-    const req = s.delete(id)
-    req.onsuccess = () => resolve()
-    req.onerror = () => reject(req.error)
-  })
+export function deleteReading(id: string): Promise<void> {
+  return api.deleteReading(id)
 }
 
-export async function listReadingsByTank(tankId: string): Promise<Reading[]> {
-  const db = await openDB()
-  return new Promise<Reading[]>((resolve, reject) => {
-    const s = tx(db, 'readings')
-    const idx = s.index('by_tank')
-    const req = idx.getAll(IDBKeyRange.only(tankId))
-    req.onsuccess = () => resolve((req.result as Reading[]).sort((a, b) => a.ts.localeCompare(b.ts)))
-    req.onerror = () => reject(req.error)
-  })
+export function listReadingsByTank(tankId: string): Promise<Reading[]> {
+  return api.listReadingsByTank(tankId)
 }
 
-export async function listReadingsByTankInRange(
+export function listReadingsByTankInRange(
   tankId: string,
   fromISO: string,
   toISO: string,
 ): Promise<Reading[]> {
-  const db = await openDB()
-  return new Promise<Reading[]>((resolve, reject) => {
-    const s = tx(db, 'readings')
-    const idx = s.index('by_tank_ts')
-    const range = IDBKeyRange.bound([tankId, fromISO], [tankId, toISO])
-    const req = idx.getAll(range)
-    req.onsuccess = () => resolve(req.result as Reading[])
-    req.onerror = () => reject(req.error)
-  })
+  return api.listReadingsByTankInRange(tankId, fromISO, toISO)
 }
 
-export async function findMostRecentReading(tankId: string): Promise<Reading | undefined> {
-  const all = await listReadingsByTank(tankId)
-  return all.length > 0 ? all[all.length - 1] : undefined
+export function findMostRecentReading(tankId: string): Promise<Reading | undefined> {
+  return api.findMostRecentReading(tankId)
 }
 
-export async function listReadingsWithinHour(tankId: string, tsISO: string): Promise<Reading[]> {
-  const ts = new Date(tsISO).getTime()
-  const start = new Date(ts - 30 * 60 * 1000).toISOString()
-  const end = new Date(ts + 30 * 60 * 1000).toISOString()
-  return listReadingsByTankInRange(tankId, start, end)
+export function listReadingsWithinHour(tankId: string, tsISO: string): Promise<Reading[]> {
+  return api.listReadingsWithinHour(tankId, tsISO)
 }
 
 // Settings
-export async function getSettings(): Promise<Settings | undefined> {
-  const db = await openDB()
-  return new Promise<Settings | undefined>((resolve, reject) => {
-    const s = tx(db, 'settings')
-    const req = s.get('global')
-    req.onsuccess = () => resolve(req.result?.value as Settings | undefined)
-    req.onerror = () => reject(req.error)
-  })
+export function getSettings(): Promise<Settings | undefined> {
+  return api.getSettings()
 }
 
-export async function setSettings(value: Settings): Promise<void> {
-  const db = await openDB()
-  await new Promise<void>((resolve, reject) => {
-    const s = tx(db, 'settings', 'readwrite')
-    const req = s.put({ key: 'global', value })
-    req.onsuccess = () => resolve()
-    req.onerror = () => reject(req.error)
-  })
+export function setSettings(value: Settings): Promise<void> {
+  return api.setSettings(value)
 }
 
-// Seed/init: create first tank if none exists
-export async function ensureSeed(): Promise<Tank> {
-  const tanks = await listTanks()
-  if (tanks.length > 0) return tanks[0]
-  return createTank('My Tank')
+// Seed/init
+export function ensureSeed(): Promise<Tank> {
+  return api.ensureSeed()
+}
+
+export function exportDump() {
+  return api.exportDump()
+}
+
+export function importDump(dump: any) {
+  return api.importDump(dump)
 }

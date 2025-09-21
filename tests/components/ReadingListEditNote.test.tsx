@@ -9,7 +9,7 @@ function renderWithProvider(ui: React.ReactNode) {
 }
 
 describe('ReadingList edit note', () => {
-  it('edits a reading note via prompt and updates the table', async () => {
+  it('edits a reading note inline and updates the table', async () => {
     const tank = await ensureSeed()
     localStorage.setItem('activeTankId', tank.id)
     await addReading({
@@ -24,22 +24,12 @@ describe('ReadingList edit note', () => {
     renderWithProvider(<ReadingList />)
     // Wait for table to render
     await screen.findByText(/Recent Readings/i)
-    // Mock prompt sequence
-    const prompts = [
-      '7.1', // pH
-      '0', // ammonia
-      '0', // nitrite
-      '10', // nitrate
-      'edited note', // note
-    ]
-    const promptSpy = jest.spyOn(window, 'prompt').mockImplementation(() => prompts.shift() as any)
-
     fireEvent.click(await screen.findByRole('button', { name: /edit/i }))
+    await screen.findByRole('dialog', { name: /edit reading/i })
+    const noteInput = await screen.findByLabelText(/note/i)
+    fireEvent.change(noteInput, { target: { value: 'edited note' } })
+    fireEvent.click(screen.getByRole('button', { name: /save changes/i }))
 
-    // New note appears
     await waitFor(() => expect(screen.getByText(/edited note/i)).toBeInTheDocument())
-
-    promptSpy.mockRestore()
   })
 })
-

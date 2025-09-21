@@ -25,6 +25,12 @@ export type Settings = {
   }
 }
 
+export type Dump = {
+  tanks: Tank[]
+  readings: Reading[]
+  settings?: Settings
+}
+
 // Kit-friendly step sizes
 export const STEP = {
   pH: 0.1,
@@ -40,4 +46,3 @@ export const OPTIMAL = {
   nitrite: { max: 0 },
   nitrate: { min: 0, max: 20 },
 }
-

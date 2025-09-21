@@ -46,6 +46,14 @@ export default function HomeClient() {
           <NotificationsToggle />
         </div>
       </section>
+      <section>
+        <h2 className="section-title">Settings</h2>
+        <div className="cluster">
+          <Link className="button button--ghost" href="/settings">
+            Open Settings
+          </Link>
+        </div>
+      </section>
     </>
   )
 }

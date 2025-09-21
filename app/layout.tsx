@@ -4,6 +4,7 @@ import ServiceWorkerRegister from '@/components/ServiceWorkerRegister'
 import InitSeed from '@/components/InitSeed'
 import { TankProvider } from '@/components/TankProvider'
 import ThemeToggle from '@/components/ThemeToggle'
+import TauriNavigationBridge from '@/components/TauriNavigationBridge'
 
 export const metadata: Metadata = {
   title: 'Flowstate',
@@ -24,6 +25,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <ServiceWorkerRegister />
         <InitSeed />
         <TankProvider>
+          <TauriNavigationBridge />
           <header className="container" style={{ padding: '0.5rem 0' }}>
             <div className="cluster" style={{ justifyContent: 'flex-end' }}>
               <ThemeToggle />
