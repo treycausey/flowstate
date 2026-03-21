@@ -4,11 +4,9 @@
   "private": true,
   "license": "MIT",
   "scripts": {
-    "dev": "next dev",
-    "dev:4000": "next dev -p 4000",
+    "dev": "next dev -p 4040",
     "build": "next build",
-    "start": "next start",
-    "start:4000": "next start -p 4000",
+    "start": "next start -p 4040",
     "lint": "eslint .",
     "test": "jest",
     "analyze": "ANALYZE=true next build",
@@ -17,14 +15,15 @@
     "tauri:build": "tauri build"
   },
   "dependencies": {
+    "@tauri-apps/api": "^1.6.0",
     "next": "14.2.11",
     "react": "18.2.0",
-    "react-dom": "18.2.0",
-    "@tauri-apps/api": "^1.6.0"
+    "react-dom": "18.2.0"
   },
   "devDependencies": {
     "@eslint/eslintrc": "latest",
     "@next/bundle-analyzer": "latest",
+    "@tauri-apps/cli": "^1.6.3",
     "@testing-library/jest-dom": "latest",
     "@testing-library/react": "latest",
     "@testing-library/user-event": "latest",
@@ -41,7 +40,6 @@
     "jest-environment-jsdom": "latest",
     "prettier": "latest",
     "strip-ansi": "7.1.0",
-    "typescript": "latest",
-    "@tauri-apps/cli": "^1.5.8"
+    "typescript": "latest"
   }
 }

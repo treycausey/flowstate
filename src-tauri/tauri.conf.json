@@ -23,8 +23,8 @@
     }
   },
   "build": {
-    "beforeDevCommand": "next dev -p 3000",
-    "devPath": "http://localhost:3000",
+    "beforeDevCommand": "next dev -p 4040",
+    "devPath": "http://localhost:4040",
     "beforeBuildCommand": "next build",
     "distDir": "../out"
   }
