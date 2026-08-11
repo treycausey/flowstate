@@ -98,7 +98,7 @@ Conventions
 Storage on desktop
 
 - SQLite file is created under the app’s local data directory (platform-specific path) with filename `flowstate.db`.
-- The web code detects Tauri at runtime and routes all storage calls to SQLite via `@tauri-apps/plugin-sql`.
+- The web code detects Tauri at runtime and routes all storage calls to SQLite via Rust `invoke('sqlite_*', ...)` commands (implemented with `rusqlite` in `src-tauri/src/main.rs`).
 
 Migration from PWA
 
@@ -106,9 +106,9 @@ Migration from PWA
 
 ### Icons
 
-- Icon sources live in `src-tauri/icons/`. The repo contains a working placeholder set generated via `tauri icon`.
-- Replace `src-tauri/icons/icon.png` with a 1024×1024 PNG to brand the app, then regenerate:
-  - `npm run icons` (or `npx tauri icon src-tauri/icons/icon.png`)
+- Icon sources live in `src-tauri/icons/`. The current set shipped in commit a1bab51.
+- Replace `src-tauri/icons/icon.png` with a 1024×1024 PNG to rebrand the app, then regenerate:
+  - `npx tauri icon src-tauri/icons/icon.png`
 - The Tauri config points to `icon.png`, `icon.icns`, and `icon.ico` and will package them for macOS/Windows/Linux.
 
 ## Development Guidelines
