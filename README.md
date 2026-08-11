@@ -7,13 +7,13 @@ Local-first app to log freshwater aquarium chemistry and visualize trends with m
 
 ## Quick Start (Web)
 
-- Prereqs: Node 18+ and npm
-- Install: `npm install`
-- Dev: `npm run dev` then open http://localhost:4040
-- Lint: `npm run lint`
-- Tests: `npm test`
-- Build: `npm run build`
-- Start: `npm start`
+- Prereqs: Bun 1.x
+- Install: `bun install`
+- Dev: `bun run dev` then open http://localhost:4040
+- Lint: `bun run lint`
+- Tests: `bun run test`
+- Build: `bun run build`
+- Start: `bun run start`
 
 ## PWA & Offline
 
@@ -75,7 +75,7 @@ Conventions
 
 - Unit tests: `tests/lib/*.test.ts`
 - Component tests: `tests/components/*.test.tsx`
-- Run: `npm test`
+- Run: `bun run test`
 
 ## Accessibility & Theming
 
@@ -91,9 +91,9 @@ Conventions
 
 ## Desktop (Tauri)
 
-- Prereqs: Rust toolchain + `npm i -D @tauri-apps/cli`
-- Dev: `npm run tauri:dev` (spawns Next dev and Tauri window)
-- Build: `npm run tauri:build` (embeds `next export` output)
+- Prereqs: Rust toolchain (`@tauri-apps/cli` is already a devDependency, installed via `bun install`)
+- Dev: `bun run tauri:dev` (spawns Next dev and Tauri window)
+- Build: `bun run tauri:build` (embeds `next export` output)
 
 Storage on desktop
 
@@ -108,7 +108,7 @@ Migration from PWA
 
 - Icon sources live in `src-tauri/icons/`. The current set shipped in commit a1bab51.
 - Replace `src-tauri/icons/icon.png` with a 1024×1024 PNG to rebrand the app, then regenerate:
-  - `npx tauri icon src-tauri/icons/icon.png`
+  - `bunx tauri icon src-tauri/icons/icon.png`
 - The Tauri config points to `icon.png`, `icon.icns`, and `icon.ico` and will package them for macOS/Windows/Linux.
 
 ## Development Guidelines

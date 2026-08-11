@@ -115,10 +115,10 @@ Document decisions in PRs and, if needed, append a “Decision Log” section he
 
 ## Local Dev (suggested)
 Once a framework is scaffolded:
-- Install deps: `npm i`
-- Dev server: `npm run dev`
-- Tests: `npm test`
-- Lint/format: `npm run lint` / `npm run format`
-- Build: `npm run build`
+- Install deps: `bun install`
+- Dev server: `bun run dev`
+- Tests: `bun run test`
+- Lint/format: `bun run lint` / `bun run format`
+- Build: `bun run build`
 
 This file is intended to keep future agents aligned with the PRD and task list. If you must deviate, update this AGENTS.md and the tasks checklist accordingly.
