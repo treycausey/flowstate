@@ -1,3 +1,8 @@
+> **STATUS: PRD fully implemented.** Flowstate v1 shipped September 2025. The
+> checkboxes below were never maintained during development and do not
+> reflect what was built — treat them as stale, not as a build log. For the
+> actual state of the app, read the code and `git log`, not this checklist.
+
 ## Relevant Files (Flowstate v1)
 
 - `app/page.tsx` - Dashboard with recent readings, per-tank quick actions.

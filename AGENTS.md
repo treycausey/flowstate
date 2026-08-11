@@ -108,7 +108,7 @@ A change is “done” when:
 Document decisions in PRs and, if needed, append a “Decision Log” section here.
 
 ## Agent Workflow Notes
-- Treat `tasks/` as the source of truth for scope and acceptance criteria.
+- Treat `tasks/prd-aquarium-water-tracker.md` as the source of truth for scope and acceptance criteria. `tasks/tasks-prd-aquarium-water-tracker.md` is a stale, unmaintained checklist from before the September 2025 ship — do not use its checkbox state to judge what's built.
 - Prefer surgical changes aligned to the file map; avoid broad refactors without need.
 - When adding a new module, also add tests and, if needed, brief docs.
 - Keep PRs small and cohesive; reference PRD sections and task IDs.
