@@ -8,6 +8,7 @@
     "build": "next build",
     "start": "next start -p 4040",
     "lint": "eslint .",
+    "format": "prettier --write .",
     "test": "jest",
     "analyze": "ANALYZE=true next build",
     "tauri": "tauri",
