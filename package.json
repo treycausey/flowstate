@@ -9,6 +9,7 @@
     "start": "next start -p 4040",
     "lint": "eslint .",
     "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "test": "jest",
     "analyze": "ANALYZE=true next build",
     "tauri": "tauri",

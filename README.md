@@ -11,6 +11,8 @@ Local-first app to log freshwater aquarium chemistry and visualize trends with m
 - Install: `bun install`
 - Dev: `bun run dev` then open http://localhost:4040
 - Lint: `bun run lint`
+- Format: `bun run format`
+- Format check: `bun run format:check`
 - Tests: `bun run test`
 - Build: `bun run build`
 - Start: `bun run start`
