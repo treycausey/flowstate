@@ -11,4 +11,3 @@ describe('Home page a11y', () => {
     expect(results).toHaveNoViolations()
   })
 })
-

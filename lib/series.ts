@@ -9,7 +9,9 @@ export function rollingAverage(points: Point[], windowDays: number): Point[] {
   for (let i = 0; i < points.length; i++) {
     const curr = new Date(points[i].ts).getTime()
     const from = curr - windowMs
-    const slice = points.filter((p) => new Date(p.ts).getTime() >= from && new Date(p.ts).getTime() <= curr)
+    const slice = points.filter(
+      (p) => new Date(p.ts).getTime() >= from && new Date(p.ts).getTime() <= curr,
+    )
     const avg = slice.reduce((s, p) => s + p.value, 0) / (slice.length || 1)
     out.push({ ts: points[i].ts, value: Number(avg.toFixed(3)) })
   }
@@ -31,9 +33,6 @@ export function domainY(metric: 'pH' | 'ammonia' | 'nitrite' | 'nitrate', values
   return [Math.floor((min - pad) * 10) / 10, Math.ceil((max + pad) * 10) / 10]
 }
 
-export function anomalyCount(
-  metric: 'pH' | 'ammonia' | 'nitrite' | 'nitrate',
-  points: Point[],
-) {
+export function anomalyCount(metric: 'pH' | 'ammonia' | 'nitrite' | 'nitrate', points: Point[]) {
   return points.reduce((n, p) => n + (isOutOfRange(metric, p.value) ? 1 : 0), 0)
 }

@@ -22,9 +22,12 @@ describe('IndexedDB helpers', () => {
       nitrate: 10,
       note: 'baseline',
     })
-    const results = await listReadingsByTankInRange(tank.id, '1970-01-01T00:00:00.000Z', '2100-01-01T00:00:00.000Z')
+    const results = await listReadingsByTankInRange(
+      tank.id,
+      '1970-01-01T00:00:00.000Z',
+      '2100-01-01T00:00:00.000Z',
+    )
     expect(results.length).toBe(1)
     expect(results[0].note).toBe('baseline')
   })
 })
-

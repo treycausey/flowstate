@@ -1,4 +1,4 @@
-"use client"
+'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTanks } from '@/components/TankProvider'
@@ -22,7 +22,10 @@ export default function ReadingList() {
   const [editingReading, setEditingReading] = useState<Reading | null>(null)
   const [draft, setDraft] = useState<DraftReading | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const modalTitleId = useMemo(() => (editingReading ? `edit-${editingReading.id}` : undefined), [editingReading])
+  const modalTitleId = useMemo(
+    () => (editingReading ? `edit-${editingReading.id}` : undefined),
+    [editingReading],
+  )
   const firstFieldRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -127,7 +130,9 @@ export default function ReadingList() {
 
   return (
     <div>
-      <h3 className="section-title" style={{ marginTop: 0 }}>Recent Readings</h3>
+      <h3 className="section-title" style={{ marginTop: 0 }}>
+        Recent Readings
+      </h3>
       {items.length === 0 ? (
         <p>No readings yet.</p>
       ) : (
@@ -153,10 +158,18 @@ export default function ReadingList() {
                 <td align="right">{r.nitrate}</td>
                 <td>{r.note || ''}</td>
                 <td>
-                  <button className="button button--ghost" type="button" onClick={() => startEditing(r)}>
+                  <button
+                    className="button button--ghost"
+                    type="button"
+                    onClick={() => startEditing(r)}
+                  >
                     Edit
                   </button>{' '}
-                  <button className="button button--ghost" type="button" onClick={() => onDelete(r)}>
+                  <button
+                    className="button button--ghost"
+                    type="button"
+                    onClick={() => onDelete(r)}
+                  >
                     Delete
                   </button>
                 </td>

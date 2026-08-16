@@ -14,9 +14,17 @@ if (typeof global.ResizeObserver === 'undefined') {
   // @ts-ignore
   global.ResizeObserver = class {
     callback: any
-    constructor(cb: any) { this.callback = cb }
-    observe() { /* no-op */ }
-    unobserve() { /* no-op */ }
-    disconnect() { /* no-op */ }
+    constructor(cb: any) {
+      this.callback = cb
+    }
+    observe() {
+      /* no-op */
+    }
+    unobserve() {
+      /* no-op */
+    }
+    disconnect() {
+      /* no-op */
+    }
   }
 }

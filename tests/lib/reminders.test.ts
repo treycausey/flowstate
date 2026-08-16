@@ -22,4 +22,3 @@ describe('reminders', () => {
     expect(state.snoozeUntil).toBe('2024-01-11T00:00:00.000Z')
   })
 })
-

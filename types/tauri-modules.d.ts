@@ -15,4 +15,3 @@ declare module 'tauri-plugin-sql-api' {
     select<T = any[]>(sql: string, bind?: unknown[]): Promise<T>
   }
 }
-

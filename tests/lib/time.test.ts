@@ -18,4 +18,3 @@ describe('time helpers', () => {
     expect(s).toMatch(/\d{4}/)
   })
 })
-

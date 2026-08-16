@@ -1,4 +1,4 @@
-"use client"
+'use client'
 
 import { useEffect, useMemo, useState } from 'react'
 import { addReading, findMostRecentReading, listReadingsWithinHour } from '@/lib/idb'
@@ -27,9 +27,8 @@ type FormState = {
   note: string
 }
 
-const nowLocal = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000)
-  .toISOString()
-  .slice(0, 16)
+const nowLocal = () =>
+  new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)
 
 export default function QuickEntry() {
   const { activeTankId } = useTanks()
@@ -56,33 +55,43 @@ export default function QuickEntry() {
   // global tick for timers
   useEffect(() => {
     tickRef.current = window.setInterval(() => setNow(Date.now()), 250)
-    return () => { if (tickRef.current) window.clearInterval(tickRef.current) }
+    return () => {
+      if (tickRef.current) window.clearInterval(tickRef.current)
+    }
   }, [])
 
   // notify on finished timers exactly once
   useEffect(() => {
-    setTimers((prev) => prev.map((t) => {
-      const remaining = t.totalMs - (now - t.startedAt)
-      if (remaining <= 0 && !t.notified) {
-        // buzz
-        try {
-          if ('vibrate' in navigator) (navigator as any).vibrate?.([120, 60, 120])
-          const Ctx = (window as any).AudioContext || (window as any).webkitAudioContext
-          if (Ctx) {
-            const ctx = new Ctx()
-            const o = ctx.createOscillator(); const g = ctx.createGain()
-            o.type = 'sine'; o.frequency.value = 880
-            o.connect(g); g.connect(ctx.destination)
-            o.start(); g.gain.setValueAtTime(0.0001, ctx.currentTime)
-            g.gain.exponentialRampToValueAtTime(0.2, ctx.currentTime + 0.02)
-            g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.45)
-            o.stop(ctx.currentTime + 0.5)
+    setTimers((prev) =>
+      prev.map((t) => {
+        const remaining = t.totalMs - (now - t.startedAt)
+        if (remaining <= 0 && !t.notified) {
+          // buzz
+          try {
+            if ('vibrate' in navigator) (navigator as any).vibrate?.([120, 60, 120])
+            const Ctx = (window as any).AudioContext || (window as any).webkitAudioContext
+            if (Ctx) {
+              const ctx = new Ctx()
+              const o = ctx.createOscillator()
+              const g = ctx.createGain()
+              o.type = 'sine'
+              o.frequency.value = 880
+              o.connect(g)
+              g.connect(ctx.destination)
+              o.start()
+              g.gain.setValueAtTime(0.0001, ctx.currentTime)
+              g.gain.exponentialRampToValueAtTime(0.2, ctx.currentTime + 0.02)
+              g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.45)
+              o.stop(ctx.currentTime + 0.5)
+            }
+          } catch {
+            /* noop */
           }
-        } catch { /* noop */ }
-        return { ...t, notified: true }
-      }
-      return t
-    }))
+          return { ...t, notified: true }
+        }
+        return t
+      }),
+    )
   }, [now])
 
   const startTimer = (label: string, ms: number) => {
@@ -123,7 +132,7 @@ export default function QuickEntry() {
       const near = await listReadingsWithinHour(activeTankId, tsISO)
       if (near.length > 0) {
         const proceed = window.confirm(
-          'You already have a reading within an hour of this time. Save anyway?'
+          'You already have a reading within an hour of this time. Save anyway?',
         )
         if (!proceed) return
       }
@@ -164,7 +173,14 @@ export default function QuickEntry() {
       </label>
       <label>
         pH
-        <input type="number" step={STEP.pH} name="pH" value={state.pH} onChange={onChange} disabled={disabled} />
+        <input
+          type="number"
+          step={STEP.pH}
+          name="pH"
+          value={state.pH}
+          onChange={onChange}
+          disabled={disabled}
+        />
       </label>
       <label>
         Ammonia (NH3, ppm)
@@ -211,7 +227,12 @@ export default function QuickEntry() {
         >
           Instructions
         </button>
-        <button className="button button--ghost" type="button" onClick={useLastValues} disabled={disabled}>
+        <button
+          className="button button--ghost"
+          type="button"
+          onClick={useLastValues}
+          disabled={disabled}
+        >
           Use last values
         </button>
         <button className="button" type="submit" disabled={disabled}>
@@ -222,7 +243,9 @@ export default function QuickEntry() {
         <div className="card" aria-live="polite">
           <div className="cluster" style={{ justifyContent: 'space-between' }}>
             <strong>Timers</strong>
-            <button type="button" className="button button--ghost" onClick={clearAllTimers}>Clear all</button>
+            <button type="button" className="button button--ghost" onClick={clearAllTimers}>
+              Clear all
+            </button>
           </div>
           <div className="stack" style={{ marginTop: '0.5rem' }}>
             {timers.map((t) => {
@@ -239,18 +262,34 @@ export default function QuickEntry() {
                     />
                     <div>
                       <strong>{t.label}</strong>{' '}
-                      <span style={{ fontVariantNumeric: 'tabular-nums' }}>{formatRemaining(t)}</span>
-                      {done && <span className="danger" style={{ marginLeft: '0.5rem' }}>(Done)</span>}
+                      <span style={{ fontVariantNumeric: 'tabular-nums' }}>
+                        {formatRemaining(t)}
+                      </span>
+                      {done && (
+                        <span className="danger" style={{ marginLeft: '0.5rem' }}>
+                          (Done)
+                        </span>
+                      )}
                     </div>
                   </div>
-                  <button type="button" className="button button--ghost" onClick={() => stopTimer(t.id)}>Dismiss</button>
+                  <button
+                    type="button"
+                    className="button button--ghost"
+                    onClick={() => stopTimer(t.id)}
+                  >
+                    Dismiss
+                  </button>
                 </div>
               )
             })}
           </div>
         </div>
       )}
-      <InstructionsModal open={showInstructions} onClose={() => setShowInstructions(false)} onStartTimer={startTimer} />
+      <InstructionsModal
+        open={showInstructions}
+        onClose={() => setShowInstructions(false)}
+        onStartTimer={startTimer}
+      />
     </form>
   )
 }

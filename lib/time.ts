@@ -25,6 +25,8 @@ export function toISOWithOffset(d: Date) {
 }
 
 export function formatLocal(d: Date, locale?: string, opts?: Intl.DateTimeFormatOptions) {
-  return new Intl.DateTimeFormat(locale || undefined, opts || { dateStyle: 'medium', timeStyle: 'short' }).format(d)
+  return new Intl.DateTimeFormat(
+    locale || undefined,
+    opts || { dateStyle: 'medium', timeStyle: 'short' },
+  ).format(d)
 }
-

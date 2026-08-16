@@ -1,10 +1,5 @@
 import { invoke } from '@tauri-apps/api/tauri'
-import {
-  createTank,
-  listReadingsByTank,
-  listReadingsByTankInRange,
-  addReading,
-} from '@/lib/sqlite'
+import { createTank, listReadingsByTank, listReadingsByTankInRange, addReading } from '@/lib/sqlite'
 
 jest.mock('@tauri-apps/api/tauri', () => ({
   invoke: jest.fn(),
@@ -48,7 +43,11 @@ describe('lib/sqlite bridge payloads', () => {
   test('listReadingsByTankInRange sends camelCase keys for params', async () => {
     mockInvoke.mockResolvedValueOnce([])
 
-    await listReadingsByTankInRange('tank-123', '2024-01-01T00:00:00.000Z', '2024-02-01T00:00:00.000Z')
+    await listReadingsByTankInRange(
+      'tank-123',
+      '2024-01-01T00:00:00.000Z',
+      '2024-02-01T00:00:00.000Z',
+    )
 
     expect(mockInvoke).toHaveBeenCalledWith('sqlite_list_readings_by_tank_in_range', {
       tankId: 'tank-123',

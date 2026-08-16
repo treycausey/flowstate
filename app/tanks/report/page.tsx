@@ -1,4 +1,4 @@
-"use client"
+'use client'
 
 import { Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
@@ -18,7 +18,13 @@ function ReportPageInner() {
 
 export default function TanksReportPage() {
   return (
-    <Suspense fallback={<main style={{ padding: 24, fontFamily: 'system-ui, sans-serif' }}><h1>Report</h1></main>}>
+    <Suspense
+      fallback={
+        <main style={{ padding: 24, fontFamily: 'system-ui, sans-serif' }}>
+          <h1>Report</h1>
+        </main>
+      }
+    >
       <ReportPageInner />
     </Suspense>
   )

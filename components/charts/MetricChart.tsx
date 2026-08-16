@@ -1,4 +1,4 @@
-"use client"
+'use client'
 
 import { isOutOfRange, domainY } from '@/lib/series'
 import { useEffect, useRef, useState } from 'react'
@@ -11,12 +11,21 @@ type Props = {
   showAxisLabels?: boolean
 }
 
-export default function MetricChart({ metric, points, width, height = 100, showAxisLabels = true }: Props) {
+export default function MetricChart({
+  metric,
+  points,
+  width,
+  height = 100,
+  showAxisLabels = true,
+}: Props) {
   const wrapperRef = useRef<HTMLDivElement>(null)
   const [w, setW] = useState<number | null>(null)
 
   useEffect(() => {
-    if (width) { setW(width); return }
+    if (width) {
+      setW(width)
+      return
+    }
     const el = wrapperRef.current
     if (!el) return
     const obs = new ResizeObserver((entries) => {
@@ -27,7 +36,7 @@ export default function MetricChart({ metric, points, width, height = 100, showA
     return () => obs.disconnect()
   }, [width])
 
-  const resolvedW = width ?? ((w && w > 0) ? w : 320)
+  const resolvedW = width ?? (w && w > 0 ? w : 320)
   const margin = { left: 40, right: 16, top: 12, bottom: 32 }
   const innerW = Math.max(0, resolvedW - margin.left - margin.right)
   const innerH = Math.max(0, height - margin.top - margin.bottom)
@@ -42,7 +51,9 @@ export default function MetricChart({ metric, points, width, height = 100, showA
   const [y0, y1] = domainY(metric, values)
   const sx = (t: number) => ((t - x0) / (x1 - x0 || 1)) * innerW + margin.left
   const sy = (v: number) => height - margin.bottom - ((v - y0) / (y1 - y0 || 1)) * innerH
-  const path = points.map((p, i) => `${i ? 'L' : 'M'}${sx(new Date(p.ts).getTime())},${sy(p.value)}`).join(' ')
+  const path = points
+    .map((p, i) => `${i ? 'L' : 'M'}${sx(new Date(p.ts).getTime())},${sy(p.value)}`)
+    .join(' ')
 
   const yLabel = metric === 'pH' ? 'pH' : 'ppm'
 
@@ -59,16 +70,21 @@ export default function MetricChart({ metric, points, width, height = 100, showA
     const s = niceStep(min, max, count)
     const start = Math.ceil(min / s) * s
     const ticks: number[] = []
-    for (let v = start; v <= max + 1e-9; v += s) ticks.push(Number((Math.round(v / s) * s).toFixed(6)))
+    for (let v = start; v <= max + 1e-9; v += s)
+      ticks.push(Number((Math.round(v / s) * s).toFixed(6)))
     return ticks
   }
   const yTicks = linearTicks(y0, y1, 4)
   const spanMs = Math.max(1, x1 - x0)
   const xTickCount = 4
-  const xTicks = Array.from({ length: xTickCount }, (_, i) => x0 + Math.round((i / (xTickCount - 1)) * spanMs))
-  const dtShort = spanMs > 1000 * 60 * 60 * 24 * 3
-    ? new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' })
-    : new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' })
+  const xTicks = Array.from(
+    { length: xTickCount },
+    (_, i) => x0 + Math.round((i / (xTickCount - 1)) * spanMs),
+  )
+  const dtShort =
+    spanMs > 1000 * 60 * 60 * 24 * 3
+      ? new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' })
+      : new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' })
 
   return (
     <div ref={wrapperRef} style={{ width: '100%' }}>
@@ -87,9 +103,21 @@ export default function MetricChart({ metric, points, width, height = 100, showA
         {metric === 'nitrate' && (
           <>
             {/* Optimal 0-20 ppm */}
-            <rect x={margin.left} y={sy(20)} width={innerW} height={Math.max(0, sy(0) - sy(20))} fill="var(--band-ok)" />
+            <rect
+              x={margin.left}
+              y={sy(20)}
+              width={innerW}
+              height={Math.max(0, sy(0) - sy(20))}
+              fill="var(--band-ok)"
+            />
             {/* Caution 20-40 ppm */}
-            <rect x={margin.left} y={sy(40)} width={innerW} height={Math.max(0, sy(20) - sy(40))} fill="var(--band-caution)" />
+            <rect
+              x={margin.left}
+              y={sy(40)}
+              width={innerW}
+              height={Math.max(0, sy(20) - sy(40))}
+              fill="var(--band-caution)"
+            />
           </>
         )}
         {/* Gridlines (horizontal) */}
@@ -108,8 +136,20 @@ export default function MetricChart({ metric, points, width, height = 100, showA
         {/* Y ticks */}
         {yTicks.map((yt, i) => (
           <g key={`yt-${i}`}>
-            <line x1={margin.left - 4} x2={margin.left} y1={sy(yt)} y2={sy(yt)} stroke="var(--border)" />
-            <text x={margin.left - 6} y={sy(yt) + 3} textAnchor="end" fill="var(--muted)" fontSize="10">
+            <line
+              x1={margin.left - 4}
+              x2={margin.left}
+              y1={sy(yt)}
+              y2={sy(yt)}
+              stroke="var(--border)"
+            />
+            <text
+              x={margin.left - 6}
+              y={sy(yt) + 3}
+              textAnchor="end"
+              fill="var(--muted)"
+              fontSize="10"
+            >
               {metric === 'pH' ? yt.toFixed(1) : yt >= 1 ? yt.toFixed(0) : yt.toFixed(2)}
             </text>
           </g>
@@ -117,8 +157,20 @@ export default function MetricChart({ metric, points, width, height = 100, showA
         {/* X ticks */}
         {xTicks.map((xt, i) => (
           <g key={`xt-${i}`}>
-            <line x1={sx(xt)} x2={sx(xt)} y1={height - margin.bottom} y2={height - margin.bottom + 4} stroke="var(--border)" />
-            <text x={sx(xt)} y={height - margin.bottom + 14} textAnchor="middle" fill="var(--muted)" fontSize="10">
+            <line
+              x1={sx(xt)}
+              x2={sx(xt)}
+              y1={height - margin.bottom}
+              y2={height - margin.bottom + 4}
+              stroke="var(--border)"
+            />
+            <text
+              x={sx(xt)}
+              y={height - margin.bottom + 14}
+              textAnchor="middle"
+              fill="var(--muted)"
+              fontSize="10"
+            >
               {dtShort.format(new Date(xt))}
             </text>
           </g>
@@ -138,11 +190,22 @@ export default function MetricChart({ metric, points, width, height = 100, showA
         {showAxisLabels && (
           <>
             {/* X label */}
-            <text x={margin.left + innerW / 2} y={height - 6} textAnchor="middle" fill="var(--muted)" fontSize="10">
+            <text
+              x={margin.left + innerW / 2}
+              y={height - 6}
+              textAnchor="middle"
+              fill="var(--muted)"
+              fontSize="10"
+            >
               Time
             </text>
             {/* Y label */}
-            <text transform={`translate(10 ${margin.top + innerH / 2}) rotate(-90)`} textAnchor="middle" fill="var(--muted)" fontSize="10">
+            <text
+              transform={`translate(10 ${margin.top + innerH / 2}) rotate(-90)`}
+              textAnchor="middle"
+              fill="var(--muted)"
+              fontSize="10"
+            >
               {yLabel}
             </text>
           </>

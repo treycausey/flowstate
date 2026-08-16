@@ -1,4 +1,4 @@
-"use client"
+'use client'
 
 import { useEffect, useMemo, useRef } from 'react'
 
@@ -22,7 +22,7 @@ export default function InstructionsModal({ open, onClose, onStartTimer }: Props
       if (e.key === 'Tab' && dialogRef.current) {
         // Simple focus trap: cycle within dialog
         const focusables = dialogRef.current.querySelectorAll<HTMLElement>(
-          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
         )
         const first = focusables[0]
         const last = focusables[focusables.length - 1]
@@ -45,13 +45,16 @@ export default function InstructionsModal({ open, onClose, onStartTimer }: Props
 
   // no internal timers to cleanup
 
-  const overlayProps = useMemo(() => ({
-    className: 'modal-overlay',
-    onClick: (e: React.MouseEvent) => {
-      // Click outside dialog closes
-      if (e.target === e.currentTarget) onClose()
-    },
-  }), [onClose])
+  const overlayProps = useMemo(
+    () => ({
+      className: 'modal-overlay',
+      onClick: (e: React.MouseEvent) => {
+        // Click outside dialog closes
+        if (e.target === e.currentTarget) onClose()
+      },
+    }),
+    [onClose],
+  )
 
   if (!open) return null
 
@@ -66,7 +69,9 @@ export default function InstructionsModal({ open, onClose, onStartTimer }: Props
       >
         <div className="stack">
           <header className="cluster" style={{ justifyContent: 'space-between' }}>
-            <h3 id="instructions-title" style={{ margin: 0 }}>Instructions</h3>
+            <h3 id="instructions-title" style={{ margin: 0 }}>
+              Instructions
+            </h3>
             <button
               ref={closeBtnRef}
               type="button"
@@ -79,19 +84,58 @@ export default function InstructionsModal({ open, onClose, onStartTimer }: Props
           </header>
 
           <div style={{ fontSize: 'var(--step--1)' }}>
-            <p><strong>pH:</strong> 3 drops, flip several times, read immediately.</p>
-            <p><strong>Ammonia:</strong> 8 drops #1, 8 drops #2, shake 5 seconds, read in 5 minutes.</p>
-            <p><strong>Nitrite:</strong> 5 drops, shake 5 seconds, read in 5 minutes.</p>
-            <p><strong>Nitrate:</strong> 10 drops #1, flip several times, shake bottle #2 for 30 seconds, 10 drops #2, shake 1 minute, read in 5 minutes.</p>
+            <p>
+              <strong>pH:</strong> 3 drops, flip several times, read immediately.
+            </p>
+            <p>
+              <strong>Ammonia:</strong> 8 drops #1, 8 drops #2, shake 5 seconds, read in 5 minutes.
+            </p>
+            <p>
+              <strong>Nitrite:</strong> 5 drops, shake 5 seconds, read in 5 minutes.
+            </p>
+            <p>
+              <strong>Nitrate:</strong> 10 drops #1, flip several times, shake bottle #2 for 30
+              seconds, 10 drops #2, shake 1 minute, read in 5 minutes.
+            </p>
           </div>
 
           <div className="cluster" style={{ justifyContent: 'space-between' }}>
             <div className="cluster">
-              <button type="button" className="button button--ghost" onClick={() => onStartTimer('NH3 (5 minutes)', 5 * 60 * 1000)}>NH3 (5 minutes)</button>
-              <button type="button" className="button button--ghost" onClick={() => onStartTimer('NO2 (5 minutes)', 5 * 60 * 1000)}>NO2 (5 minutes)</button>
-              <button type="button" className="button button--ghost" onClick={() => onStartTimer('NO3 (30 seconds)', 30 * 1000)}>NO3 (30 seconds)</button>
-              <button type="button" className="button button--ghost" onClick={() => onStartTimer('NO3 (1 minute)', 60 * 1000)}>NO3 (1 minute)</button>
-              <button type="button" className="button button--ghost" onClick={() => onStartTimer('NO3 (5 minutes)', 5 * 60 * 1000)}>NO3 (5 minutes)</button>
+              <button
+                type="button"
+                className="button button--ghost"
+                onClick={() => onStartTimer('NH3 (5 minutes)', 5 * 60 * 1000)}
+              >
+                NH3 (5 minutes)
+              </button>
+              <button
+                type="button"
+                className="button button--ghost"
+                onClick={() => onStartTimer('NO2 (5 minutes)', 5 * 60 * 1000)}
+              >
+                NO2 (5 minutes)
+              </button>
+              <button
+                type="button"
+                className="button button--ghost"
+                onClick={() => onStartTimer('NO3 (30 seconds)', 30 * 1000)}
+              >
+                NO3 (30 seconds)
+              </button>
+              <button
+                type="button"
+                className="button button--ghost"
+                onClick={() => onStartTimer('NO3 (1 minute)', 60 * 1000)}
+              >
+                NO3 (1 minute)
+              </button>
+              <button
+                type="button"
+                className="button button--ghost"
+                onClick={() => onStartTimer('NO3 (5 minutes)', 5 * 60 * 1000)}
+              >
+                NO3 (5 minutes)
+              </button>
             </div>
           </div>
         </div>

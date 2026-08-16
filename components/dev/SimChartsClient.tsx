@@ -1,4 +1,4 @@
-"use client"
+'use client'
 
 import { useMemo, useState } from 'react'
 import SmallMultiples from '@/components/charts/SmallMultiples'
@@ -16,11 +16,23 @@ export default function SimChartsClient() {
       <div className="cluster">
         <label>
           Days
-          <input type="number" value={days} min={7} max={365} onChange={(e) => setDays(Number(e.target.value))} />
+          <input
+            type="number"
+            value={days}
+            min={7}
+            max={365}
+            onChange={(e) => setDays(Number(e.target.value))}
+          />
         </label>
         <label>
           Points/day
-          <input type="number" value={ppd} min={1} max={12} onChange={(e) => setPpd(Number(e.target.value))} />
+          <input
+            type="number"
+            value={ppd}
+            min={1}
+            max={12}
+            onChange={(e) => setPpd(Number(e.target.value))}
+          />
         </label>
         <label>
           Seed
@@ -31,4 +43,3 @@ export default function SimChartsClient() {
     </div>
   )
 }
-

@@ -13,7 +13,10 @@ describe('duplicates and updates', () => {
       nitrite: 0,
       nitrate: 5,
     })
-    const near = await listReadingsWithinHour(tank.id, new Date(base.getTime() + 20 * 60000).toISOString())
+    const near = await listReadingsWithinHour(
+      tank.id,
+      new Date(base.getTime() + 20 * 60000).toISOString(),
+    )
     expect(near.length).toBe(1)
   })
 
@@ -33,4 +36,3 @@ describe('duplicates and updates', () => {
     expect(again[0].pH).toBe(7.2)
   })
 })
-

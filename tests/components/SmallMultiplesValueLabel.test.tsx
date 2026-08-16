@@ -18,4 +18,3 @@ describe('SmallMultiples value label', () => {
     expect(avgBadges.length).toBeGreaterThanOrEqual(4)
   })
 })
-

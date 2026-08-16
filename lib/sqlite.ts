@@ -11,7 +11,10 @@ export async function listTanks(): Promise<Tank[]> {
   return (await invoke('sqlite_list_tanks')) as Tank[]
 }
 
-export async function createTank(name: string, reminderCadence: number | null = null): Promise<Tank> {
+export async function createTank(
+  name: string,
+  reminderCadence: number | null = null,
+): Promise<Tank> {
   return (await invoke('sqlite_create_tank', { name, reminderCadence })) as Tank
 }
 

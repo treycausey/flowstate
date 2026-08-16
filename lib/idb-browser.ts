@@ -52,7 +52,10 @@ export async function listTanks(): Promise<Tank[]> {
   return getAll<Tank>('tanks')
 }
 
-export async function createTank(name: string, reminderCadence: number | null = null): Promise<Tank> {
+export async function createTank(
+  name: string,
+  reminderCadence: number | null = null,
+): Promise<Tank> {
   const tank: Tank = {
     id: uuid(),
     name,
@@ -160,7 +163,8 @@ export async function listReadingsByTank(tankId: string): Promise<Reading[]> {
     const s = tx(db, 'readings')
     const idx = s.index('by_tank')
     const req = idx.getAll(IDBKeyRange.only(tankId))
-    req.onsuccess = () => resolve((req.result as Reading[]).sort((a, b) => a.ts.localeCompare(b.ts)))
+    req.onsuccess = () =>
+      resolve((req.result as Reading[]).sort((a, b) => a.ts.localeCompare(b.ts)))
     req.onerror = () => reject(req.error)
   })
 }
@@ -241,7 +245,8 @@ export async function importDump(dump: Dump): Promise<void> {
       try {
         for (const t of dump.tanks) await reqToPromise(() => tanks.put(t))
         for (const r of dump.readings) await reqToPromise(() => readings.put(r))
-        if (dump.settings) await reqToPromise(() => settings.put({ key: 'global', value: dump.settings }))
+        if (dump.settings)
+          await reqToPromise(() => settings.put({ key: 'global', value: dump.settings }))
       } catch (e) {
         tx.abort()
         reject(e)

@@ -25,4 +25,3 @@ describe('series utils', () => {
     expect(y1).toBeGreaterThanOrEqual(20)
   })
 })
-

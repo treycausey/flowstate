@@ -1,4 +1,4 @@
-"use client"
+'use client'
 
 import { useEffect, useState } from 'react'
 import { ensureSeed } from '@/lib/idb'
@@ -10,4 +10,3 @@ export default function InitSeed() {
   }, [])
   return ready ? null : null
 }
-

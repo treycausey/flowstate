@@ -3,7 +3,9 @@ export const events = new EventTarget()
 export type ReadingsChangedDetail = { tankId: string }
 
 export function emitReadingsChanged(tankId: string) {
-  events.dispatchEvent(new CustomEvent<ReadingsChangedDetail>('readings-changed', { detail: { tankId } }))
+  events.dispatchEvent(
+    new CustomEvent<ReadingsChangedDetail>('readings-changed', { detail: { tankId } }),
+  )
 }
 
 export function onReadingsChanged(cb: (tankId: string) => void) {
@@ -14,4 +16,3 @@ export function onReadingsChanged(cb: (tankId: string) => void) {
   events.addEventListener('readings-changed', handler)
   return () => events.removeEventListener('readings-changed', handler)
 }
-

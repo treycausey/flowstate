@@ -36,10 +36,10 @@ Track and visualize key freshwater aquarium chemistry over time to help hobbyist
 3. Visualization (Tufte‑inspired)
    - FR‑3.1: Small multiples: one minimal time‑series per metric (4 panels) sharing the same time axis.
    - FR‑3.2: Show shaded optimal band per metric:
-       - pH: 6.5–7.5
-       - Ammonia: 0 ppm (render as a baseline band at 0 with highlight when > 0)
-       - Nitrite: 0 ppm (same approach as Ammonia)
-       - Nitrate: 0–20 ppm (shade as optimal; 20–40 caution line; >40 out‑of‑range)
+     - pH: 6.5–7.5
+     - Ammonia: 0 ppm (render as a baseline band at 0 with highlight when > 0)
+     - Nitrite: 0 ppm (same approach as Ammonia)
+     - Nitrate: 0–20 ppm (shade as optimal; 20–40 caution line; >40 out‑of‑range)
    - FR‑3.3: Mark out‑of‑range points with subtle anomaly dots and list counts per metric.
    - FR‑3.4: Optional 7‑day rolling average toggle per panel.
    - FR‑3.5: Minimal design: thin lines, light grid or none, unobtrusive axes, high data‑ink ratio.

@@ -21,12 +21,15 @@ describe('QuickEntry', () => {
     // Avoid actual alert in JSDOM
     jest.spyOn(window, 'alert').mockImplementation(() => {})
     fireEvent.click(screen.getByRole('button', { name: /save/i }))
-    await waitFor(async () => {
-      const readings = await listReadingsByTank(tank.id)
-      expect(readings.length).toBeGreaterThan(0)
-      const last = readings[readings.length - 1]
-      expect(last?.pH).toBe(7.2)
-    }, { timeout: 3000 })
+    await waitFor(
+      async () => {
+        const readings = await listReadingsByTank(tank.id)
+        expect(readings.length).toBeGreaterThan(0)
+        const last = readings[readings.length - 1]
+        expect(last?.pH).toBe(7.2)
+      },
+      { timeout: 3000 },
+    )
   })
 
   it('prefills with last values', async () => {
@@ -43,9 +46,12 @@ describe('QuickEntry', () => {
     })
     renderWithProvider(<QuickEntry />)
     fireEvent.click(screen.getByRole('button', { name: /use last values/i }))
-    await waitFor(() => {
-      expect(screen.getByLabelText(/pH/i)).toHaveValue(7.1)
-    }, { timeout: 3000 })
+    await waitFor(
+      () => {
+        expect(screen.getByLabelText(/pH/i)).toHaveValue(7.1)
+      },
+      { timeout: 3000 },
+    )
   })
 
   it('shows Instructions modal and closes', async () => {
@@ -75,7 +81,9 @@ describe('QuickEntry', () => {
     expect(screen.getByText(/NO3 \(30 seconds\)/i)).toBeInTheDocument()
     expect(screen.getByText(/00:30/)).toBeInTheDocument()
     // Advance 1s and assert it ticks
-    act(() => { jest.advanceTimersByTime(1000) })
+    act(() => {
+      jest.advanceTimersByTime(1000)
+    })
     await waitFor(() => expect(screen.getByText(/00:29/)).toBeInTheDocument())
     jest.useRealTimers()
   })

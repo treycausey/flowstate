@@ -6,15 +6,14 @@ const compat = new FlatCompat({ baseDirectory: import.meta.dirname })
 
 export default [
   {
-    ignores: ['.next/**', 'node_modules/**', 'out/**', 'dist/**', 'coverage/**']
+    ignores: ['.next/**', 'node_modules/**', 'out/**', 'dist/**', 'coverage/**'],
   },
   ...compat.extends('next/core-web-vitals'),
   {
     files: ['**/*.test.{ts,tsx,js,jsx}'],
     plugins: { 'testing-library': testingLibrary, 'jest-dom': jestDom },
     rules: {
-      'testing-library/no-node-access': 'off'
-    }
-  }
+      'testing-library/no-node-access': 'off',
+    },
+  },
 ]
-

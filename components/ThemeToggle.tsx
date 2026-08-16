@@ -1,4 +1,4 @@
-"use client"
+'use client'
 
 import { useEffect, useState } from 'react'
 
@@ -10,7 +10,7 @@ export default function ThemeToggle() {
   const [theme, setTheme] = useState<Theme>('light')
 
   useEffect(() => {
-    const saved = (localStorage.getItem(key) as Theme | null)
+    const saved = localStorage.getItem(key) as Theme | null
     const sysDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
     const initial: Theme = saved ?? 'system'
     apply(initial, sysDark)

@@ -1,4 +1,4 @@
-"use client"
+'use client'
 
 import { useCallback } from 'react'
 import { useTanks } from '@/components/TankProvider'
@@ -57,7 +57,9 @@ export default function TankSwitcher() {
             </option>
           ))}
       </select>
-      <button className="button" onClick={onCreate}>New</button>
+      <button className="button" onClick={onCreate}>
+        New
+      </button>
       <button className="button button--ghost" onClick={onRename} disabled={!activeTankId}>
         Rename
       </button>

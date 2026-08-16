@@ -1,4 +1,4 @@
-"use client"
+'use client'
 
 import { createContext, useContext, useEffect, useMemo, useState, useCallback } from 'react'
 import { listTanks } from '@/lib/idb'
@@ -39,7 +39,7 @@ export function TankProvider({ children }: { children: React.ReactNode }) {
 
   const value = useMemo(
     () => ({ tanks, activeTankId, setActiveTankId, refresh }),
-    [tanks, activeTankId, refresh]
+    [tanks, activeTankId, refresh],
   )
 
   return <TankContext.Provider value={value}>{children}</TankContext.Provider>

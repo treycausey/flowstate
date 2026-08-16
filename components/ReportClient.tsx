@@ -1,4 +1,4 @@
-"use client"
+'use client'
 
 import { useEffect, useState } from 'react'
 import { listReadingsByTank, listTanks } from '@/lib/idb'
@@ -16,7 +16,7 @@ export default function ReportClient({ initialTankId }: { initialTankId?: string
     const load = async () => {
       const tanks = await listTanks()
       if (tanks.length === 0) return
-      const t = initialTankId ? tanks.find((x) => x.id === initialTankId) ?? tanks[0] : tanks[0]
+      const t = initialTankId ? (tanks.find((x) => x.id === initialTankId) ?? tanks[0]) : tanks[0]
       setTank(t)
       const rs = await listReadingsByTank(t.id)
       setReadings(rs)
@@ -79,7 +79,11 @@ export default function ReportClient({ initialTankId }: { initialTankId?: string
       <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
         <label>
           Range
-          <select value={range} onChange={(e) => setRange(e.target.value as any)} style={{ marginLeft: 6 }}>
+          <select
+            value={range}
+            onChange={(e) => setRange(e.target.value as any)}
+            style={{ marginLeft: 6 }}
+          >
             <option value="30">Last 30 days</option>
             <option value="90">Last 90 days</option>
             <option value="all">All time</option>

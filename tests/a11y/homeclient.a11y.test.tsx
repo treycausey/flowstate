@@ -12,10 +12,9 @@ describe('HomeClient a11y', () => {
     const { container } = render(
       <TankProvider>
         <HomeClient />
-      </TankProvider>
+      </TankProvider>,
     )
     const results = await axe(container)
     expect(results).toHaveNoViolations()
   })
 })
-

@@ -27,4 +27,3 @@ function escapeCsv(s: string) {
 function fixDecimals(n: number) {
   return Number.isFinite(n) ? String(Number(n.toFixed(3))) : ''
 }
-

@@ -26,4 +26,3 @@ export function summarizeOutOfRange(readings: Reading[]): SummaryCounts {
     { pH: 0, ammonia: 0, nitrite: 0, nitrate: 0 },
   )
 }
-

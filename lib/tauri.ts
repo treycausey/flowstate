@@ -7,4 +7,3 @@ export function isTauri(): boolean {
     (typeof navigator !== 'undefined' && /Tauri/i.test(navigator.userAgent || ''))
   )
 }
-

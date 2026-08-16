@@ -1,4 +1,4 @@
-"use client"
+'use client'
 
 import { useEffect, useMemo, useState } from 'react'
 import { useTanks } from '@/components/TankProvider'
@@ -23,7 +23,9 @@ export default function ReminderControls() {
       if (!activeTankId) return
       const r = await listReadingsByTank(activeTankId)
       setLastTs(r.length ? r[r.length - 1].ts : null)
-      setDue(isDue(r.length ? r[r.length - 1].ts : null, tank?.reminderCadence ?? null, activeTankId))
+      setDue(
+        isDue(r.length ? r[r.length - 1].ts : null, tank?.reminderCadence ?? null, activeTankId),
+      )
     }
     load()
   }, [activeTankId, tank?.reminderCadence])
@@ -38,7 +40,11 @@ export default function ReminderControls() {
     <div style={{ display: 'grid', gap: 8 }}>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
         {PRESETS.map((p) => (
-          <button key={p.days} onClick={() => setCadence(p.days)} aria-pressed={tank.reminderCadence === p.days}>
+          <button
+            key={p.days}
+            onClick={() => setCadence(p.days)}
+            aria-pressed={tank.reminderCadence === p.days}
+          >
             {p.label}
           </button>
         ))}
@@ -63,15 +69,32 @@ export default function ReminderControls() {
         {tank.reminderCadence ? `${tank.reminderCadence} days` : 'Off'}
       </div>
       {due && (
-        <div role="status" aria-live="polite" style={{ background: '#fff7ed', padding: 8, border: '1px solid #f97316' }}>
+        <div
+          role="status"
+          aria-live="polite"
+          style={{ background: '#fff7ed', padding: 8, border: '1px solid #f97316' }}
+        >
           <strong>Reminder:</strong> Time to test water for this tank.
           <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
-            <button onClick={() => { snooze24h(tank.id); setDue(false) }}>Snooze 24h</button>
-            <button onClick={() => { skipOnce(tank.id, tank.reminderCadence ?? 0, lastTs); setDue(false) }}>Skip</button>
+            <button
+              onClick={() => {
+                snooze24h(tank.id)
+                setDue(false)
+              }}
+            >
+              Snooze 24h
+            </button>
+            <button
+              onClick={() => {
+                skipOnce(tank.id, tank.reminderCadence ?? 0, lastTs)
+                setDue(false)
+              }}
+            >
+              Skip
+            </button>
           </div>
         </div>
       )}
     </div>
   )
 }
-

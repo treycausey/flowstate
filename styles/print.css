@@ -1,11 +1,37 @@
 @media print {
-  html, body { background: #fff !important; color: #000 !important; }
-  body { font-size: 11pt; line-height: 1.35; }
-  a { color: #000; text-decoration: underline; }
-  @page { margin: 12mm; }
+  html,
+  body {
+    background: #fff !important;
+    color: #000 !important;
+  }
+  body {
+    font-size: 11pt;
+    line-height: 1.35;
+  }
+  a {
+    color: #000;
+    text-decoration: underline;
+  }
+  @page {
+    margin: 12mm;
+  }
 
   /* Remove UI chrome for print */
-  .button, button, select, input, textarea, header, .ThemeToggle { display: none !important; }
-  .container { max-width: none; padding: 0; }
-  .card { box-shadow: none !important; border-color: #ddd; }
+  .button,
+  button,
+  select,
+  input,
+  textarea,
+  header,
+  .ThemeToggle {
+    display: none !important;
+  }
+  .container {
+    max-width: none;
+    padding: 0;
+  }
+  .card {
+    box-shadow: none !important;
+    border-color: #ddd;
+  }
 }

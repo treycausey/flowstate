@@ -10,11 +10,11 @@ export default function SettingsPage() {
       <header>
         <h1 className="section-title">Settings</h1>
         <p className="ink" style={{ color: 'var(--muted)' }}>
-          Manage storage and backups. Desktop builds use a local SQLite file; browser builds use IndexedDB.
+          Manage storage and backups. Desktop builds use a local SQLite file; browser builds use
+          IndexedDB.
         </p>
       </header>
       <SettingsClient />
     </main>
   )
 }
-

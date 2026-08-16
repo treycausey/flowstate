@@ -49,11 +49,15 @@ export function snooze24h(tankId: string, now: Date = new Date()) {
   saveState(tankId, state)
 }
 
-export function skipOnce(tankId: string, cadenceDays: number, lastTsISO: string | null, now: Date = new Date()) {
+export function skipOnce(
+  tankId: string,
+  cadenceDays: number,
+  lastTsISO: string | null,
+  now: Date = new Date(),
+) {
   const next = nextDue(lastTsISO, cadenceDays, now)
   const state = loadState(tankId)
   state.snoozeUntil = next ? next.toISOString() : null
   state.lastSkipAt = now.toISOString()
   saveState(tankId, state)
 }
-

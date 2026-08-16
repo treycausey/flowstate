@@ -10,4 +10,3 @@ describe('validation/normalizeInput', () => {
     expect(normalizeInput('pH', 4)).toBe(5)
   })
 })
-

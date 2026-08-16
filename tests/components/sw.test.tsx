@@ -12,4 +12,3 @@ describe('ServiceWorkerRegister', () => {
     expect(register).toHaveBeenCalled()
   })
 })
-

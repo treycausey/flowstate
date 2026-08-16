@@ -1,4 +1,4 @@
-"use client"
+'use client'
 
 type Props = {
   size?: number
@@ -55,4 +55,3 @@ export default function ProgressRing({
     </svg>
   )
 }
-

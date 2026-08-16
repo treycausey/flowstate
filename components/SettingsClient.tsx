@@ -1,4 +1,4 @@
-"use client"
+'use client'
 
 import { useEffect, useState } from 'react'
 import { isTauri } from '@/lib/tauri'
@@ -60,7 +60,10 @@ export default function SettingsClient() {
       try {
         const dialog = await import('@tauri-apps/api/dialog')
         const fs = await import('@tauri-apps/api/fs')
-        const selected = await dialog.open({ multiple: false, filters: [{ name: 'JSON', extensions: ['json'] }] })
+        const selected = await dialog.open({
+          multiple: false,
+          filters: [{ name: 'JSON', extensions: ['json'] }],
+        })
         const path = Array.isArray(selected) ? selected[0] : selected
         if (path && typeof path === 'string') {
           const text = await fs.readTextFile(path)

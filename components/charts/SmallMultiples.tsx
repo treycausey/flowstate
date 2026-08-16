@@ -1,4 +1,4 @@
-"use client"
+'use client'
 
 import MetricChart from './MetricChart'
 import { rollingAverage } from '@/lib/series'
@@ -39,10 +39,7 @@ export default function SmallMultiples({
           return rolled.length ? rolled[rolled.length - 1].value : null
         })()
         return (
-          <div
-            key={m}
-            style={{ padding: '8px 0 10px 0', borderBottom: '1px solid var(--border)' }}
-          >
+          <div key={m} style={{ padding: '8px 0 10px 0', borderBottom: '1px solid var(--border)' }}>
             <div
               style={{
                 display: 'flex',
@@ -55,18 +52,23 @@ export default function SmallMultiples({
               }}
             >
               <div>
-                {m.toUpperCase()} {avg7 != null && (
+                {m.toUpperCase()}{' '}
+                {avg7 != null && (
                   <span aria-label={`${m} 7-day average`} style={{ marginLeft: 6 }}>
-                    7‑day avg: <strong style={{ color: 'var(--ink)', fontWeight: 600 }}>
-                      {formatValue(m, avg7)}{m === 'pH' ? '' : ' ppm'}
+                    7‑day avg:{' '}
+                    <strong style={{ color: 'var(--ink)', fontWeight: 600 }}>
+                      {formatValue(m, avg7)}
+                      {m === 'pH' ? '' : ' ppm'}
                     </strong>
                   </span>
                 )}
               </div>
               {last != null && (
                 <div aria-label={`${m} ${labelText} value`} style={{ whiteSpace: 'nowrap' }}>
-                  {labelText}: <strong style={{ color: 'var(--ink)', fontWeight: 600 }}>
-                    {formatValue(m, last)}{m === 'pH' ? '' : ' ppm'}
+                  {labelText}:{' '}
+                  <strong style={{ color: 'var(--ink)', fontWeight: 600 }}>
+                    {formatValue(m, last)}
+                    {m === 'pH' ? '' : ' ppm'}
                   </strong>
                 </div>
               )}
