@@ -1,5 +1,5 @@
 steps:
-  - label: "Build and test"
+  - label: 'Build and test'
     command: |
       bun install --frozen-lockfile
       bun run lint
