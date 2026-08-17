@@ -1,0 +1,10 @@
+steps:
+  - label: "Build and test"
+    command: |
+      bun install --frozen-lockfile
+      bun run lint
+      bun run format:check
+      bun run test
+    timeout_in_minutes: 10
+    agents:
+      queue: default
