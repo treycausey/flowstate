@@ -79,6 +79,16 @@ Conventions
 - Component tests: `tests/components/*.test.tsx`
 - Run: `bun run test`
 
+## Continuous Integration
+
+CI runs on Buildkite, on a self-hosted macOS agent: https://buildkite.com/trey-causey/flowstate
+
+- Pipeline: `.buildkite/pipeline.yml` (install, lint, format check, test).
+- Every push and pull request builds automatically; the result lands as the
+  `buildkite/flowstate` commit status on GitHub.
+- There is no GitHub Actions workflow. It was retired on 2026-08-27 after a
+  ten-day parallel run against Buildkite showed no disagreement.
+
 ## Accessibility & Theming
 
 - Color‑blind‑friendly defaults, minimal charts, keyboardable inputs.
