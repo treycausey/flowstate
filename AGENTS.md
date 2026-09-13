@@ -5,12 +5,13 @@ Scope: Applies to the entire repo unless superseded by a more specific AGENTS.md
 
 ## Product Overview
 
-Flowstate (v1) — a local‑first, installable PWA that lets a single user track freshwater aquarium chemistry for multiple tanks and see minimalist, Tufte‑inspired charts with optimal ranges and out‑of‑range highlights. All requirements and tasking live in `tasks/`.
+Flowstate (v1) — a local‑first, installable PWA that lets a single user track freshwater aquarium chemistry for multiple tanks and see minimalist, Tufte‑inspired charts with optimal ranges and out‑of‑range highlights. v1 shipped in September 2025; `tasks/` contains its requirements and historical planning material.
 
 Authoritative sources:
 
 - PRD: `tasks/prd-aquarium-water-tracker.md` (Flowstate v1)
-- Work plan and file map: `tasks/tasks-prd-aquarium-water-tracker.md`
+- Current implementation: repository code and tests; consult history when needed to explain behavior.
+- Historical plan: `tasks/tasks-prd-aquarium-water-tracker.md`. Its checklist is stale and is not a source of current implementation status or new work requirements.
 
 ## Core Principles (Do/Don’t)
 
@@ -31,7 +32,7 @@ Authoritative sources:
 
 ## Directory & Key Files (expected)
 
-See `tasks/tasks-prd-aquarium-water-tracker.md` for the full map. Highlights:
+The original plan in `tasks/tasks-prd-aquarium-water-tracker.md` contains a historical file map. Check the current tree for the task at hand rather than treating that map as required structure. Original highlights:
 
 - `app/page.tsx` — dashboard/recent readings.
 - `app/tanks/page.tsx` — tank detail with small‑multiples (selection via query param).
@@ -106,7 +107,7 @@ See `tasks/tasks-prd-aquarium-water-tracker.md` for the full map. Highlights:
 
 A change is “done” when:
 
-- It satisfies the relevant FRs in the PRD and updates/uses the expected files.
+- It satisfies the requested behavior and relevant FRs in the PRD, using the current implementation structure.
 - Includes tests with meaningful coverage and passes locally.
 - Preserves offline operation and local storage semantics.
 - Meets accessibility and performance expectations.
@@ -128,9 +129,9 @@ A change is “done” when:
 ## Agent Workflow Notes
 
 - Treat `tasks/prd-aquarium-water-tracker.md` as the source of truth for scope and acceptance criteria. `tasks/tasks-prd-aquarium-water-tracker.md` is a stale, unmaintained checklist from before the September 2025 ship — do not use its checkbox state to judge what's built.
-- Prefer surgical changes aligned to the file map; avoid broad refactors without need.
+- Prefer scoped changes aligned to the current implementation; avoid broad refactors without need.
 - When adding a new module, also add tests and, if needed, brief docs.
-- Keep PRs small and cohesive; reference PRD sections and task IDs.
+- Keep PRs small and cohesive; reference relevant PRD sections and current task IDs when available.
 
 ## Local Dev (suggested)
 
@@ -142,4 +143,4 @@ Once a framework is scaffolded:
 - Lint/format: `bun run lint` / `bun run format` / `bun run format:check`
 - Build: `bun run build`
 
-This file is intended to keep future agents aligned with the PRD and task list. If you must deviate, update this AGENTS.md and the tasks checklist accordingly.
+Update this AGENTS.md or relevant product documentation when an authorized change makes it inaccurate. Leave the historical checklist unchanged; record new work in the current task or issue.
