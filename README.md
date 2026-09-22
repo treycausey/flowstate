@@ -81,13 +81,11 @@ Conventions
 
 ## Continuous Integration
 
-CI runs on Buildkite, on a self-hosted macOS agent: https://buildkite.com/trey-causey/flowstate
+There is no CI. Before you push, run `bun install --frozen-lockfile`,
+`bun run lint`, `bun run format:check`, and `bun run test`.
 
-- Pipeline: `.buildkite/pipeline.yml` (install, lint, format check, test).
-- Every push and pull request builds automatically; the result lands as the
-  `buildkite/flowstate` commit status on GitHub.
-- There is no GitHub Actions workflow. It was retired on 2026-08-27 after a
-  ten-day parallel run against Buildkite showed no disagreement.
+Buildkite ran CI from 2026-08-27 until it was removed on 2026-09-22. The
+pipeline file is in git history before that date.
 
 ## Accessibility & Theming
 
