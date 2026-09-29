@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useId, useRef, useState } from 'react'
-import { domainY, severity, type Point } from '@/lib/series'
+import { domainY, padTimeDomain, severity, type Point } from '@/lib/series'
 import { NITRATE_CAUTION_MAX, OPTIMAL, type Metric } from '@/lib/models'
 import { formatMetric, unitFor } from '@/lib/format'
 import { formatLocal } from '@/lib/time'
@@ -87,14 +87,12 @@ export default function MetricChart({
   }
 
   const times = points.map((p) => new Date(p.ts).getTime())
-  const [x0, x1] = xDomain ?? [Math.min(...times), Math.max(...times)]
+  const [x0, x1] = padTimeDomain(...(xDomain ?? [Math.min(...times), Math.max(...times)]))
   const [y0, y1] = domainY(
     metric,
     points.map((p) => p.value),
   )
-  const single = x1 === x0
-  const sx = (t: number) =>
-    single ? margin.left + innerW / 2 : ((t - x0) / (x1 - x0)) * innerW + margin.left
+  const sx = (t: number) => ((t - x0) / (x1 - x0)) * innerW + margin.left
   const sy = (v: number) => margin.top + innerH - ((v - y0) / (y1 - y0 || 1)) * innerH
   const band = (lo: number, hi: number) => {
     const top = sy(Math.min(hi, y1))
@@ -104,13 +102,19 @@ export default function MetricChart({
 
   const path = points.map((p, i) => `${i ? 'L' : 'M'}${sx(times[i])},${sy(p.value)}`).join(' ')
   const yTicks = linearTicks(y0, y1, 4)
-  const xTicks = timeTicks(x0, x1, resolvedW < 360 ? 3 : 4)
   const dtShort = new Intl.DateTimeFormat(
     undefined,
     x1 - x0 > 1.5 * DAY_MS
       ? { month: 'short', day: 'numeric' }
       : { month: 'short', day: 'numeric', hour: 'numeric' },
   )
+
+  // Never label two ticks with the same text
+  const xTicks: { t: number; label: string }[] = []
+  for (const t of timeTicks(x0, x1, resolvedW < 360 ? 3 : 4)) {
+    const label = dtShort.format(new Date(t))
+    if (!xTicks.some((tick) => tick.label === label)) xTicks.push({ t, label })
+  }
 
   const nearestIndex = (clientX: number, svg: SVGSVGElement) => {
     const rect = svg.getBoundingClientRect()
@@ -201,24 +205,16 @@ export default function MetricChart({
             </text>
           </g>
         ))}
-        {xTicks.map((xt, i) => (
+        {xTicks.map(({ t, label }, i) => (
           <text
             key={`x-${i}`}
-            x={sx(xt)}
+            x={sx(t)}
             y={margin.top + innerH + 14}
-            textAnchor={
-              xTicks.length === 1
-                ? 'middle'
-                : i === 0
-                  ? 'start'
-                  : i === xTicks.length - 1
-                    ? 'end'
-                    : 'middle'
-            }
+            textAnchor={x1 <= x0 ? 'middle' : t <= x0 ? 'start' : t >= x1 ? 'end' : 'middle'}
             fill="var(--muted)"
             fontSize="10"
           >
-            {dtShort.format(new Date(xt))}
+            {label}
           </text>
         ))}
         <g clipPath={`url(#${clipId})`}>

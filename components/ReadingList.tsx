@@ -1,9 +1,10 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTanks } from '@/components/TankProvider'
-import { deleteReading, listReadingsByTank, listReadingsWithinHour, updateReading } from '@/lib/idb'
-import { emitReadingsChanged, onReadingsChanged } from '@/lib/events'
+import { deleteReading, listReadingsWithinHour, updateReading } from '@/lib/idb'
+import { emitReadingsChanged } from '@/lib/events'
+import { useTankReadings } from '@/lib/useTankReadings'
 import { METRICS, METRIC_SHORT, type Metric, type Reading } from '@/lib/models'
 import { parseReadingInputs, stepMetricText } from '@/lib/validation'
 import { formatLocal, fromDatetimeLocalValue, toDatetimeLocalValue } from '@/lib/time'
@@ -43,29 +44,14 @@ function MetricCell({ metric, value }: { metric: Metric; value: number | null })
 
 export default function ReadingList({ limit = 10 }: { limit?: number }) {
   const { activeTankId } = useTanks()
-  const [items, setItems] = useState<Reading[]>([])
+  const { readings, failed } = useTankReadings(activeTankId)
+  const items = useMemo(() => (readings ?? []).slice().reverse(), [readings]) // newest first
   const [showAllFor, setShowAllFor] = useState<string | null>(null)
   const showAll = showAllFor !== null && showAllFor === activeTankId
   const [editingReading, setEditingReading] = useState<Reading | null>(null)
   const [draft, setDraft] = useState<DraftReading | null>(null)
   const [error, setError] = useState<string | null>(null)
   const firstFieldRef = useRef<HTMLInputElement>(null)
-
-  useEffect(() => {
-    let mounted = true
-    const load = async () => {
-      const all = activeTankId ? await listReadingsByTank(activeTankId) : []
-      if (mounted) setItems(all.slice().reverse()) // newest first
-    }
-    load()
-    const off = onReadingsChanged((tankId) => {
-      if (tankId === activeTankId) load()
-    })
-    return () => {
-      mounted = false
-      off()
-    }
-  }, [activeTankId])
 
   const cancelEditing = () => {
     setEditingReading(null)
@@ -94,8 +80,13 @@ export default function ReadingList({ limit = 10 }: { limit?: number }) {
 
   const onDelete = async (reading: Reading) => {
     if (!window.confirm(`Delete the reading from ${formatLocal(new Date(reading.ts))}?`)) return
-    await deleteReading(reading.id)
-    setItems((prev) => prev.filter((r) => r.id !== reading.id))
+    try {
+      await deleteReading(reading.id)
+    } catch (err) {
+      console.error('Failed to delete reading', err)
+      setError(`Couldn’t delete: ${err instanceof Error ? err.message : String(err)}`)
+      return
+    }
     if (editingReading?.id === reading.id) cancelEditing()
     emitReadingsChanged(reading.tankId)
   }
@@ -155,11 +146,6 @@ export default function ReadingList({ limit = 10 }: { limit?: number }) {
       setError(`Couldn’t save: ${err instanceof Error ? err.message : String(err)}`)
       return
     }
-    setItems((prev) =>
-      prev
-        .map((x) => (x.id === next.id ? next : x))
-        .sort((a, b) => new Date(b.ts).getTime() - new Date(a.ts).getTime()),
-    )
     emitReadingsChanged(next.tankId)
     cancelEditing()
   }
@@ -176,7 +162,11 @@ export default function ReadingList({ limit = 10 }: { limit?: number }) {
   return (
     <div>
       <h2 className="section-title">Recent readings</h2>
-      {items.length === 0 ? (
+      {failed ? (
+        <p className="danger" role="alert">
+          Couldn&apos;t load readings.
+        </p>
+      ) : readings === null ? null : items.length === 0 ? (
         <p className="muted">No readings yet. Log your first test above.</p>
       ) : (
         <div className="table-scroll">
@@ -232,7 +222,7 @@ export default function ReadingList({ limit = 10 }: { limit?: number }) {
           </table>
         </div>
       )}
-      {items.length > limit && (
+      {!failed && items.length > limit && (
         <button
           type="button"
           className="button button--ghost"

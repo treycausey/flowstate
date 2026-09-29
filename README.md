@@ -9,7 +9,7 @@ Local-first app to log freshwater aquarium chemistry and visualize trends with m
 
 - Prereqs: Bun 1.x
 - Install: `bun install`
-- Dev: `bun run dev` then open http://localhost:4040
+- Dev: `bun run dev` then open http://127.0.0.1:4040
 - Lint: `bun run lint`
 - Format: `bun run format`
 - Format check: `bun run format:check`

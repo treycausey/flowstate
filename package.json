@@ -4,9 +4,9 @@
   "private": true,
   "license": "MIT",
   "scripts": {
-    "dev": "next dev -p 4040",
+    "dev": "next dev -H 127.0.0.1 -p 4040",
     "build": "next build",
-    "start": "next start -p 4040",
+    "start": "next start -H 127.0.0.1 -p 4040",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",

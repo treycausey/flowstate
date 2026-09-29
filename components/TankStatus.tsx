@@ -1,9 +1,7 @@
 'use client'
 
-import { useEffect, useState } from 'react'
 import { useTanks } from '@/components/TankProvider'
-import { listReadingsByTank } from '@/lib/idb'
-import { onReadingsChanged } from '@/lib/events'
+import { useTankReadings } from '@/lib/useTankReadings'
 import { METRICS, METRIC_SHORT, type Metric, type Reading } from '@/lib/models'
 import { formatMetric, unitFor } from '@/lib/format'
 import { severity } from '@/lib/series'
@@ -106,41 +104,15 @@ export function TankStatusView({ readings, now }: { readings: Reading[]; now?: D
 /** Dashboard status for the active tank: cycle status, days since last test, latest values. */
 export default function TankStatus() {
   const { activeTankId } = useTanks()
-  // Tagged with its tank so a stale or unloaded list is never shown as "No tests yet"
-  const [loaded, setLoaded] = useState<{ tankId: string; readings: Reading[] } | null>(null)
-  const [failedTankId, setFailedTankId] = useState<string | null>(null)
-
-  useEffect(() => {
-    let mounted = true
-    const load = async () => {
-      if (!activeTankId) return
-      try {
-        const all = await listReadingsByTank(activeTankId)
-        if (!mounted) return
-        setFailedTankId(null)
-        setLoaded({ tankId: activeTankId, readings: all })
-      } catch (err) {
-        console.error('Failed to load tank status', err)
-        if (mounted) setFailedTankId(activeTankId)
-      }
-    }
-    load()
-    const off = onReadingsChanged((tankId) => {
-      if (tankId === activeTankId) load()
-    })
-    return () => {
-      mounted = false
-      off()
-    }
-  }, [activeTankId])
+  const { readings, failed } = useTankReadings(activeTankId)
 
   if (!activeTankId) return null
-  if (failedTankId === activeTankId)
+  if (failed)
     return (
       <p className="muted" role="alert">
         Couldn&apos;t load status.
       </p>
     )
-  if (loaded?.tankId !== activeTankId) return null
-  return <TankStatusView readings={loaded.readings} />
+  if (!readings) return null
+  return <TankStatusView readings={readings} />
 }

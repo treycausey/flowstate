@@ -580,6 +580,29 @@ table.summary {
   max-width: 36rem;
   gap: var(--space-4);
 }
+/* Phones: keep Save reachable without scrolling past the chips */
+@media (max-width: 37.5rem) {
+  html {
+    /* Focused fields scroll clear of the sticky action row */
+    scroll-padding-bottom: 7rem;
+  }
+  .quick-entry .quick-entry-actions {
+    position: sticky;
+    bottom: 0;
+    z-index: 5;
+    margin-inline: calc(-1 * var(--space-4));
+    padding: var(--space-3) var(--space-4);
+    padding-bottom: calc(var(--space-3) + env(safe-area-inset-bottom, 0px));
+    background: var(--bg);
+    border-top: 1px solid var(--border);
+    /* Tighter buttons so all three fit on one row at 375px */
+    gap: var(--space-2);
+  }
+  .quick-entry .quick-entry-actions .button {
+    padding-inline: 0.5rem;
+    font-size: 0.9rem;
+  }
+}
 .field {
   display: grid;
   gap: var(--space-1);
