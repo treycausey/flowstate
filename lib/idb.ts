@@ -1,84 +1,114 @@
-import type { Reading, Settings, Tank } from './models'
+import type { Dump, Reading, Settings, Tank } from './models'
 import * as idb from './idb-browser'
 import * as sqlite from './sqlite'
 import { isTauri } from './tauri'
+import { compareTs, toStorageTs } from './time'
+import { parseDump } from './backup'
 
-const api = isTauri() ? sqlite : idb
+// Resolve lazily so the choice is made in the browser, not at module evaluation during SSR
+const api = () => (isTauri() ? sqlite : idb)
 
-export const getAll = idb.getAll // browser-only helper (unused in sqlite)
+const byCreatedAt = (a: Tank, b: Tank) => a.createdAt.localeCompare(b.createdAt)
 
 // Tanks
-export function listTanks(): Promise<Tank[]> {
-  return api.listTanks()
+export async function listTanks(): Promise<Tank[]> {
+  return (await api().listTanks()).slice().sort(byCreatedAt)
 }
 
 export function createTank(name: string, reminderCadence: number | null = null): Promise<Tank> {
-  return api.createTank(name, reminderCadence)
+  return api().createTank(name.trim(), reminderCadence)
 }
 
 export function renameTank(id: string, name: string): Promise<void> {
-  return api.renameTank(id, name)
+  return api().renameTank(id, name.trim())
 }
 
 export function archiveTank(id: string): Promise<void> {
-  return api.archiveTank(id)
+  return api().archiveTank(id)
 }
 
 export function setTankReminderCadence(id: string, days: number | null): Promise<void> {
-  return api.setTankReminderCadence(id, days)
+  return api().setTankReminderCadence(id, days)
 }
 
-// Readings
+// Readings. Timestamps are normalized to UTC so string-ordered indexes stay chronological.
 export function addReading(input: Omit<Reading, 'id'> & { id?: string }): Promise<Reading> {
-  return api.addReading(input)
+  return api().addReading({ ...input, ts: toStorageTs(input.ts) })
 }
 
 export function updateReading(reading: Reading): Promise<void> {
-  return api.updateReading(reading)
+  return api().updateReading({ ...reading, ts: toStorageTs(reading.ts) })
 }
 
 export function deleteReading(id: string): Promise<void> {
-  return api.deleteReading(id)
+  return api().deleteReading(id)
 }
 
-export function listReadingsByTank(tankId: string): Promise<Reading[]> {
-  return api.listReadingsByTank(tankId)
+/** All readings for a tank, oldest first. */
+export async function listReadingsByTank(tankId: string): Promise<Reading[]> {
+  return (await api().listReadingsByTank(tankId)).slice().sort(compareTs)
 }
 
-export function listReadingsByTankInRange(
+export async function listReadingsByTankInRange(
   tankId: string,
   fromISO: string,
   toISO: string,
 ): Promise<Reading[]> {
-  return api.listReadingsByTankInRange(tankId, fromISO, toISO)
+  const rows = await api().listReadingsByTankInRange(
+    tankId,
+    toStorageTs(fromISO),
+    toStorageTs(toISO),
+  )
+  return rows.slice().sort(compareTs)
 }
 
-export function findMostRecentReading(tankId: string): Promise<Reading | undefined> {
-  return api.findMostRecentReading(tankId)
+export async function findMostRecentReading(tankId: string): Promise<Reading | undefined> {
+  const all = await listReadingsByTank(tankId)
+  return all.length > 0 ? all[all.length - 1] : undefined
 }
 
-export function listReadingsWithinHour(tankId: string, tsISO: string): Promise<Reading[]> {
-  return api.listReadingsWithinHour(tankId, tsISO)
+/** Readings within ±30 minutes of `tsISO`, optionally ignoring one reading (e.g. the one being edited). */
+export async function listReadingsWithinHour(
+  tankId: string,
+  tsISO: string,
+  excludeId?: string,
+): Promise<Reading[]> {
+  const center = new Date(tsISO).getTime()
+  const start = new Date(center - 30 * 60 * 1000).toISOString()
+  const end = new Date(center + 30 * 60 * 1000).toISOString()
+  const rows = await listReadingsByTankInRange(tankId, start, end)
+  return excludeId ? rows.filter((r) => r.id !== excludeId) : rows
 }
 
 // Settings
 export function getSettings(): Promise<Settings | undefined> {
-  return api.getSettings()
+  return api().getSettings()
 }
 
 export function setSettings(value: Settings): Promise<void> {
-  return api.setSettings(value)
+  return api().setSettings(value)
 }
 
-// Seed/init
+// Seed/init: create the first tank on first run. Concurrent callers share one creation.
+let seeding: Promise<Tank> | null = null
 export function ensureSeed(): Promise<Tank> {
-  return api.ensureSeed()
+  if (!seeding) {
+    seeding = (async () => {
+      const tanks = await listTanks()
+      if (tanks.length > 0) return tanks.find((t) => !t.archivedAt) ?? tanks[0]
+      return createTank('My Tank')
+    })().finally(() => {
+      seeding = null
+    })
+  }
+  return seeding
 }
 
-export function exportDump() {
-  return api.exportDump()
+export function exportDump(): Promise<Dump> {
+  return api().exportDump()
 }
 
-export function importDump(dump: any) {
-  return api.importDump(dump)
+/** Validates the backup first; throws BackupFormatError without writing anything if invalid. */
+export async function importDump(data: unknown): Promise<void> {
+  return api().importDump(parseDump(data))
 }

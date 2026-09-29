@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useRef } from 'react'
 
 type Props = {
   open: boolean
@@ -11,13 +11,17 @@ type Props = {
 export default function InstructionsModal({ open, onClose, onStartTimer }: Props) {
   const dialogRef = useRef<HTMLDivElement | null>(null)
   const closeBtnRef = useRef<HTMLButtonElement | null>(null)
+  // Keep the latest onClose without re-running the open effect (which would steal focus)
+  const onCloseRef = useRef(onClose)
+  onCloseRef.current = onClose
 
   useEffect(() => {
     if (!open) return
+    const previouslyFocused = document.activeElement as HTMLElement | null
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault()
-        onClose()
+        onCloseRef.current()
       }
       if (e.key === 'Tab' && dialogRef.current) {
         // Simple focus trap: cycle within dialog
@@ -40,26 +44,22 @@ export default function InstructionsModal({ open, onClose, onStartTimer }: Props
     document.addEventListener('keydown', onKey)
     // Focus the close button on open for keyboard users
     closeBtnRef.current?.focus()
-    return () => document.removeEventListener('keydown', onKey)
-  }, [open, onClose])
-
-  // no internal timers to cleanup
-
-  const overlayProps = useMemo(
-    () => ({
-      className: 'modal-overlay',
-      onClick: (e: React.MouseEvent) => {
-        // Click outside dialog closes
-        if (e.target === e.currentTarget) onClose()
-      },
-    }),
-    [onClose],
-  )
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      previouslyFocused?.focus?.()
+    }
+  }, [open])
 
   if (!open) return null
 
   return (
-    <div {...overlayProps}>
+    <div
+      className="modal-overlay"
+      onClick={(e) => {
+        // Click outside dialog closes
+        if (e.target === e.currentTarget) onClose()
+      }}
+    >
       <div
         ref={dialogRef}
         role="dialog"
@@ -70,7 +70,7 @@ export default function InstructionsModal({ open, onClose, onStartTimer }: Props
         <div className="stack">
           <header className="cluster" style={{ justifyContent: 'space-between' }}>
             <h3 id="instructions-title" style={{ margin: 0 }}>
-              Instructions
+              Test instructions
             </h3>
             <button
               ref={closeBtnRef}
@@ -99,6 +99,9 @@ export default function InstructionsModal({ open, onClose, onStartTimer }: Props
             </p>
           </div>
 
+          <p style={{ margin: 0, fontSize: 'var(--step--1)', color: 'var(--muted)' }}>
+            Steps for the API Freshwater Master Test Kit. Timers keep running after you close this.
+          </p>
           <div className="cluster" style={{ justifyContent: 'space-between' }}>
             <div className="cluster">
               <button

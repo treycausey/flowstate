@@ -5,7 +5,12 @@ type Props = { size?: number; color?: string; title?: string }
 export default function Logo({ size = 24, color = 'var(--accent)', title = 'Flowstate' }: Props) {
   const s = size
   return (
-    <svg width={s} height={s} viewBox="0 0 24 24" role="img" aria-label={title}>
+    <svg
+      width={s}
+      height={s}
+      viewBox="0 0 24 24"
+      {...(title ? { role: 'img', 'aria-label': title } : { 'aria-hidden': true })}
+    >
       <defs>
         <linearGradient id="fs-g" x1="0" y1="0" x2="1" y2="1">
           <stop offset="0%" stopColor={color} />

@@ -1,45 +1,85 @@
 'use client'
 
-import { createContext, useContext, useEffect, useMemo, useState, useCallback } from 'react'
-import { listTanks } from '@/lib/idb'
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
+import { ensureSeed, listTanks } from '@/lib/idb'
 import type { Tank } from '@/lib/models'
 
 type Ctx = {
+  /** All tanks, including archived ones */
   tanks: Tank[]
+  /** Tanks that are not archived, in creation order */
+  activeTanks: Tank[]
   activeTankId: string | null
+  activeTank: Tank | null
+  loaded: boolean
   setActiveTankId: (id: string) => void
   refresh: () => Promise<void>
 }
 
 const TankContext = createContext<Ctx | null>(null)
+const STORAGE_KEY = 'activeTankId'
+
+function readSaved() {
+  try {
+    return typeof window !== 'undefined' ? localStorage.getItem(STORAGE_KEY) : null
+  } catch {
+    return null
+  }
+}
+
+function persist(id: string) {
+  try {
+    localStorage.setItem(STORAGE_KEY, id)
+  } catch {
+    // ignore: private mode / storage disabled
+  }
+}
 
 export function TankProvider({ children }: { children: React.ReactNode }) {
   const [tanks, setTanks] = useState<Tank[]>([])
-  const [activeTankId, setActiveTankIdState] = useState<string | null>(null)
+  // Lazy init is hydration-safe: nothing tank-specific renders until tanks load on the client
+  const [selectedId, setSelectedId] = useState<string | null>(readSaved)
+  const [loaded, setLoaded] = useState(false)
 
   const refresh = useCallback(async () => {
-    const all = await listTanks()
-    setTanks(all)
-    if (!activeTankId && all.length > 0) {
-      setActiveTankIdState(all[0].id)
+    let all = await listTanks()
+    if (all.length === 0) {
+      await ensureSeed()
+      all = await listTanks()
     }
-  }, [activeTankId])
-
-  useEffect(() => {
-    const saved = typeof window !== 'undefined' ? localStorage.getItem('activeTankId') : null
-    if (saved) setActiveTankIdState(saved)
-    refresh()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    setTanks(all)
+    setLoaded(true)
   }, [])
 
-  const setActiveTankId = (id: string) => {
-    setActiveTankIdState(id)
-    if (typeof window !== 'undefined') localStorage.setItem('activeTankId', id)
-  }
+  useEffect(() => {
+    refresh().catch(() => setLoaded(true))
+  }, [refresh])
+
+  const activeTanks = useMemo(() => tanks.filter((t) => !t.archivedAt), [tanks])
+
+  // Fall back to the first unarchived tank when the saved/selected one is missing or archived
+  const activeTank = useMemo(
+    () => activeTanks.find((t) => t.id === selectedId) ?? activeTanks[0] ?? null,
+    [activeTanks, selectedId],
+  )
+  const activeTankId = activeTank?.id ?? null
+
+  const setActiveTankId = useCallback((id: string) => {
+    setSelectedId(id)
+    persist(id)
+  }, [])
 
   const value = useMemo(
-    () => ({ tanks, activeTankId, setActiveTankId, refresh }),
-    [tanks, activeTankId, refresh],
+    () => ({
+      tanks,
+      activeTanks,
+      activeTankId,
+      activeTank,
+      loaded,
+      setActiveTankId,
+      refresh,
+    }),
+    [tanks, activeTanks, activeTankId, activeTank, loaded, setActiveTankId, refresh],
   )
 
   return <TankContext.Provider value={value}>{children}</TankContext.Provider>

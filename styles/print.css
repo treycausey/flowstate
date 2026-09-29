@@ -1,4 +1,18 @@
 @media print {
+  html:root,
+  html:root[data-theme] {
+    --bg: #fff;
+    --fg: #000;
+    --ink: #000;
+    --muted: #444;
+    --border: #bbb;
+    --grid: #e5e5e5;
+    --danger: #b91c1c;
+    --caution: #92400e;
+    --band-ok: #e7f5dc;
+    --band-caution: #fdf3c4;
+    color-scheme: light;
+  }
   html,
   body {
     background: #fff !important;
@@ -7,6 +21,8 @@
   body {
     font-size: 11pt;
     line-height: 1.35;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
   a {
     color: #000;
@@ -17,13 +33,13 @@
   }
 
   /* Remove UI chrome for print */
-  .button,
+  .site-header,
+  .no-print,
+  .chart-readout,
   button,
   select,
   input,
-  textarea,
-  header,
-  .ThemeToggle {
+  textarea {
     display: none !important;
   }
   .container {
@@ -33,5 +49,8 @@
   .card {
     box-shadow: none !important;
     border-color: #ddd;
+  }
+  .panel {
+    break-inside: avoid;
   }
 }

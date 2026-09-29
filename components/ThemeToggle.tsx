@@ -4,48 +4,38 @@ import { useEffect, useState } from 'react'
 
 type Theme = 'light' | 'dark' | 'system'
 
-const key = 'theme'
+export const THEME_KEY = 'theme'
+
+function readTheme(): Theme {
+  try {
+    const saved = localStorage.getItem(THEME_KEY)
+    return saved === 'light' || saved === 'dark' ? saved : 'system'
+  } catch {
+    return 'system'
+  }
+}
 
 export default function ThemeToggle() {
-  const [theme, setTheme] = useState<Theme>('light')
+  const [theme, setTheme] = useState<Theme>('system')
 
-  useEffect(() => {
-    const saved = localStorage.getItem(key) as Theme | null
-    const sysDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
-    const initial: Theme = saved ?? 'system'
-    apply(initial, sysDark)
-    if (window.matchMedia) {
-      const mq = window.matchMedia('(prefers-color-scheme: dark)')
-      const handler = (e: MediaQueryListEvent) => {
-        const current = (localStorage.getItem(key) as Theme | null) ?? 'system'
-        if (current === 'system') apply('system', e.matches)
-      }
-      mq.addEventListener?.('change', handler)
-      return () => mq.removeEventListener?.('change', handler)
-    }
-  }, [])
+  useEffect(() => setTheme(readTheme()), [])
 
-  const apply = (t: Theme, sysDark?: boolean) => {
-    setTheme(t)
-    if (t === 'system') {
-      document.documentElement.setAttribute('data-theme', 'system')
-      // no explicit variables needed; CSS handles via media query
-    } else {
-      document.documentElement.setAttribute('data-theme', t)
+  const onChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const next = e.target.value as Theme
+    setTheme(next)
+    document.documentElement.setAttribute('data-theme', next)
+    try {
+      localStorage.setItem(THEME_KEY, next)
+    } catch {
+      // ignore
     }
-    localStorage.setItem(key, t)
   }
 
-  const onChange = (e: React.ChangeEvent<HTMLSelectElement>) => apply(e.target.value as Theme)
-
   return (
-    <label>
-      Theme
-      <select value={theme} onChange={onChange} style={{ marginLeft: 6 }} aria-label="Color theme">
-        <option value="light">Light</option>
-        <option value="dark">Dark</option>
-        <option value="system">System</option>
-      </select>
-    </label>
+    <select value={theme} onChange={onChange} aria-label="Color theme" className="theme-select">
+      <option value="system">Auto</option>
+      <option value="light">Light</option>
+      <option value="dark">Dark</option>
+    </select>
   )
 }

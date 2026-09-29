@@ -1,147 +1,190 @@
 'use client'
 
-import { isOutOfRange, domainY } from '@/lib/series'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
+import { domainY, severity, type Point } from '@/lib/series'
+import { NITRATE_CAUTION_MAX, OPTIMAL, type Metric } from '@/lib/models'
+import { formatMetric, unitFor } from '@/lib/format'
+import { formatLocal } from '@/lib/time'
 
 type Props = {
-  metric: 'pH' | 'ammonia' | 'nitrite' | 'nitrate'
-  points: { ts: string; value: number }[]
+  metric: Metric
+  points: Point[]
+  /** Shared time domain (ms) so small multiples line up; defaults to the points' extent */
+  xDomain?: [number, number]
   width?: number // if omitted, chart fills parent width
   height?: number
   showAxisLabels?: boolean
 }
 
+const DAY_MS = 24 * 60 * 60 * 1000
+
+function niceStep(min: number, max: number, count: number) {
+  const span = Math.max(1e-9, max - min)
+  const step0 = span / Math.max(1, count)
+  const mag = Math.pow(10, Math.floor(Math.log10(step0)))
+  const err = step0 / mag
+  return err >= 7 ? 10 * mag : err >= 3 ? 5 * mag : err >= 1.5 ? 2 * mag : mag
+}
+
+function linearTicks(min: number, max: number, count: number) {
+  const s = niceStep(min, max, count)
+  const ticks: number[] = []
+  for (let v = Math.ceil(min / s) * s; v <= max + 1e-9; v += s)
+    ticks.push(Number((Math.round(v / s) * s).toFixed(6)))
+  return ticks
+}
+
+function timeTicks(x0: number, x1: number, maxTicks: number) {
+  if (x1 <= x0) return [x0]
+  return Array.from(
+    { length: maxTicks },
+    (_, i) => x0 + Math.round((i / (maxTicks - 1)) * (x1 - x0)),
+  )
+}
+
 export default function MetricChart({
   metric,
   points,
+  xDomain,
   width,
   height = 100,
   showAxisLabels = true,
 }: Props) {
   const wrapperRef = useRef<HTMLDivElement>(null)
-  const [w, setW] = useState<number | null>(null)
+  const [measured, setMeasured] = useState<number | null>(null)
+  const [active, setActive] = useState<number | null>(null)
+  const clipId = `clip-${useId().replace(/:/g, '')}`
 
   useEffect(() => {
-    if (width) {
-      setW(width)
-      return
-    }
+    if (width) return
     const el = wrapperRef.current
     if (!el) return
     const obs = new ResizeObserver((entries) => {
-      for (const e of entries) setW(Math.max(0, Math.floor(e.contentRect.width)))
+      for (const e of entries) setMeasured(Math.max(0, Math.floor(e.contentRect.width)))
     })
     obs.observe(el)
-    setW(Math.max(0, Math.floor(el.clientWidth)))
+    setMeasured(Math.max(0, Math.floor(el.clientWidth)))
     return () => obs.disconnect()
   }, [width])
 
-  const resolvedW = width ?? (w && w > 0 ? w : 320)
-  const margin = { left: 40, right: 16, top: 12, bottom: 32 }
+  useEffect(() => setActive(null), [points])
+
+  const resolvedW = width ?? (measured && measured > 0 ? measured : 320)
+  const margin = { left: 40, right: 12, top: 8, bottom: showAxisLabels ? 32 : 20 }
   const innerW = Math.max(0, resolvedW - margin.left - margin.right)
   const innerH = Math.max(0, height - margin.top - margin.bottom)
 
-  if (points.length === 0) return <div ref={wrapperRef} style={{ width: '100%', height }} />
-  if (!resolvedW) return <div ref={wrapperRef} style={{ width: '100%', height }} />
+  if (points.length === 0) {
+    return (
+      <div ref={wrapperRef} className="chart-empty" style={{ height }}>
+        No data in this range
+      </div>
+    )
+  }
 
   const times = points.map((p) => new Date(p.ts).getTime())
-  const values = points.map((p) => p.value)
-  const x0 = Math.min(...times)
-  const x1 = Math.max(...times)
-  const [y0, y1] = domainY(metric, values)
-  const sx = (t: number) => ((t - x0) / (x1 - x0 || 1)) * innerW + margin.left
-  const sy = (v: number) => height - margin.bottom - ((v - y0) / (y1 - y0 || 1)) * innerH
-  const path = points
-    .map((p, i) => `${i ? 'L' : 'M'}${sx(new Date(p.ts).getTime())},${sy(p.value)}`)
-    .join(' ')
-
-  const yLabel = metric === 'pH' ? 'pH' : 'ppm'
-
-  // Tick helpers (lightweight "nice" ticks)
-  function niceStep(min: number, max: number, count: number) {
-    const span = Math.max(1e-9, max - min)
-    const step0 = span / Math.max(1, count)
-    const mag = Math.pow(10, Math.floor(Math.log10(step0)))
-    const err = step0 / mag
-    const step = err >= 7 ? 10 * mag : err >= 3 ? 5 * mag : err >= 1.5 ? 2 * mag : mag
-    return step
-  }
-  function linearTicks(min: number, max: number, count: number) {
-    const s = niceStep(min, max, count)
-    const start = Math.ceil(min / s) * s
-    const ticks: number[] = []
-    for (let v = start; v <= max + 1e-9; v += s)
-      ticks.push(Number((Math.round(v / s) * s).toFixed(6)))
-    return ticks
-  }
-  const yTicks = linearTicks(y0, y1, 4)
-  const spanMs = Math.max(1, x1 - x0)
-  const xTickCount = 4
-  const xTicks = Array.from(
-    { length: xTickCount },
-    (_, i) => x0 + Math.round((i / (xTickCount - 1)) * spanMs),
+  const [x0, x1] = xDomain ?? [Math.min(...times), Math.max(...times)]
+  const [y0, y1] = domainY(
+    metric,
+    points.map((p) => p.value),
   )
-  const dtShort =
-    spanMs > 1000 * 60 * 60 * 24 * 3
-      ? new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' })
-      : new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' })
+  const single = x1 === x0
+  const sx = (t: number) =>
+    single ? margin.left + innerW / 2 : ((t - x0) / (x1 - x0)) * innerW + margin.left
+  const sy = (v: number) => margin.top + innerH - ((v - y0) / (y1 - y0 || 1)) * innerH
+  const band = (lo: number, hi: number) => {
+    const top = sy(Math.min(hi, y1))
+    const bottom = sy(Math.max(lo, y0))
+    return { y: top, height: Math.max(0, bottom - top) }
+  }
+
+  const path = points.map((p, i) => `${i ? 'L' : 'M'}${sx(times[i])},${sy(p.value)}`).join(' ')
+  const yTicks = linearTicks(y0, y1, 4)
+  const xTicks = timeTicks(x0, x1, resolvedW < 360 ? 3 : 4)
+  const dtShort = new Intl.DateTimeFormat(
+    undefined,
+    x1 - x0 > 1.5 * DAY_MS
+      ? { month: 'short', day: 'numeric' }
+      : { month: 'short', day: 'numeric', hour: 'numeric' },
+  )
+
+  const nearestIndex = (clientX: number, svg: SVGSVGElement) => {
+    const rect = svg.getBoundingClientRect()
+    const x = clientX - rect.left
+    let best = 0
+    for (let i = 1; i < times.length; i++) {
+      if (Math.abs(sx(times[i]) - x) < Math.abs(sx(times[best]) - x)) best = i
+    }
+    return best
+  }
+
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+      e.preventDefault()
+      const dir = e.key === 'ArrowRight' ? 1 : -1
+      setActive((i) =>
+        i === null
+          ? dir > 0
+            ? 0
+            : points.length - 1
+          : Math.min(points.length - 1, Math.max(0, i + dir)),
+      )
+    } else if (e.key === 'Escape') {
+      setActive(null)
+    }
+  }
+
+  const activePoint = active !== null ? points[active] : null
+  const label = `${metric} over time, ${points.length} reading${points.length === 1 ? '' : 's'}. Use left and right arrow keys to inspect values.`
 
   return (
-    <div ref={wrapperRef} style={{ width: '100%' }}>
-      <svg width={resolvedW} height={height} aria-label={`${metric} chart`}>
-        <rect x={0} y={0} width={resolvedW} height={height} fill="none" />
-        {/* Optimal band shading for pH and nitrate */}
+    <div ref={wrapperRef} className="metric-chart">
+      <svg
+        width={resolvedW}
+        height={height}
+        role="img"
+        aria-label={label}
+        tabIndex={0}
+        onKeyDown={onKeyDown}
+        onPointerMove={(e) => setActive(nearestIndex(e.clientX, e.currentTarget))}
+        onPointerDown={(e) => setActive(nearestIndex(e.clientX, e.currentTarget))}
+        onPointerLeave={(e) => e.pointerType === 'mouse' && setActive(null)}
+        onBlur={() => setActive(null)}
+        style={{ touchAction: 'pan-y', display: 'block' }}
+      >
+        <defs>
+          <clipPath id={clipId}>
+            <rect x={margin.left} y={margin.top - 3} width={innerW} height={innerH + 6} />
+          </clipPath>
+        </defs>
+        {/* Optimal / caution bands, clipped to the plot area */}
         {metric === 'pH' && (
           <rect
             x={margin.left}
-            y={sy(7.5)}
             width={innerW}
-            height={Math.max(0, sy(6.5) - sy(7.5))}
-            fill="var(--band-ph)"
+            {...band(OPTIMAL.pH.min, OPTIMAL.pH.max)}
+            fill="var(--band-ok)"
           />
         )}
         {metric === 'nitrate' && (
           <>
-            {/* Optimal 0-20 ppm */}
+            <rect x={margin.left} width={innerW} {...band(0, 20)} fill="var(--band-ok)" />
             <rect
               x={margin.left}
-              y={sy(20)}
               width={innerW}
-              height={Math.max(0, sy(0) - sy(20))}
-              fill="var(--band-ok)"
-            />
-            {/* Caution 20-40 ppm */}
-            <rect
-              x={margin.left}
-              y={sy(40)}
-              width={innerW}
-              height={Math.max(0, sy(20) - sy(40))}
+              {...band(OPTIMAL.nitrate.max, NITRATE_CAUTION_MAX)}
               fill="var(--band-caution)"
             />
           </>
         )}
-        {/* Gridlines (horizontal) */}
-        {yTicks.map((yt, i) => (
-          <line
-            key={`yg-${i}`}
-            x1={margin.left}
-            x2={margin.left + innerW}
-            y1={sy(yt)}
-            y2={sy(yt)}
-            stroke="var(--border)"
-            strokeOpacity={0.35}
-          />
-        ))}
-        {/* Axes ticks and labels */}
-        {/* Y ticks */}
-        {yTicks.map((yt, i) => (
-          <g key={`yt-${i}`}>
+        {yTicks.map((yt) => (
+          <g key={`y-${yt}`}>
             <line
-              x1={margin.left - 4}
-              x2={margin.left}
+              x1={margin.left}
+              x2={margin.left + innerW}
               y1={sy(yt)}
               y2={sy(yt)}
-              stroke="var(--border)"
+              stroke="var(--grid)"
             />
             <text
               x={margin.left - 6}
@@ -150,67 +193,92 @@ export default function MetricChart({
               fill="var(--muted)"
               fontSize="10"
             >
-              {metric === 'pH' ? yt.toFixed(1) : yt >= 1 ? yt.toFixed(0) : yt.toFixed(2)}
+              {metric === 'pH' ? yt.toFixed(1) : formatMetric(metric, yt)}
             </text>
           </g>
         ))}
-        {/* X ticks */}
         {xTicks.map((xt, i) => (
-          <g key={`xt-${i}`}>
+          <text
+            key={`x-${i}`}
+            x={sx(xt)}
+            y={margin.top + innerH + 14}
+            textAnchor={
+              xTicks.length === 1
+                ? 'middle'
+                : i === 0
+                  ? 'start'
+                  : i === xTicks.length - 1
+                    ? 'end'
+                    : 'middle'
+            }
+            fill="var(--muted)"
+            fontSize="10"
+          >
+            {dtShort.format(new Date(xt))}
+          </text>
+        ))}
+        <g clipPath={`url(#${clipId})`}>
+          {activePoint && active !== null && (
             <line
-              x1={sx(xt)}
-              x2={sx(xt)}
-              y1={height - margin.bottom}
-              y2={height - margin.bottom + 4}
-              stroke="var(--border)"
+              x1={sx(times[active])}
+              x2={sx(times[active])}
+              y1={margin.top}
+              y2={margin.top + innerH}
+              stroke="var(--muted)"
+              strokeDasharray="2 2"
             />
-            <text
-              x={sx(xt)}
-              y={height - margin.bottom + 14}
-              textAnchor="middle"
-              fill="var(--muted)"
-              fontSize="10"
-            >
-              {dtShort.format(new Date(xt))}
-            </text>
-          </g>
-        ))}
-        {/* series line */}
-        <path d={path} fill="none" stroke="var(--ink)" strokeWidth={1} />
-        {/* anomalies */}
-        {points.map((p, i) => (
-          <circle
-            key={i}
-            cx={sx(new Date(p.ts).getTime())}
-            cy={sy(p.value)}
-            r={isOutOfRange(metric, p.value) ? 2.2 : 1.6}
-            fill={isOutOfRange(metric, p.value) ? 'var(--danger)' : 'var(--ink)'}
-          />
-        ))}
+          )}
+          <path d={path} fill="none" stroke="var(--ink)" strokeWidth={1.25} />
+          {points.map((p, i) => {
+            const level = severity(metric, p.value)
+            const cx = sx(times[i])
+            const cy = sy(p.value)
+            if (level === 'ok')
+              return (
+                <circle key={i} cx={cx} cy={cy} r={i === active ? 3.5 : 1.8} fill="var(--ink)" />
+              )
+            // Out-of-range: hollow ring + dot, so it reads without relying on color alone
+            const color = level === 'high' ? 'var(--danger)' : 'var(--caution)'
+            return (
+              <g key={i} data-anomaly={level}>
+                <circle
+                  cx={cx}
+                  cy={cy}
+                  r={i === active ? 5 : 3.8}
+                  fill="none"
+                  stroke={color}
+                  strokeWidth={1.5}
+                />
+                <circle cx={cx} cy={cy} r={1.6} fill={color} />
+              </g>
+            )
+          })}
+        </g>
         {showAxisLabels && (
-          <>
-            {/* X label */}
-            <text
-              x={margin.left + innerW / 2}
-              y={height - 6}
-              textAnchor="middle"
-              fill="var(--muted)"
-              fontSize="10"
-            >
-              Time
-            </text>
-            {/* Y label */}
-            <text
-              transform={`translate(10 ${margin.top + innerH / 2}) rotate(-90)`}
-              textAnchor="middle"
-              fill="var(--muted)"
-              fontSize="10"
-            >
-              {yLabel}
-            </text>
-          </>
+          <text
+            transform={`translate(10 ${margin.top + innerH / 2}) rotate(-90)`}
+            textAnchor="middle"
+            fill="var(--muted)"
+            fontSize="10"
+          >
+            {metric === 'pH' ? 'pH' : 'ppm'}
+          </text>
         )}
       </svg>
+      <div className="chart-readout" aria-live="polite">
+        {activePoint ? (
+          <>
+            <strong>
+              {formatMetric(metric, activePoint.value)}
+              {unitFor(metric)}
+            </strong>{' '}
+            · {formatLocal(new Date(activePoint.ts))}
+            {activePoint.note ? <> · {activePoint.note}</> : null}
+          </>
+        ) : (
+          ' '
+        )}
+      </div>
     </div>
   )
 }

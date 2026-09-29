@@ -1,81 +1,72 @@
 'use client'
 
+import { useMemo } from 'react'
 import MetricChart from './MetricChart'
-import { rollingAverage } from '@/lib/series'
+import { anomalyCount, type MetricSeries } from '@/lib/series'
+import { METRICS, METRIC_LABEL, type Metric } from '@/lib/models'
+import { formatMetric, unitFor } from '@/lib/format'
 
-type Metric = 'pH' | 'ammonia' | 'nitrite' | 'nitrate'
+const NOTES: Record<Metric, string> = {
+  pH: 'Optimal 6.5–7.5',
+  ammonia: 'Target 0 ppm',
+  nitrite: 'Target 0 ppm',
+  nitrate: 'Optimal 0–20 ppm · 20–40 caution · >40 high',
+}
 
 export default function SmallMultiples({
   series,
   valueMode = 'latest',
+  xDomain,
+  chartHeight = 120,
+  anomalySource,
 }: {
-  series: Record<Metric, { ts: string; value: number }[]>
+  series: MetricSeries
   valueMode?: 'latest' | 'rolling'
+  /** Override the shared time axis (e.g. a report's 30-day window) */
+  xDomain?: [number, number]
+  chartHeight?: number
+  /** Raw series for out-of-range counts when `series` is smoothed */
+  anomalySource?: MetricSeries
 }) {
-  const notes: Record<Metric, string> = {
-    pH: 'Optimal 6.5–7.5',
-    ammonia: 'Target 0 ppm (NH3)',
-    nitrite: 'Target 0 ppm (NO2)',
-    nitrate: 'Optimal 0–20 ppm; 20–40 caution (NO3)',
-  }
-  function formatValue(metric: Metric, v: number) {
-    if (metric === 'pH') return v.toFixed(1)
-    return v >= 1 ? v.toFixed(0) : v.toFixed(2)
-  }
+  // One shared time axis across all panels (FR-3.1)
+  const sharedDomain = useMemo<[number, number] | undefined>(() => {
+    if (xDomain) return xDomain
+    const times = METRICS.flatMap((m) => series[m].map((p) => new Date(p.ts).getTime()))
+    return times.length ? [Math.min(...times), Math.max(...times)] : undefined
+  }, [series, xDomain])
 
   const labelText = valueMode === 'rolling' ? '7‑day avg' : 'Latest'
 
   return (
-    <div style={{ display: 'grid', gap: 0 }}>
-      {(Object.keys(series) as Metric[]).map((m, idx) => {
+    <div className="small-multiples">
+      {METRICS.map((m) => {
         const pts = series[m]
         const last = pts.length ? pts[pts.length - 1].value : null
-        // 7-day average display value: use last of rolling series if valueMode=rolling,
-        // otherwise compute rolling over raw points and take the last.
-        const avg7 = (() => {
-          if (pts.length === 0) return null
-          if (valueMode === 'rolling') return last
-          const rolled = rollingAverage(pts, 7)
-          return rolled.length ? rolled[rolled.length - 1].value : null
-        })()
+        const flagged = anomalyCount(m, (anomalySource ?? series)[m])
         return (
-          <div key={m} style={{ padding: '8px 0 10px 0', borderBottom: '1px solid var(--border)' }}>
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'baseline',
-                gap: 8,
-                marginBottom: 4,
-                color: 'var(--muted)',
-                fontSize: 12,
-              }}
-            >
-              <div>
-                {m.toUpperCase()}{' '}
-                {avg7 != null && (
-                  <span aria-label={`${m} 7-day average`} style={{ marginLeft: 6 }}>
-                    7‑day avg:{' '}
-                    <strong style={{ color: 'var(--ink)', fontWeight: 600 }}>
-                      {formatValue(m, avg7)}
-                      {m === 'pH' ? '' : ' ppm'}
-                    </strong>
-                  </span>
-                )}
-              </div>
+          <section key={m} className="panel" aria-label={METRIC_LABEL[m]}>
+            <div className="panel-head">
+              <h3 className="panel-title">{METRIC_LABEL[m]}</h3>
               {last != null && (
-                <div aria-label={`${m} ${labelText} value`} style={{ whiteSpace: 'nowrap' }}>
+                <div aria-label={`${m} ${labelText} value`} className="nowrap">
                   {labelText}:{' '}
-                  <strong style={{ color: 'var(--ink)', fontWeight: 600 }}>
-                    {formatValue(m, last)}
-                    {m === 'pH' ? '' : ' ppm'}
+                  <strong>
+                    {formatMetric(m, last)}
+                    {unitFor(m)}
                   </strong>
                 </div>
               )}
             </div>
-            <MetricChart metric={m} points={pts} height={120} />
-            <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>{notes[m]}</div>
-          </div>
+            <MetricChart metric={m} points={pts} xDomain={sharedDomain} height={chartHeight} />
+            <div className="panel-foot">
+              <span>{NOTES[m]}</span>
+              {pts.length > 0 && (
+                <span className={flagged ? 'flag flag--high' : undefined}>
+                  {flagged} out of range
+                </span>
+              )}
+            </div>
+          </section>
         )
       })}
     </div>

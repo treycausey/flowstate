@@ -14,13 +14,12 @@ describe('QuickEntry', () => {
     // Ensure provider picks the same active tank
     localStorage.setItem('activeTankId', tank.id)
     renderWithProvider(<QuickEntry />)
+    await waitFor(() => expect(screen.getByRole('button', { name: /^save$/i })).toBeEnabled())
     fireEvent.change(screen.getByLabelText(/pH/i), { target: { value: '7.2' } })
     fireEvent.change(screen.getByLabelText(/Ammonia/i), { target: { value: '0' } })
     fireEvent.change(screen.getByLabelText(/Nitrite/i), { target: { value: '0' } })
     fireEvent.change(screen.getByLabelText(/Nitrate/i), { target: { value: '10' } })
-    // Avoid actual alert in JSDOM
-    jest.spyOn(window, 'alert').mockImplementation(() => {})
-    fireEvent.click(screen.getByRole('button', { name: /save/i }))
+    fireEvent.click(screen.getByRole('button', { name: /^save$/i }))
     await waitFor(
       async () => {
         const readings = await listReadingsByTank(tank.id)
@@ -45,6 +44,9 @@ describe('QuickEntry', () => {
       note: 'seed',
     })
     renderWithProvider(<QuickEntry />)
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /use last values/i })).toBeEnabled(),
+    )
     fireEvent.click(screen.getByRole('button', { name: /use last values/i }))
     await waitFor(
       () => {
@@ -100,5 +102,39 @@ describe('QuickEntry', () => {
     const rings = await screen.findAllByTestId('timer-ring')
     expect(rings.length).toBeGreaterThanOrEqual(2)
     jest.useRealTimers()
+  })
+})
+
+describe('QuickEntry validation', () => {
+  it('rejects blank metrics instead of saving them as zero', async () => {
+    const tank = await ensureSeed()
+    localStorage.setItem('activeTankId', tank.id)
+    const before = (await listReadingsByTank(tank.id)).length
+    renderWithProvider(<QuickEntry />)
+    await waitFor(() => expect(screen.getByRole('button', { name: /^save$/i })).toBeEnabled())
+    fireEvent.change(screen.getByLabelText(/Nitrate/i), { target: { value: '10' } })
+    fireEvent.click(screen.getByRole('button', { name: /^save$/i }))
+    expect(await screen.findAllByText('Required')).toHaveLength(3)
+    expect(screen.getByLabelText(/pH/i)).toHaveAttribute('aria-invalid', 'true')
+    expect(screen.getByLabelText(/pH/i)).toHaveFocus()
+    expect(await listReadingsByTank(tank.id)).toHaveLength(before)
+  })
+
+  it('confirms a successful save inline and keeps kit values like 0.25 ppm', async () => {
+    const tank = await ensureSeed()
+    localStorage.setItem('activeTankId', tank.id)
+    renderWithProvider(<QuickEntry />)
+    await waitFor(() => expect(screen.getByRole('button', { name: /^save$/i })).toBeEnabled())
+    const confirmSpy = jest.spyOn(window, 'confirm').mockReturnValue(true)
+    fireEvent.change(screen.getByLabelText(/pH/i), { target: { value: '7.6' } })
+    fireEvent.change(screen.getByLabelText(/Ammonia/i), { target: { value: '0' } })
+    fireEvent.change(screen.getByLabelText(/Nitrite/i), { target: { value: '0.25' } })
+    fireEvent.change(screen.getByLabelText(/Nitrate/i), { target: { value: '5' } })
+    fireEvent.click(screen.getByRole('button', { name: /^save$/i }))
+    expect(await screen.findByText('Reading saved.')).toBeInTheDocument()
+    const last = await findMostRecentReading(tank.id)
+    expect(last?.nitrite).toBe(0.25)
+    expect(screen.getByLabelText(/pH/i)).toHaveValue(null)
+    confirmSpy.mockRestore()
   })
 })

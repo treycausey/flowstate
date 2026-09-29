@@ -1,6 +1,6 @@
 import '@testing-library/jest-dom'
 import { toHaveNoViolations } from 'jest-axe'
-expect.extend(toHaveNoViolations as any)
+expect.extend(toHaveNoViolations)
 // Polyfill structuredClone for fake-indexeddb
 // @ts-ignore
 if (typeof global.structuredClone !== 'function') {

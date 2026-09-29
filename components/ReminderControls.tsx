@@ -1,9 +1,12 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useTanks } from '@/components/TankProvider'
-import { listReadingsByTank, setTankReminderCadence } from '@/lib/idb'
-import { isDue, snooze24h, skipOnce } from '@/lib/reminders'
+import { findMostRecentReading, setTankReminderCadence } from '@/lib/idb'
+import { onReadingsChanged } from '@/lib/events'
+import { effectiveDue, parseCadence, shouldNotify, skipOnce, snooze24h } from '@/lib/reminders'
+import { formatLocal } from '@/lib/time'
+import { showSystemNotification } from '@/lib/notify'
 
 const PRESETS = [
   { label: 'Daily', days: 1 },
@@ -11,90 +14,173 @@ const PRESETS = [
   { label: 'Weekly', days: 7 },
 ]
 
+const RECHECK_MS = 60 * 1000
+
 export default function ReminderControls() {
-  const { activeTankId, tanks } = useTanks()
-  const tank = useMemo(() => tanks.find((t) => t.id === activeTankId), [tanks, activeTankId])
-  const [customDays, setCustomDays] = useState<string>('')
+  const { activeTank, refresh } = useTanks()
+  const tankId = activeTank?.id ?? null
+  const cadence = activeTank?.reminderCadence ?? null
+  const [customDays, setCustomDays] = useState('')
+  const [customError, setCustomError] = useState<string | null>(null)
   const [lastTs, setLastTs] = useState<string | null>(null)
-  const [due, setDue] = useState(false)
+  const [now, setNow] = useState(() => new Date())
+  // Snooze/skip live in localStorage; bumping this re-renders so `due` is recomputed
+  const [, setStateVersion] = useState(0)
 
   useEffect(() => {
+    if (!tankId) return
+    let mounted = true
     const load = async () => {
-      if (!activeTankId) return
-      const r = await listReadingsByTank(activeTankId)
-      setLastTs(r.length ? r[r.length - 1].ts : null)
-      setDue(
-        isDue(r.length ? r[r.length - 1].ts : null, tank?.reminderCadence ?? null, activeTankId),
-      )
+      const last = await findMostRecentReading(tankId)
+      if (mounted) setLastTs(last?.ts ?? null)
     }
     load()
-  }, [activeTankId, tank?.reminderCadence])
+    const off = onReadingsChanged((id) => id === tankId && load())
+    return () => {
+      mounted = false
+      off()
+    }
+  }, [tankId])
 
-  if (!tank) return null
+  // Re-evaluate periodically so a reminder appears without a reload
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(new Date()), RECHECK_MS)
+    return () => window.clearInterval(id)
+  }, [])
 
-  const setCadence = async (days: number | null) => {
-    await setTankReminderCadence(tank.id, days)
+  const due = tankId ? effectiveDue(lastTs, cadence, tankId, now) : null
+  const isDueNow = !!due && due <= now
+
+  useEffect(() => {
+    if (!isDueNow || !due || !tankId || !activeTank) return
+    if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return
+    if (!shouldNotify(tankId, due)) return
+    showSystemNotification(
+      'Time to test your water',
+      `${activeTank.name} is due for a water test.`,
+      `due-${tankId}`,
+    )
+  }, [isDueNow, due, tankId, activeTank])
+
+  const setCadence = useCallback(
+    async (days: number | null) => {
+      if (!tankId) return
+      await setTankReminderCadence(tankId, days)
+      await refresh()
+    },
+    [tankId, refresh],
+  )
+
+  if (!activeTank || !tankId) return null
+
+  const applyCustom = () => {
+    const days = parseCadence(customDays)
+    if (days === null) {
+      setCustomError('Enter whole days from 1 to 365')
+      return
+    }
+    setCustomError(null)
+    setCustomDays('')
+    setCadence(days)
   }
 
+  const isPreset = PRESETS.some((p) => p.days === cadence)
+
   return (
-    <div style={{ display: 'grid', gap: 8 }}>
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-        {PRESETS.map((p) => (
-          <button
-            key={p.days}
-            onClick={() => setCadence(p.days)}
-            aria-pressed={tank.reminderCadence === p.days}
-          >
-            {p.label}
-          </button>
-        ))}
-        <button onClick={() => setCadence(null)} aria-pressed={!tank.reminderCadence}>
-          Off
-        </button>
-        <label style={{ marginLeft: 8 }}>
-          Custom N days
-          <input
-            type="number"
-            min={1}
-            step={1}
-            value={customDays}
-            onChange={(e) => setCustomDays(e.target.value)}
-            style={{ width: 80, marginLeft: 6 }}
-          />
-        </label>
-        <button onClick={() => setCadence(customDays ? Number(customDays) : null)}>Set</button>
-      </div>
-      <div style={{ fontSize: 12, color: '#555' }}>
-        Last reading: {lastTs ? new Date(lastTs).toLocaleString() : 'none'} · Cadence:{' '}
-        {tank.reminderCadence ? `${tank.reminderCadence} days` : 'Off'}
-      </div>
-      {due && (
-        <div
-          role="status"
-          aria-live="polite"
-          style={{ background: '#fff7ed', padding: 8, border: '1px solid #f97316' }}
-        >
-          <strong>Reminder:</strong> Time to test water for this tank.
-          <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
+    <div className="stack" style={{ gap: 'var(--space-3)' }}>
+      {isDueNow && (
+        <div role="status" className="notice notice--due">
+          <strong>Time to test the water</strong> for {activeTank.name}.
+          <div className="cluster" style={{ marginTop: 'var(--space-2)' }}>
             <button
+              type="button"
+              className="button button--ghost button--small"
               onClick={() => {
-                snooze24h(tank.id)
-                setDue(false)
+                snooze24h(tankId)
+                setStateVersion((v) => v + 1)
               }}
             >
               Snooze 24h
             </button>
             <button
+              type="button"
+              className="button button--ghost button--small"
               onClick={() => {
-                skipOnce(tank.id, tank.reminderCadence ?? 0, lastTs)
-                setDue(false)
+                skipOnce(tankId, cadence ?? 0, lastTs)
+                setStateVersion((v) => v + 1)
               }}
             >
-              Skip
+              Skip this one
             </button>
           </div>
         </div>
       )}
+      <div className="cluster" role="group" aria-label="Test reminder cadence">
+        {PRESETS.map((p) => (
+          <button
+            type="button"
+            key={p.days}
+            className="button button--toggle"
+            onClick={() => setCadence(p.days)}
+            aria-pressed={cadence === p.days}
+          >
+            {p.label}
+          </button>
+        ))}
+        <button
+          type="button"
+          className="button button--toggle"
+          onClick={() => setCadence(null)}
+          aria-pressed={!cadence}
+        >
+          Off
+        </button>
+      </div>
+      <form
+        className="cluster"
+        style={{ alignItems: 'flex-end' }}
+        noValidate
+        onSubmit={(e) => {
+          e.preventDefault()
+          applyCustom()
+        }}
+      >
+        <label style={{ width: '9rem' }}>
+          Every N days
+          <input
+            type="number"
+            inputMode="numeric"
+            min={1}
+            max={365}
+            step={1}
+            value={customDays}
+            placeholder={cadence && !isPreset ? String(cadence) : ''}
+            onChange={(e) => {
+              setCustomError(null)
+              setCustomDays(e.target.value)
+            }}
+            aria-invalid={!!customError}
+            aria-describedby={customError ? 'cadence-error' : undefined}
+          />
+        </label>
+        <button type="submit" className="button button--ghost">
+          Set
+        </button>
+        {customError && (
+          <span id="cadence-error" className="field-error">
+            {customError}
+          </span>
+        )}
+      </form>
+      <p className="muted small" style={{ margin: 0 }}>
+        Last test: {lastTs ? formatLocal(new Date(lastTs)) : 'none yet'}
+        {' · '}
+        {cadence
+          ? `Every ${cadence === 1 ? 'day' : `${cadence} days`}${
+              due && !isDueNow ? ` · next ${formatLocal(due)}` : ''
+            }`
+          : 'Reminders off'}
+      </p>
     </div>
   )
 }
