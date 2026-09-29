@@ -134,10 +134,10 @@ export default function QuickEntry() {
     setErrors({})
     setState((s) => ({
       ...s,
-      pH: String(last.pH),
-      ammonia: String(last.ammonia),
-      nitrite: String(last.nitrite),
-      nitrate: String(last.nitrate),
+      pH: last.pH === null ? '' : String(last.pH),
+      ammonia: last.ammonia === null ? '' : String(last.ammonia),
+      nitrite: last.nitrite === null ? '' : String(last.nitrite),
+      nitrate: last.nitrate === null ? '' : String(last.nitrate),
     }))
   }
 

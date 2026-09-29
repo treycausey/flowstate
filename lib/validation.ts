@@ -1,4 +1,4 @@
-import { BOUNDS, type Metric } from './models'
+import { BOUNDS, METRICS, type Metric, type MetricValue } from './models'
 
 export function clamp(value: number, min: number, max: number) {
   if (Number.isNaN(value)) return value
@@ -45,4 +45,31 @@ export function parseMetricInput(metric: Metric, raw: string): ParseResult {
   const { min, max } = BOUNDS[metric]
   if (value < min || value > max) return { ok: false, error: `Must be ${min}–${max}` }
   return { ok: true, value: normalizeInput(metric, value) }
+}
+
+export type ReadingInputResult =
+  | { ok: true; values: Record<Metric, MetricValue> }
+  | { ok: false; errors: Partial<Record<Metric, string>>; formError?: string }
+
+/**
+ * Parse a form's metric strings. Blank fields mean "not tested" (null); at least one
+ * metric must be filled in, and any filled-in value must be valid.
+ */
+export function parseReadingInputs(raw: Record<Metric, string>): ReadingInputResult {
+  const values = {} as Record<Metric, MetricValue>
+  const errors: Partial<Record<Metric, string>> = {}
+  for (const m of METRICS) {
+    if (raw[m].trim() === '') {
+      values[m] = null
+      continue
+    }
+    const res = parseMetricInput(m, raw[m])
+    if (res.ok) values[m] = res.value
+    else errors[m] = res.error
+  }
+  if (Object.keys(errors).length > 0) return { ok: false, errors }
+  if (METRICS.every((m) => values[m] === null)) {
+    return { ok: false, errors: {}, formError: 'Enter at least one test result.' }
+  }
+  return { ok: true, values }
 }

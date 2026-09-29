@@ -24,8 +24,9 @@ function escapeCsv(s: string) {
   return s
 }
 
-function fixDecimals(n: number) {
-  return Number.isFinite(n) ? String(Number(n.toFixed(3))) : ''
+// Untested metrics (null) export as empty cells
+function fixDecimals(n: number | null) {
+  return n !== null && Number.isFinite(n) ? String(Number(n.toFixed(3))) : ''
 }
 
 /** Filesystem-safe filename fragment from a user-supplied name. */

@@ -21,7 +21,14 @@ const EDIT_LABEL: Record<Metric, string> = {
 
 const SEVERITY_TEXT = { caution: 'caution', high: 'out of range' } as const
 
-function MetricCell({ metric, value }: { metric: Metric; value: number }) {
+function MetricCell({ metric, value }: { metric: Metric; value: number | null }) {
+  if (value === null)
+    return (
+      <td className="num muted">
+        <span aria-hidden="true">—</span>
+        <span className="visually-hidden">not tested</span>
+      </td>
+    )
   const level = severity(metric, value)
   if (level === 'ok') return <td className="num">{formatMetric(metric, value)}</td>
   return (
@@ -96,10 +103,10 @@ export default function ReadingList({ limit = 10 }: { limit?: number }) {
     setError(null)
     setDraft({
       ts: toDatetimeLocalValue(new Date(reading.ts)),
-      pH: String(reading.pH),
-      ammonia: String(reading.ammonia),
-      nitrite: String(reading.nitrite),
-      nitrate: String(reading.nitrate),
+      pH: reading.pH === null ? '' : String(reading.pH),
+      ammonia: reading.ammonia === null ? '' : String(reading.ammonia),
+      nitrite: reading.nitrite === null ? '' : String(reading.nitrite),
+      nitrate: reading.nitrate === null ? '' : String(reading.nitrate),
       note: reading.note ?? '',
     })
     setEditingReading(reading)
