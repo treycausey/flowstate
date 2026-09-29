@@ -21,40 +21,48 @@ Local-first app to log freshwater aquarium chemistry and visualize trends with m
 
 - Manifest: `public/manifest.webmanifest`
 - Service Worker: `public/service-worker.js`
-  - Caches app shell; network-first for navigations with offline fallback to `/`.
-  - Update flow prompts the user to reload when a new version is ready.
+  - Pages are network-first and cached per URL (offline falls back to the cached page, then `/`).
+  - `/_next/static/*` is cache-first (content-hashed); other same-origin GETs are network-first.
+  - Updates activate in the background; there is no forced reload, so a half-entered reading is never lost.
 - Install the app from the browser’s “Install” or “Add to Home Screen”.
 
 ## Key Features
 
-- Quick Entry for pH, Ammonia (NH3/NH4+), Nitrite (NO2−), Nitrate (NO3−)
-- Minimal small-multiples charts with optimal bands and anomaly dots
-- Per‑tank reminder cadence with in‑app notices; optional notifications
-- Edit/delete readings, backdating, duplicate guard within 1 hour
-- CSV export and a printable report page
+- Quick Entry for pH, Ammonia (NH3/NH4+), Nitrite (NO2−), Nitrate (NO3−), with inline validation
+  (blank or out-of-range values are rejected, never saved as 0)
+- Minimal small-multiples charts on a shared time axis with optimal/caution bands, out-of-range
+  markers (shape + color), and a tap/hover/keyboard readout of value, time, and note
+- Per‑tank reminder cadence with in‑app notices, Snooze 24h / Skip, and optional system
+  notifications (shown when a test comes due while the app is open)
+- Edit (including date/time) and delete readings, backdating, duplicate guard within 1 hour
+- CSV export (report range or all readings), printable 30/90‑day report with charts, JSON backup/restore
 
 ## Project Structure (selected)
 
 - `app/` Next.js App Router
-  - `page.tsx` — dashboard with Tank switcher, Quick Entry, reminders, recent readings
-  - `tanks/page.tsx` — tank detail with charts + list (select tank via `tankId` query)
-  - `tanks/report/page.tsx` — CSV export + print view (uses `tankId` query)
+  - `page.tsx` — log page: tank switcher, Quick Entry, recent readings, reminders
+  - `tanks/page.tsx` — charts + full reading list (optional `tankId` query selects the tank)
+  - `tanks/report/page.tsx` — printable report with charts and CSV export (optional `tankId` query)
+  - `settings/page.tsx` — storage info and JSON backup/restore
 - `components/`
-  - `TankProvider.tsx`, `TankSwitcher.tsx`, `QuickEntry.tsx`, `ReadingList.tsx`
+  - `TankProvider.tsx` (loads tanks, seeds the first tank, tracks the active one), `NavBar.tsx`
+  - `TankSwitcher.tsx`, `TankFromQuery.tsx`, `QuickEntry.tsx`, `ReadingList.tsx`
   - `ReminderControls.tsx`, `NotificationsToggle.tsx`
   - `charts/MetricChart.tsx`, `charts/SmallMultiples.tsx`, `charts/TankSeries.tsx`
 - `lib/`
   - `models.ts` — types, constants (kit steps, optimal ranges)
-  - `idb.ts` — unified storage entrypoint; routes to SQLite when running under Tauri, otherwise IndexedDB
+  - `idb.ts` — unified storage entrypoint; routes to SQLite when running under Tauri, otherwise
+    IndexedDB. Normalizes timestamps to UTC and validates backups before import.
   - `idb-browser.ts` — browser-only IndexedDB helpers
   - `sqlite.ts` — Tauri SQLite adapter
-  - `validation.ts` — rounding/clamping to kit steps
-  - `series.ts` — rolling averages, anomaly helpers
+  - `validation.ts` — parsing/validation of metric inputs
+  - `series.ts` — rolling averages, y-domains, out-of-range/severity helpers
+  - `backup.ts` — JSON backup validation
+  - `time.ts`, `format.ts`, `notify.ts`
   - `reminders.ts` — in‑app scheduling (due, snooze, skip)
   - `export.ts` — CSV generation
 - `public/manifest.webmanifest`, `public/service-worker.js`, `public/icons/*`
 - `styles/print.css`, `app/globals.css`
-- Full task list and file map: `tasks/tasks-prd-aquarium-water-tracker.md`
 
 ## Data Schema (v1)
 
@@ -64,14 +72,17 @@ Local-first app to log freshwater aquarium chemistry and visualize trends with m
 
 Conventions
 
-- Timestamps: ISO 8601 strings with zone offset; displayed in local time.
-- Kit steps: pH 0.1; Ammonia 0.25 ppm; Nitrite 0.1 ppm; Nitrate 1.0 ppm.
-- Optimal bands: pH 6.5–7.5; Ammonia 0; Nitrite 0; Nitrate 0–20 ppm (20–40 caution optional).
+- Timestamps: stored as UTC ISO 8601 (`…Z`) so string-ordered indexes stay chronological;
+  displayed in local time.
+- Kit steps (input steppers): pH 0.1; Ammonia 0.25 ppm; Nitrite 0.1 ppm; Nitrate 1.0 ppm. Typed
+  values are kept (pH/ammonia/nitrite to 0.01, nitrate to 0.1) so kit colors like nitrite 0.25
+  survive. Accepted ranges: pH 5–9, ammonia/nitrite 0–10, nitrate 0–200 ppm.
+- Optimal bands: pH 6.5–7.5; Ammonia 0; Nitrite 0; Nitrate 0–20 ppm, 20–40 caution, > 40 high.
 
 ## CSV Export
 
 - Headers: `tank,name,ts,pH,ammonia_ppm,nitrite_ppm,nitrate_ppm,note`
-- Source: `lib/export.ts` and UI in `app/tanks/report/page.tsx`
+- Source: `lib/export.ts` and UI in `components/ReportClient.tsx`
 
 ## Testing
 
@@ -95,9 +106,11 @@ pipeline file is in git history before that date.
 ## Known Limitations & Next Steps
 
 - Custom optimal ranges per tank not exposed in the UI yet (planned v1.1).
-- Nitrate 20–40 ppm “caution” band is not separately styled in MetricChart.
-- Charts are basic SVG for v1; zoom/pan and richer tooltips are out of scope.
-- Notifications depend on browser support and user permission.
+- Every reading needs all four metrics; partial tests (e.g. only ammonia/nitrite while cycling)
+  aren't supported yet.
+- Charts are basic SVG for v1; zoom/pan is out of scope.
+- System notifications only fire while the app is open (there's no push server by design), and
+  depend on browser support and permission. The in-app reminder always works.
 
 ## Desktop (Tauri)
 
@@ -125,7 +138,7 @@ Migration from PWA
 
 - Follow `AGENTS.md` for goals, standards, and Definition of Done.
 - Keep components small; move logic into `lib/` with tests.
-- Align changes to `tasks/tasks-prd-aquarium-water-tracker.md` and update tests.
+- Use `tasks/prd-aquarium-water-tracker.md` for scope; the task checklist in `tasks/` is historical.
 
 ## License
 

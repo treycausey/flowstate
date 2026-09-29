@@ -1,33 +1,17 @@
 'use client'
 
 import { useEffect } from 'react'
+import { isTauri } from '@/lib/tauri'
 
 export default function ServiceWorkerRegister() {
   useEffect(() => {
-    if ('serviceWorker' in navigator) {
-      const register = async () => {
-        try {
-          const reg = await navigator.serviceWorker.register('/service-worker.js', { scope: '/' })
-          if (reg.waiting) {
-            const refresh = window.confirm('Update available. Reload now?')
-            if (refresh) reg.waiting.postMessage({ type: 'SKIP_WAITING' })
-          }
-          reg.addEventListener('updatefound', () => {
-            const sw = reg.installing
-            if (!sw) return
-            sw.addEventListener('statechange', () => {
-              if (sw.state === 'installed' && navigator.serviceWorker.controller) {
-                const refresh = window.confirm('A new version is ready. Reload?')
-                if (refresh) window.location.reload()
-              }
-            })
-          })
-        } catch {
-          // no-op
-        }
-      }
-      register()
-    }
+    // The desktop app bundles its assets; a SW there would only serve stale builds
+    if (!('serviceWorker' in navigator) || isTauri()) return
+    // Pages are network-first and static chunks are content-hashed, so an updated worker can
+    // take over without a forced reload (which could discard a half-entered reading).
+    navigator.serviceWorker.register('/service-worker.js', { scope: '/' }).catch(() => {
+      // registration failures (private mode, file://) just mean no offline support
+    })
   }, [])
   return null
 }

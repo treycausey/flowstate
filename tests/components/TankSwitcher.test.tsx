@@ -15,11 +15,10 @@ describe('TankSwitcher', () => {
     renderWithProvider(<TankSwitcher />)
     const createBtn = await screen.findByRole('button', { name: /new/i })
     fireEvent.click(createBtn)
-    await waitFor(async () => {
-      // Select should include the new tank
-      const select = await screen.findByLabelText(/tank:/i)
-      expect(select).toBeInTheDocument()
-    })
+    // The new tank is added to the select and becomes the active tank
+    await waitFor(() =>
+      expect(screen.getByRole('combobox', { name: /^tank$/i })).toHaveDisplayValue('My Test Tank'),
+    )
     spy.mockRestore()
   })
 })

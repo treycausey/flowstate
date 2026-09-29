@@ -4,7 +4,7 @@ import jestDom from 'eslint-plugin-jest-dom'
 
 const compat = new FlatCompat({ baseDirectory: import.meta.dirname })
 
-export default [
+const config = [
   {
     ignores: ['.next/**', 'node_modules/**', 'out/**', 'dist/**', 'coverage/**'],
   },
@@ -17,3 +17,5 @@ export default [
     },
   },
 ]
+
+export default config

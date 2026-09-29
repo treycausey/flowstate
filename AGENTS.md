@@ -40,7 +40,7 @@ The original plan in `tasks/tasks-prd-aquarium-water-tracker.md` contains a hist
 - `components/QuickEntry.tsx` — single‑screen input for pH, NH3/NH4+, NO2‑, NO3‑ plus note.
 - `components/TankSwitcher.tsx`, `components/ReminderControls.tsx`.
 - `components/charts/MetricChart.tsx`, `components/charts/SmallMultiples.tsx`.
-- `lib/idb.ts`, `lib/models.ts`, `lib/validation.ts`, `lib/series.ts`, `lib/export.ts`, `lib/report.tsx`, `lib/reminders.ts`, `lib/time.ts`.
+- `lib/idb.ts`, `lib/models.ts`, `lib/validation.ts`, `lib/series.ts`, `lib/export.ts`, `lib/report.ts`, `lib/reminders.ts`, `lib/time.ts`, `lib/backup.ts`.
 - `app/globals.css`, `styles/print.css`, `public/service-worker.js`, `public/manifest.webmanifest`.
 - `tests/**` for unit/component tests.
 
@@ -50,8 +50,8 @@ The original plan in `tasks/tasks-prd-aquarium-water-tracker.md` contains a hist
 - Reading: `{ id, tankId, ts, pH, ammonia, nitrite, nitrate, note? }`
 - Settings: `{ units, theme, chartOptions }`
   Conventions:
-- Store `ts` as ISO 8601 with zone offset. Display in local timezone.
-- Numeric steps (kit‑friendly): pH 0.1; Ammonia 0.25 ppm; Nitrite 0.1 ppm; Nitrate 1.0 ppm.
+- Store `ts` as UTC ISO 8601 (`…Z`; `lib/idb.ts` normalizes on write). Display in local timezone.
+- Numeric steps (kit‑friendly): pH 0.1; Ammonia 0.25 ppm; Nitrite 0.1 ppm; Nitrate 1.0 ppm. Steps drive the input steppers; typed values are kept at 0.01 (nitrate 0.1) precision rather than snapped to the step.
 - Duplicate guard: warn on multiple entries within the same hour; allow override.
 
 ## Visualization Rules
@@ -122,9 +122,14 @@ A change is “done” when:
 ## Open Questions
 
 - Per‑tank custom optimal ranges in v1 vs. v1.1.
-- Whether to include an explicit nitrate 20–40 ppm caution band (PRD lists as optional).
 - Species presets in the future; theme presets.
   Document decisions in PRs and, if needed, append a “Decision Log” section here.
+
+## Decision Log
+
+- 2026‑09 (review pass): Nitrate 20–40 ppm is shown as a separate caution band/marker; > 40 ppm is “high”.
+- 2026‑09: Reading timestamps are stored in UTC so IndexedDB/SQLite string ordering is chronological.
+- 2026‑09: Typed metric values are validated (blank/out‑of‑range rejected) and kept at 0.01 precision instead of snapping to kit steps, per FR‑2.3 “allow free typing”.
 
 ## Agent Workflow Notes
 

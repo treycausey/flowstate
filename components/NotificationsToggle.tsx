@@ -1,33 +1,46 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { showSystemNotification } from '@/lib/notify'
 
 export default function NotificationsToggle() {
   const [supported, setSupported] = useState(false)
   const [permission, setPermission] = useState<NotificationPermission>('default')
 
   useEffect(() => {
-    setSupported(typeof window !== 'undefined' && 'Notification' in window)
     if (typeof window !== 'undefined' && 'Notification' in window) {
+      setSupported(true)
       setPermission(Notification.permission)
     }
   }, [])
 
   const request = async () => {
-    if (!supported) return
     const res = await Notification.requestPermission()
     setPermission(res)
     if (res === 'granted') {
-      new Notification('Notifications enabled', { body: 'You will see reminders when due.' })
+      showSystemNotification(
+        'Notifications enabled',
+        'Flowstate will notify you when a test is due.',
+      )
     }
   }
 
   if (!supported) return null
 
   return (
-    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-      <span>Notifications: {permission}</span>
-      {permission !== 'granted' && <button onClick={request}>Enable</button>}
-    </div>
+    <p className="muted small" style={{ margin: 0 }}>
+      {permission === 'granted' &&
+        'System notifications are on. They appear when a test comes due while Flowstate is open.'}
+      {permission === 'denied' &&
+        'System notifications are blocked for this site. You can allow them in your browser’s site settings.'}
+      {permission === 'default' && (
+        <>
+          Want a system notification when a test is due?{' '}
+          <button type="button" className="button button--ghost button--small" onClick={request}>
+            Enable notifications
+          </button>
+        </>
+      )}
+    </p>
   )
 }

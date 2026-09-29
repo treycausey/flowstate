@@ -11,7 +11,20 @@ function uuid() {
   return 'id-' + Math.random().toString(36).slice(2) + Date.now().toString(36)
 }
 
+// One shared connection per page; reopened if the browser closes it (e.g. version change)
+let dbPromise: Promise<IDBDatabase> | null = null
+
 function openDB(): Promise<IDBDatabase> {
+  if (!dbPromise) {
+    dbPromise = openFresh().catch((e) => {
+      dbPromise = null
+      throw e
+    })
+  }
+  return dbPromise
+}
+
+function openFresh(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION)
     req.onupgradeneeded = () => {
@@ -28,7 +41,18 @@ function openDB(): Promise<IDBDatabase> {
         db.createObjectStore('settings', { keyPath: 'key' })
       }
     }
-    req.onsuccess = () => resolve(req.result)
+    req.onsuccess = () => {
+      const db = req.result
+      const reset = () => {
+        if (dbPromise) dbPromise = null
+      }
+      db.onversionchange = () => {
+        db.close()
+        reset()
+      }
+      db.onclose = reset
+      resolve(db)
+    }
     req.onerror = () => reject(req.error)
   })
 }
@@ -238,30 +262,14 @@ export async function importDump(dump: Dump): Promise<void> {
   const db = await openDB()
   await new Promise<void>((resolve, reject) => {
     const tx = db.transaction(['tanks', 'readings', 'settings'], 'readwrite')
-    const tanks = tx.objectStore('tanks')
-    const readings = tx.objectStore('readings')
-    const settings = tx.objectStore('settings')
-    ;(async () => {
-      try {
-        for (const t of dump.tanks) await reqToPromise(() => tanks.put(t))
-        for (const r of dump.readings) await reqToPromise(() => readings.put(r))
-        if (dump.settings)
-          await reqToPromise(() => settings.put({ key: 'global', value: dump.settings }))
-      } catch (e) {
-        tx.abort()
-        reject(e)
-        return
-      }
-    })()
     tx.oncomplete = () => resolve()
     tx.onerror = () => reject(tx.error)
-  })
-}
-
-function reqToPromise<T>(fn: () => IDBRequest<T>): Promise<T> {
-  return new Promise((resolve, reject) => {
-    const req = fn()
-    req.onsuccess = () => resolve(req.result)
-    req.onerror = () => reject(req.error)
+    tx.onabort = () => reject(tx.error ?? new Error('Import aborted'))
+    // Queue every write synchronously so the transaction cannot auto-commit mid-import
+    const tanks = tx.objectStore('tanks')
+    const readings = tx.objectStore('readings')
+    for (const t of dump.tanks) tanks.put(t)
+    for (const r of dump.readings) readings.put(r)
+    if (dump.settings) tx.objectStore('settings').put({ key: 'global', value: dump.settings })
   })
 }

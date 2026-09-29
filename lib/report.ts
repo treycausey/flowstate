@@ -10,8 +10,8 @@ export type SummaryCounts = {
 
 export function filterReadingsByDays(readings: Reading[], days: number | 'all', now = new Date()) {
   if (days === 'all') return readings
-  const cutoff = new Date(now.getTime() - days * 24 * 60 * 60 * 1000)
-  return readings.filter((r) => new Date(r.ts) >= cutoff)
+  const cutoff = now.getTime() - days * 24 * 60 * 60 * 1000
+  return readings.filter((r) => new Date(r.ts).getTime() >= cutoff)
 }
 
 export function summarizeOutOfRange(readings: Reading[]): SummaryCounts {

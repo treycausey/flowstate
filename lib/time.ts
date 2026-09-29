@@ -24,6 +24,40 @@ export function toISOWithOffset(d: Date) {
   return `${y}-${m}-${day}T${hh}:${mm}:${ss}.${ms}${offset}`
 }
 
+/**
+ * Canonical storage form for reading timestamps: UTC ISO 8601 (`...Z`).
+ * Storage indexes and range queries compare `ts` as strings, which is only
+ * chronologically correct when every value shares the same offset.
+ */
+export function toStorageTs(input: string | Date): string {
+  const d = typeof input === 'string' ? new Date(input) : input
+  if (Number.isNaN(d.getTime())) throw new RangeError(`Invalid timestamp: ${String(input)}`)
+  return d.toISOString()
+}
+
+/** Value for an <input type="datetime-local"> in the user's local time. */
+export function toDatetimeLocalValue(d: Date) {
+  return (
+    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` +
+    `T${pad(d.getHours())}:${pad(d.getMinutes())}`
+  )
+}
+
+/** Parse an <input type="datetime-local"> value as local time; null when invalid. */
+export function fromDatetimeLocalValue(value: string): Date | null {
+  if (!value) return null
+  const d = new Date(value)
+  return Number.isNaN(d.getTime()) ? null : d
+}
+
+export function tsMillis(ts: string) {
+  return new Date(ts).getTime()
+}
+
+export function compareTs(a: { ts: string }, b: { ts: string }) {
+  return tsMillis(a.ts) - tsMillis(b.ts)
+}
+
 export function formatLocal(d: Date, locale?: string, opts?: Intl.DateTimeFormatOptions) {
   return new Intl.DateTimeFormat(
     locale || undefined,

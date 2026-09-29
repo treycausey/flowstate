@@ -4,12 +4,18 @@ import { useEffect, useState } from 'react'
 import { isTauri } from '@/lib/tauri'
 import { getDbInfo, revealDb } from '@/lib/desktop'
 import { exportDump, importDump } from '@/lib/idb'
+import { BackupFormatError } from '@/lib/backup'
+import { downloadText } from '@/lib/export'
+import { emitReadingsChanged } from '@/lib/events'
+import { useTanks } from '@/components/TankProvider'
 
 type DbInfo = { dir: string; file: string }
 
 export default function SettingsClient() {
   const [db, setDb] = useState<DbInfo | null>(null)
   const [tauri, setTauri] = useState(false)
+  const [message, setMessage] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null)
+  const { refresh, tanks } = useTanks()
 
   useEffect(() => {
     ;(async () => {
@@ -24,7 +30,7 @@ export default function SettingsClient() {
     if (!text) return
     try {
       await navigator.clipboard.writeText(text)
-      alert('Copied to clipboard')
+      setMessage({ kind: 'ok', text: 'Copied to clipboard.' })
     } catch {
       // ignore
     }
@@ -40,19 +46,45 @@ export default function SettingsClient() {
         const dialog = await import('@tauri-apps/api/dialog')
         const fs = await import('@tauri-apps/api/fs')
         const target = await dialog.save({ defaultPath: defaultName })
-        if (target) await fs.writeTextFile(target, content)
+        if (target) {
+          await fs.writeTextFile(target, content)
+          setMessage({ kind: 'ok', text: `Backup saved to ${target}` })
+        }
         return
       } catch {
         // fall through to web method
       }
     }
-    const blob = new Blob([content], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = defaultName
-    a.click()
-    URL.revokeObjectURL(url)
+    downloadText(defaultName, content, 'application/json')
+    setMessage({
+      kind: 'ok',
+      text: `Exported ${dump.tanks.length} tank(s) and ${dump.readings.length} reading(s).`,
+    })
+  }
+
+  const applyImport = async (text: string) => {
+    try {
+      const data = JSON.parse(text)
+      const ok = window.confirm(
+        'Import this backup? Tanks and readings with matching IDs will be overwritten; everything else is kept.',
+      )
+      if (!ok) return
+      await importDump(data)
+      await refresh()
+      for (const t of tanks) emitReadingsChanged(t.id)
+      setMessage({
+        kind: 'ok',
+        text: `Imported ${data.tanks.length} tank(s) and ${data.readings.length} reading(s).`,
+      })
+    } catch (e) {
+      const reason =
+        e instanceof SyntaxError
+          ? 'the file is not valid JSON'
+          : e instanceof BackupFormatError
+            ? e.message
+            : String(e)
+      setMessage({ kind: 'error', text: `Import failed: ${reason}. Nothing was changed.` })
+    }
   }
 
   const onImportJson = async () => {
@@ -66,26 +98,19 @@ export default function SettingsClient() {
         })
         const path = Array.isArray(selected) ? selected[0] : selected
         if (path && typeof path === 'string') {
-          const text = await fs.readTextFile(path)
-          const data = JSON.parse(text)
-          await importDump(data)
-          alert('Import complete')
-          return
+          await applyImport(await fs.readTextFile(path))
         }
+        return
       } catch {
         // fall through to web method
       }
     }
     const input = document.createElement('input')
     input.type = 'file'
-    input.accept = 'application/json'
+    input.accept = 'application/json,.json'
     input.onchange = async () => {
       const file = input.files?.[0]
-      if (!file) return
-      const text = await file.text()
-      const data = JSON.parse(text)
-      await importDump(data)
-      alert('Import complete')
+      if (file) await applyImport(await file.text())
     }
     input.click()
   }
@@ -100,29 +125,69 @@ export default function SettingsClient() {
               <div>Data Folder:</div>
               <code style={{ display: 'block', wordBreak: 'break-all' }}>{db?.dir ?? '…'}</code>
               <div className="cluster" style={{ marginTop: 8 }}>
-                <button onClick={() => revealDb('folder')}>Reveal in Finder/Explorer</button>
-                <button onClick={() => copy(db?.dir)}>Copy Folder Path</button>
+                <button
+                  type="button"
+                  className="button button--ghost"
+                  onClick={() => revealDb('folder')}
+                >
+                  Reveal in Finder/Explorer
+                </button>
+                <button
+                  type="button"
+                  className="button button--ghost"
+                  onClick={() => copy(db?.dir)}
+                >
+                  Copy Folder Path
+                </button>
               </div>
             </div>
             <div>
               <div>Database File:</div>
               <code style={{ display: 'block', wordBreak: 'break-all' }}>{db?.file ?? '…'}</code>
               <div className="cluster" style={{ marginTop: 8 }}>
-                <button onClick={() => revealDb('file')}>Open DB Path</button>
-                <button onClick={() => copy(db?.file)}>Copy File Path</button>
+                <button
+                  type="button"
+                  className="button button--ghost"
+                  onClick={() => revealDb('file')}
+                >
+                  Open DB Path
+                </button>
+                <button
+                  type="button"
+                  className="button button--ghost"
+                  onClick={() => copy(db?.file)}
+                >
+                  Copy File Path
+                </button>
               </div>
             </div>
           </div>
         ) : (
-          <p>Running in browser/PWA. Data is stored in IndexedDB.</p>
+          <p>
+            Your data is stored only in this browser (IndexedDB) on this device. Clearing site data
+            or uninstalling the app deletes it, so export a backup now and then.
+          </p>
         )}
       </section>
 
       <section>
         <h2 className="section-title">Backup & Migrate</h2>
+        <p className="muted small">
+          A JSON backup holds every tank, reading, and setting. Use it to move data between devices
+          or into the desktop app.
+        </p>
         <div className="cluster">
-          <button onClick={onExportJson}>Export JSON</button>
-          <button onClick={onImportJson}>Import JSON</button>
+          <button type="button" className="button" onClick={onExportJson}>
+            Export backup (JSON)
+          </button>
+          <button type="button" className="button button--ghost" onClick={onImportJson}>
+            Import backup…
+          </button>
+        </div>
+        <div role="status" aria-live="polite" style={{ marginTop: 'var(--space-3)' }}>
+          {message && (
+            <span className={message.kind === 'error' ? 'danger' : undefined}>{message.text}</span>
+          )}
         </div>
       </section>
     </div>

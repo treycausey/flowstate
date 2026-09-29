@@ -1,39 +1,54 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useTanks } from '@/components/TankProvider'
-import { deleteReading, listReadingsByTank, updateReading } from '@/lib/idb'
+import { deleteReading, listReadingsByTank, listReadingsWithinHour, updateReading } from '@/lib/idb'
 import { emitReadingsChanged, onReadingsChanged } from '@/lib/events'
-import type { Reading } from '@/lib/models'
-import { normalizeInput } from '@/lib/validation'
-import { formatLocal } from '@/lib/time'
+import { BOUNDS, METRICS, METRIC_SHORT, STEP, type Metric, type Reading } from '@/lib/models'
+import { parseMetricInput } from '@/lib/validation'
+import { formatLocal, fromDatetimeLocalValue, toDatetimeLocalValue } from '@/lib/time'
+import { formatMetric } from '@/lib/format'
+import { severity } from '@/lib/series'
 
-type DraftReading = {
-  pH: string
-  ammonia: string
-  nitrite: string
-  nitrate: string
-  note: string
+type DraftReading = Record<Metric, string> & { ts: string; note: string }
+
+const EDIT_LABEL: Record<Metric, string> = {
+  pH: 'pH',
+  ammonia: 'Ammonia (ppm)',
+  nitrite: 'Nitrite (ppm)',
+  nitrate: 'Nitrate (ppm)',
 }
 
-export default function ReadingList() {
+const SEVERITY_TEXT = { caution: 'caution', high: 'out of range' } as const
+
+function MetricCell({ metric, value }: { metric: Metric; value: number }) {
+  const level = severity(metric, value)
+  if (level === 'ok') return <td className="num">{formatMetric(metric, value)}</td>
+  return (
+    <td className={`num flag flag--${level}`}>
+      {formatMetric(metric, value)}
+      <span aria-hidden="true">{level === 'high' ? ' ▲' : ' △'}</span>
+      <span className="visually-hidden"> ({SEVERITY_TEXT[level]})</span>
+    </td>
+  )
+}
+
+export default function ReadingList({ limit = 10 }: { limit?: number }) {
   const { activeTankId } = useTanks()
   const [items, setItems] = useState<Reading[]>([])
+  const [showAll, setShowAll] = useState(false)
   const [editingReading, setEditingReading] = useState<Reading | null>(null)
   const [draft, setDraft] = useState<DraftReading | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const modalTitleId = useMemo(
-    () => (editingReading ? `edit-${editingReading.id}` : undefined),
-    [editingReading],
-  )
   const firstFieldRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     let mounted = true
+    setShowAll(false)
     const load = async () => {
       if (!activeTankId) return setItems([])
       const all = await listReadingsByTank(activeTankId)
-      if (mounted) setItems(all)
+      if (mounted) setItems(all.slice().reverse()) // newest first
     }
     load()
     const off = onReadingsChanged((tankId) => {
@@ -44,6 +59,12 @@ export default function ReadingList() {
       off()
     }
   }, [activeTankId])
+
+  const cancelEditing = () => {
+    setEditingReading(null)
+    setDraft(null)
+    setError(null)
+  }
 
   useEffect(() => {
     if (!editingReading) return
@@ -65,16 +86,17 @@ export default function ReadingList() {
   }, [editingReading])
 
   const onDelete = async (reading: Reading) => {
-    if (!confirm('Delete this reading?')) return
+    if (!window.confirm(`Delete the reading from ${formatLocal(new Date(reading.ts))}?`)) return
     await deleteReading(reading.id)
     setItems((prev) => prev.filter((r) => r.id !== reading.id))
     if (editingReading?.id === reading.id) cancelEditing()
-    if (activeTankId) emitReadingsChanged(activeTankId)
+    emitReadingsChanged(reading.tankId)
   }
 
   const startEditing = (reading: Reading) => {
     setError(null)
     setDraft({
+      ts: toDatetimeLocalValue(new Date(reading.ts)),
       pH: String(reading.pH),
       ammonia: String(reading.ammonia),
       nitrite: String(reading.nitrite),
@@ -84,199 +106,206 @@ export default function ReadingList() {
     setEditingReading(reading)
   }
 
-  const cancelEditing = () => {
-    setEditingReading(null)
-    setDraft(null)
-    setError(null)
-  }
-
   const saveEditing = async () => {
     if (!draft || !editingReading) return
-    const current = items.find((r) => r.id === editingReading.id)
-    if (!current) return
-
-    const metricFields = [draft.pH, draft.ammonia, draft.nitrite, draft.nitrate]
-    if (metricFields.some((value) => value.trim() === '')) {
-      setError('All metrics must be provided.')
+    const values = {} as Record<Metric, number>
+    for (const m of METRICS) {
+      const res = parseMetricInput(m, draft[m])
+      if (!res.ok) {
+        setError(`${EDIT_LABEL[m]}: ${res.error}`)
+        return
+      }
+      values[m] = res.value
+    }
+    const when = fromDatetimeLocalValue(draft.ts)
+    if (!when) {
+      setError('Enter a valid date and time.')
       return
     }
 
-    const pH = Number(draft.pH)
-    const ammonia = Number(draft.ammonia)
-    const nitrite = Number(draft.nitrite)
-    const nitrate = Number(draft.nitrate)
-
-    if ([pH, ammonia, nitrite, nitrate].some((value) => Number.isNaN(value))) {
-      setError('All metrics must be valid numbers.')
-      return
-    }
-
+    const note = draft.note.trim()
     const next: Reading = {
-      ...current,
-      pH: normalizeInput('pH', pH),
-      ammonia: normalizeInput('ammonia', ammonia),
-      nitrite: normalizeInput('nitrite', nitrite),
-      nitrate: normalizeInput('nitrate', nitrate),
-      note: draft.note.trim() === '' ? undefined : draft.note.trim(),
+      ...editingReading,
+      ...values,
+      ts: when.toISOString(),
+      note: note === '' ? undefined : note,
     }
 
-    await updateReading(next)
-    setItems((prev) => prev.map((x) => (x.id === next.id ? next : x)))
-    if (activeTankId) emitReadingsChanged(activeTankId)
+    try {
+      if (new Date(editingReading.ts).getTime() !== when.getTime()) {
+        const near = await listReadingsWithinHour(next.tankId, next.ts, next.id)
+        if (
+          near.length > 0 &&
+          !window.confirm('Another reading is within an hour of this time. Save anyway?')
+        )
+          return
+      }
+      await updateReading(next)
+    } catch (err) {
+      setError(`Couldn’t save: ${err instanceof Error ? err.message : String(err)}`)
+      return
+    }
+    setItems((prev) =>
+      prev
+        .map((x) => (x.id === next.id ? next : x))
+        .sort((a, b) => new Date(b.ts).getTime() - new Date(a.ts).getTime()),
+    )
+    emitReadingsChanged(next.tankId)
     cancelEditing()
+  }
+
+  const setDraftField = (field: keyof DraftReading, value: string) => {
+    setError(null)
+    setDraft((prev) => (prev ? { ...prev, [field]: value } : prev))
   }
 
   if (!activeTankId) return null
 
+  const visible = showAll ? items : items.slice(0, limit)
+
   return (
     <div>
-      <h3 className="section-title" style={{ marginTop: 0 }}>
-        Recent Readings
-      </h3>
+      <h2 className="section-title">Recent readings</h2>
       {items.length === 0 ? (
-        <p>No readings yet.</p>
+        <p className="muted">No readings yet. Log your first test above.</p>
       ) : (
-        <table>
-          <thead>
-            <tr>
-              <th align="left">Time</th>
-              <th align="right">pH</th>
-              <th align="right">NH3</th>
-              <th align="right">NO2</th>
-              <th align="right">NO3</th>
-              <th align="left">Note</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {items.map((r) => (
-              <tr key={r.id}>
-                <td>{formatLocal(new Date(r.ts))}</td>
-                <td align="right">{r.pH}</td>
-                <td align="right">{r.ammonia}</td>
-                <td align="right">{r.nitrite}</td>
-                <td align="right">{r.nitrate}</td>
-                <td>{r.note || ''}</td>
-                <td>
-                  <button
-                    className="button button--ghost"
-                    type="button"
-                    onClick={() => startEditing(r)}
-                  >
-                    Edit
-                  </button>{' '}
-                  <button
-                    className="button button--ghost"
-                    type="button"
-                    onClick={() => onDelete(r)}
-                  >
-                    Delete
-                  </button>
-                </td>
+        <div className="table-scroll">
+          <table className="readings">
+            <thead>
+              <tr>
+                <th scope="col" className="left">
+                  Time
+                </th>
+                {METRICS.map((m) => (
+                  <th key={m} scope="col" className="num">
+                    {METRIC_SHORT[m]}
+                  </th>
+                ))}
+                <th scope="col" className="left note-col">
+                  Note
+                </th>
+                <th scope="col">
+                  <span className="visually-hidden">Actions</span>
+                </th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {visible.map((r) => (
+                <tr key={r.id}>
+                  <td className="left nowrap">
+                    <time dateTime={r.ts}>
+                      {formatLocal(new Date(r.ts), undefined, {
+                        month: 'short',
+                        day: 'numeric',
+                        hour: 'numeric',
+                        minute: '2-digit',
+                      })}
+                    </time>
+                  </td>
+                  {METRICS.map((m) => (
+                    <MetricCell key={m} metric={m} value={r[m]} />
+                  ))}
+                  <td className="left note-col">{r.note || ''}</td>
+                  <td className="actions">
+                    <button
+                      className="button button--ghost button--small"
+                      type="button"
+                      onClick={() => startEditing(r)}
+                      aria-label={`Edit reading from ${formatLocal(new Date(r.ts))}`}
+                    >
+                      Edit
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {items.length > limit && (
+        <button
+          type="button"
+          className="button button--ghost"
+          style={{ marginTop: 'var(--space-3)' }}
+          onClick={() => setShowAll((v) => !v)}
+        >
+          {showAll ? 'Show fewer' : `Show all ${items.length}`}
+        </button>
       )}
       {editingReading && draft ? (
         <div className="modal-overlay" role="presentation">
-          <div className="modal" role="dialog" aria-modal="true" aria-labelledby={modalTitleId}>
+          <div
+            className="modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={`edit-${editingReading.id}`}
+          >
             <form
               className="stack"
+              noValidate
               onSubmit={(event) => {
                 event.preventDefault()
                 saveEditing()
               }}
             >
-              <h4 id={modalTitleId}>Edit Reading</h4>
-              <p style={{ marginBottom: 0, color: 'var(--muted)', fontSize: 'var(--step--1)' }}>
-                Logged {formatLocal(new Date(editingReading.ts))}
-              </p>
+              <h3 id={`edit-${editingReading.id}`} style={{ margin: 0 }}>
+                Edit Reading
+              </h3>
               <div className="stack" style={{ gap: 'var(--space-3)' }}>
                 <label>
-                  pH
+                  Date &amp; time
                   <input
-                    ref={firstFieldRef}
-                    type="number"
-                    inputMode="decimal"
-                    step="0.1"
-                    min="5"
-                    max="9"
-                    value={draft.pH}
-                    onChange={(event) => {
-                      setError(null)
-                      setDraft((prev) => (prev ? { ...prev, pH: event.target.value } : prev))
-                    }}
+                    type="datetime-local"
+                    value={draft.ts}
+                    onChange={(e) => setDraftField('ts', e.target.value)}
                   />
                 </label>
-                <label>
-                  Ammonia (ppm)
-                  <input
-                    type="number"
-                    inputMode="decimal"
-                    step="0.25"
-                    min="0"
-                    max="10"
-                    value={draft.ammonia}
-                    onChange={(event) => {
-                      setError(null)
-                      setDraft((prev) => (prev ? { ...prev, ammonia: event.target.value } : prev))
-                    }}
-                  />
-                </label>
-                <label>
-                  Nitrite (ppm)
-                  <input
-                    type="number"
-                    inputMode="decimal"
-                    step="0.1"
-                    min="0"
-                    max="10"
-                    value={draft.nitrite}
-                    onChange={(event) => {
-                      setError(null)
-                      setDraft((prev) => (prev ? { ...prev, nitrite: event.target.value } : prev))
-                    }}
-                  />
-                </label>
-                <label>
-                  Nitrate (ppm)
-                  <input
-                    type="number"
-                    inputMode="decimal"
-                    step="1"
-                    min="0"
-                    max="200"
-                    value={draft.nitrate}
-                    onChange={(event) => {
-                      setError(null)
-                      setDraft((prev) => (prev ? { ...prev, nitrate: event.target.value } : prev))
-                    }}
-                  />
-                </label>
+                <div className="metric-grid">
+                  {METRICS.map((m, i) => (
+                    <label key={m}>
+                      {EDIT_LABEL[m]}
+                      <input
+                        ref={i === 0 ? firstFieldRef : undefined}
+                        type="number"
+                        inputMode="decimal"
+                        step={STEP[m]}
+                        min={BOUNDS[m].min}
+                        max={BOUNDS[m].max}
+                        value={draft[m]}
+                        onChange={(e) => setDraftField(m, e.target.value)}
+                      />
+                    </label>
+                  ))}
+                </div>
                 <label>
                   Note
                   <input
                     type="text"
+                    maxLength={200}
                     value={draft.note}
-                    onChange={(event) => {
-                      setError(null)
-                      setDraft((prev) => (prev ? { ...prev, note: event.target.value } : prev))
-                    }}
+                    onChange={(e) => setDraftField('note', e.target.value)}
                   />
                 </label>
                 {error ? (
-                  <div role="alert" style={{ color: 'var(--danger)' }}>
+                  <div role="alert" className="danger">
                     {error}
                   </div>
                 ) : null}
               </div>
               <div className="cluster" style={{ justifyContent: 'flex-end' }}>
-                <button className="button" type="submit">
-                  Save changes
+                <button
+                  className="button button--ghost button--danger"
+                  type="button"
+                  style={{ marginRight: 'auto' }}
+                  onClick={() => onDelete(editingReading)}
+                >
+                  Delete
                 </button>
                 <button className="button button--ghost" type="button" onClick={cancelEditing}>
                   Cancel
+                </button>
+                <button className="button" type="submit">
+                  Save changes
                 </button>
               </div>
             </form>

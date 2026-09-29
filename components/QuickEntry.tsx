@@ -1,14 +1,14 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { addReading, findMostRecentReading, listReadingsWithinHour } from '@/lib/idb'
 import { useTanks } from '@/components/TankProvider'
-import { STEP } from '@/lib/models'
-import { normalizeInput } from '@/lib/validation'
+import { BOUNDS, METRICS, STEP, type Metric } from '@/lib/models'
+import { parseMetricInput } from '@/lib/validation'
 import { emitReadingsChanged } from '@/lib/events'
+import { fromDatetimeLocalValue, toDatetimeLocalValue } from '@/lib/time'
 import InstructionsModal from '@/components/InstructionsModal'
 import ProgressRing from '@/components/ProgressRing'
-import { useRef } from 'react'
 
 type TimerRow = {
   id: string
@@ -18,85 +18,99 @@ type TimerRow = {
   notified?: boolean
 }
 
-type FormState = {
+type FormState = Record<Metric, string> & {
   ts: string // datetime-local value
-  pH: string
-  ammonia: string
-  nitrite: string
-  nitrate: string
   note: string
 }
 
-const nowLocal = () =>
-  new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)
+type Errors = Partial<Record<Metric | 'ts' | 'form', string>>
+
+const FIELD_LABEL: Record<Metric, string> = {
+  pH: 'pH',
+  ammonia: 'Ammonia (NH3/NH4+, ppm)',
+  nitrite: 'Nitrite (NO2, ppm)',
+  nitrate: 'Nitrate (NO3, ppm)',
+}
+
+const FUTURE_TOLERANCE_MS = 5 * 60 * 1000
+
+const emptyValues = () => ({ pH: '', ammonia: '', nitrite: '', nitrate: '', note: '' })
+
+function beep(ctxRef: React.MutableRefObject<AudioContext | null>) {
+  try {
+    navigator.vibrate?.([120, 60, 120])
+    const Ctor =
+      window.AudioContext ??
+      (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+    if (!Ctor) return
+    const ctx = (ctxRef.current ??= new Ctor())
+    const osc = ctx.createOscillator()
+    const gain = ctx.createGain()
+    osc.type = 'sine'
+    osc.frequency.value = 880
+    osc.connect(gain)
+    gain.connect(ctx.destination)
+    gain.gain.setValueAtTime(0.0001, ctx.currentTime)
+    gain.gain.exponentialRampToValueAtTime(0.2, ctx.currentTime + 0.02)
+    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.45)
+    osc.start()
+    osc.stop(ctx.currentTime + 0.5)
+  } catch {
+    /* audio/vibration unavailable */
+  }
+}
 
 export default function QuickEntry() {
   const { activeTankId } = useTanks()
-  const [state, setState] = useState<FormState>({
-    ts: nowLocal(),
-    pH: '',
-    ammonia: '',
-    nitrite: '',
-    nitrate: '',
-    note: '',
-  })
+  const [state, setState] = useState<FormState>(() => ({
+    ts: toDatetimeLocalValue(new Date()),
+    ...emptyValues(),
+  }))
+  // While untouched, the timestamp tracks "now" at save time rather than page-load time
+  const [tsTouched, setTsTouched] = useState(false)
+  const [errors, setErrors] = useState<Errors>({})
+  const [status, setStatus] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [showInstructions, setShowInstructions] = useState(false)
   const [timers, setTimers] = useState<TimerRow[]>([])
-  const [now, setNow] = useState(Date.now())
-  const tickRef = useRef<number | null>(null)
-  const disabled = useMemo(() => !activeTankId || saving, [activeTankId, saving])
+  const [now, setNow] = useState(() => Date.now())
+  const audioRef = useRef<AudioContext | null>(null)
+  const firstFieldRef = useRef<HTMLInputElement>(null)
+  const disabled = !activeTankId || saving
+  const hasTimers = timers.length > 0
 
   useEffect(() => {
-    // Reset timestamp on mount/change
-    setState((s) => ({ ...s, ts: nowLocal() }))
+    setTsTouched(false)
+    setState((s) => ({ ...s, ts: toDatetimeLocalValue(new Date()) }))
+    setErrors({})
+    setStatus(null)
   }, [activeTankId])
 
-  // global tick for timers
+  // Tick only while timers are running
   useEffect(() => {
-    tickRef.current = window.setInterval(() => setNow(Date.now()), 250)
-    return () => {
-      if (tickRef.current) window.clearInterval(tickRef.current)
-    }
-  }, [])
+    if (!hasTimers) return
+    const id = window.setInterval(() => setNow(Date.now()), 250)
+    return () => window.clearInterval(id)
+  }, [hasTimers])
 
-  // notify on finished timers exactly once
+  useEffect(() => () => void audioRef.current?.close().catch(() => {}), [])
+
+  // Alert once per finished timer
   useEffect(() => {
+    if (!timers.some((t) => !t.notified && now - t.startedAt >= t.totalMs)) return
+    beep(audioRef)
     setTimers((prev) =>
-      prev.map((t) => {
-        const remaining = t.totalMs - (now - t.startedAt)
-        if (remaining <= 0 && !t.notified) {
-          // buzz
-          try {
-            if ('vibrate' in navigator) (navigator as any).vibrate?.([120, 60, 120])
-            const Ctx = (window as any).AudioContext || (window as any).webkitAudioContext
-            if (Ctx) {
-              const ctx = new Ctx()
-              const o = ctx.createOscillator()
-              const g = ctx.createGain()
-              o.type = 'sine'
-              o.frequency.value = 880
-              o.connect(g)
-              g.connect(ctx.destination)
-              o.start()
-              g.gain.setValueAtTime(0.0001, ctx.currentTime)
-              g.gain.exponentialRampToValueAtTime(0.2, ctx.currentTime + 0.02)
-              g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.45)
-              o.stop(ctx.currentTime + 0.5)
-            }
-          } catch {
-            /* noop */
-          }
-          return { ...t, notified: true }
-        }
-        return t
-      }),
+      prev.map((t) =>
+        !t.notified && now - t.startedAt >= t.totalMs ? { ...t, notified: true } : t,
+      ),
     )
-  }, [now])
+  }, [now, timers])
 
   const startTimer = (label: string, ms: number) => {
     const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
-    setTimers((prev) => [...prev, { id, label, totalMs: ms, startedAt: Date.now() }])
+    const startedAt = Date.now()
+    setNow(startedAt)
+    setTimers((prev) => [...prev, { id, label, totalMs: ms, startedAt }])
   }
 
   const stopTimer = (id: string) => setTimers((prev) => prev.filter((t) => t.id !== id))
@@ -109,10 +123,14 @@ export default function QuickEntry() {
     return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
   }
 
-  const useLastValues = async () => {
+  const fillLastValues = async () => {
     if (!activeTankId) return
     const last = await findMostRecentReading(activeTankId)
-    if (!last) return
+    if (!last) {
+      setStatus('No previous reading for this tank yet.')
+      return
+    }
+    setErrors({})
     setState((s) => ({
       ...s,
       pH: String(last.pH),
@@ -122,13 +140,34 @@ export default function QuickEntry() {
     }))
   }
 
+  const validate = () => {
+    const next: Errors = {}
+    const values = {} as Record<Metric, number>
+    for (const m of METRICS) {
+      const res = parseMetricInput(m, state[m])
+      if (res.ok) values[m] = res.value
+      else next[m] = res.error
+    }
+    const when = tsTouched ? fromDatetimeLocalValue(state.ts) : new Date()
+    if (!when) next.ts = 'Enter a date and time'
+    else if (when.getTime() > Date.now() + FUTURE_TOLERANCE_MS) next.ts = 'Can’t be in the future'
+    return { errors: next, values, when }
+  }
+
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!activeTankId) return
+    if (!activeTankId || saving) return
+    setStatus(null)
+    const { errors: found, values, when } = validate()
+    setErrors(found)
+    if (Object.keys(found).length > 0 || !when) {
+      const firstBad = (['ts', ...METRICS] as const).find((k) => found[k])
+      document.getElementById(`qe-${firstBad}`)?.focus()
+      return
+    }
     setSaving(true)
     try {
-      const tsISO = new Date(state.ts).toISOString()
-      // Duplicate guard
+      const tsISO = when.toISOString()
       const near = await listReadingsWithinHour(activeTankId, tsISO)
       if (near.length > 0) {
         const proceed = window.confirm(
@@ -136,108 +175,116 @@ export default function QuickEntry() {
         )
         if (!proceed) return
       }
-      await addReading({
-        tankId: activeTankId,
-        ts: tsISO,
-        pH: normalizeInput('pH', Number(state.pH)),
-        ammonia: normalizeInput('ammonia', Number(state.ammonia)),
-        nitrite: normalizeInput('nitrite', Number(state.nitrite)),
-        nitrate: normalizeInput('nitrate', Number(state.nitrate)),
-        note: state.note || undefined,
-      })
+      const note = state.note.trim()
+      await addReading({ tankId: activeTankId, ts: tsISO, ...values, note: note || undefined })
       emitReadingsChanged(activeTankId)
-      // Reset values but keep note
-      setState({ ts: nowLocal(), pH: '', ammonia: '', nitrite: '', nitrate: '', note: '' })
-      alert('Saved')
+      setTsTouched(false)
+      setState({ ts: toDatetimeLocalValue(new Date()), ...emptyValues() })
+      setStatus('Reading saved.')
+      firstFieldRef.current?.focus()
+    } catch (err) {
+      setErrors({ form: `Couldn’t save: ${err instanceof Error ? err.message : String(err)}` })
     } finally {
       setSaving(false)
     }
   }
 
-  const onChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+  const onChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target
+    if (name === 'ts') setTsTouched(true)
+    setStatus(null)
+    setErrors((prev) => ({ ...prev, [name]: undefined, form: undefined }))
     setState((s) => ({ ...s, [name]: value }))
   }
 
+  const describedBy = (key: keyof Errors) => (errors[key] ? `qe-${key}-error` : undefined)
+
   return (
-    <form onSubmit={onSubmit} className="stack" style={{ maxWidth: 480 }}>
-      <label>
-        Timestamp
+    <form onSubmit={onSubmit} className="stack quick-entry" noValidate>
+      <div className="field">
+        <label htmlFor="qe-ts">Date &amp; time</label>
         <input
+          id="qe-ts"
           type="datetime-local"
           name="ts"
           value={state.ts}
+          max={toDatetimeLocalValue(new Date(Date.now() + FUTURE_TOLERANCE_MS))}
           onChange={onChange}
+          onFocus={() => {
+            // Refresh the default before the user starts editing it
+            if (!tsTouched) setState((s) => ({ ...s, ts: toDatetimeLocalValue(new Date()) }))
+          }}
           disabled={disabled}
+          aria-invalid={!!errors.ts}
+          aria-describedby={describedBy('ts')}
         />
-      </label>
-      <label>
-        pH
+        {errors.ts && (
+          <span id="qe-ts-error" className="field-error">
+            {errors.ts}
+          </span>
+        )}
+      </div>
+      <div className="metric-grid">
+        {METRICS.map((m, i) => (
+          <div className="field" key={m}>
+            <label htmlFor={`qe-${m}`}>{FIELD_LABEL[m]}</label>
+            <input
+              id={`qe-${m}`}
+              ref={i === 0 ? firstFieldRef : undefined}
+              type="number"
+              inputMode="decimal"
+              step={STEP[m]}
+              min={BOUNDS[m].min}
+              max={BOUNDS[m].max}
+              name={m}
+              value={state[m]}
+              onChange={onChange}
+              disabled={disabled}
+              aria-invalid={!!errors[m]}
+              aria-describedby={describedBy(m)}
+            />
+            {errors[m] && (
+              <span id={`qe-${m}-error`} className="field-error">
+                {errors[m]}
+              </span>
+            )}
+          </div>
+        ))}
+      </div>
+      <div className="field">
+        <label htmlFor="qe-note">Note</label>
         <input
-          type="number"
-          step={STEP.pH}
-          name="pH"
-          value={state.pH}
+          id="qe-note"
+          name="note"
+          value={state.note}
           onChange={onChange}
           disabled={disabled}
+          maxLength={200}
+          autoComplete="off"
         />
-      </label>
-      <label>
-        Ammonia (NH3, ppm)
-        <input
-          type="number"
-          step={STEP.ammonia}
-          name="ammonia"
-          value={state.ammonia}
-          onChange={onChange}
-          disabled={disabled}
-        />
-      </label>
-      <label>
-        Nitrite (NO2, ppm)
-        <input
-          type="number"
-          step={STEP.nitrite}
-          name="nitrite"
-          value={state.nitrite}
-          onChange={onChange}
-          disabled={disabled}
-        />
-      </label>
-      <label>
-        Nitrate (NO3, ppm)
-        <input
-          type="number"
-          step={STEP.nitrate}
-          name="nitrate"
-          value={state.nitrate}
-          onChange={onChange}
-          disabled={disabled}
-        />
-      </label>
-      <label>
-        Note
-        <input name="note" value={state.note} onChange={onChange} disabled={disabled} />
-      </label>
+      </div>
       <div className="cluster">
+        <button className="button" type="submit" disabled={disabled}>
+          {saving ? 'Saving…' : 'Save'}
+        </button>
+        <button
+          className="button button--ghost"
+          type="button"
+          onClick={fillLastValues}
+          disabled={disabled}
+        >
+          Use last values
+        </button>
         <button
           className="button button--ghost"
           type="button"
           onClick={() => setShowInstructions(true)}
         >
-          Instructions
+          Test instructions
         </button>
-        <button
-          className="button button--ghost"
-          type="button"
-          onClick={useLastValues}
-          disabled={disabled}
-        >
-          Use last values
-        </button>
-        <button className="button" type="submit" disabled={disabled}>
-          Save
-        </button>
+      </div>
+      <div aria-live="polite" role="status" className="form-status">
+        {errors.form ? <span className="danger">{errors.form}</span> : status}
       </div>
       {timers.length > 0 && (
         <div className="card" aria-live="polite">
@@ -247,7 +294,7 @@ export default function QuickEntry() {
               Clear all
             </button>
           </div>
-          <div className="stack" style={{ marginTop: '0.5rem' }}>
+          <div className="stack" style={{ marginTop: '0.5rem', gap: 'var(--space-3)' }}>
             {timers.map((t) => {
               const elapsed = now - t.startedAt
               const done = elapsed >= t.totalMs

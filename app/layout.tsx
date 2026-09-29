@@ -1,9 +1,8 @@
 import './globals.css'
 import type { Metadata, Viewport } from 'next'
 import ServiceWorkerRegister from '@/components/ServiceWorkerRegister'
-import InitSeed from '@/components/InitSeed'
 import { TankProvider } from '@/components/TankProvider'
-import ThemeToggle from '@/components/ThemeToggle'
+import NavBar from '@/components/NavBar'
 import TauriNavigationBridge from '@/components/TauriNavigationBridge'
 
 export const metadata: Metadata = {
@@ -24,22 +23,26 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
-  themeColor: '#0ea5e9',
+  themeColor: [
+    { media: '(prefers-color-scheme: light)', color: '#ffffff' },
+    { media: '(prefers-color-scheme: dark)', color: '#0b0f14' },
+  ],
 }
+
+// Apply the saved theme before first paint to avoid a light/dark flash
+const themeScript = `try{var t=localStorage.getItem('theme');document.documentElement.setAttribute('data-theme',t==='light'||t==='dark'?t:'system')}catch(e){}`
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
+      </head>
       <body>
         <ServiceWorkerRegister />
-        <InitSeed />
         <TankProvider>
           <TauriNavigationBridge />
-          <header className="container" style={{ padding: '0.5rem 0' }}>
-            <div className="cluster" style={{ justifyContent: 'flex-end' }}>
-              <ThemeToggle />
-            </div>
-          </header>
+          <NavBar />
           {children}
         </TankProvider>
       </body>
