@@ -17,6 +17,14 @@ type Ctx = {
 }
 
 const TankContext = createContext<Ctx | null>(null)
+
+/** All tanks, creating the default one on first run. */
+async function loadTanks() {
+  const all = await listTanks()
+  if (all.length > 0) return all
+  await ensureSeed()
+  return listTanks()
+}
 const STORAGE_KEY = 'activeTankId'
 
 function readSaved() {
@@ -42,18 +50,22 @@ export function TankProvider({ children }: { children: React.ReactNode }) {
   const [loaded, setLoaded] = useState(false)
 
   const refresh = useCallback(async () => {
-    let all = await listTanks()
-    if (all.length === 0) {
-      await ensureSeed()
-      all = await listTanks()
-    }
-    setTanks(all)
+    setTanks(await loadTanks())
     setLoaded(true)
   }, [])
 
   useEffect(() => {
-    refresh().catch(() => setLoaded(true))
-  }, [refresh])
+    let cancelled = false
+    loadTanks()
+      .then((all) => !cancelled && setTanks(all))
+      .catch(() => {
+        // storage unavailable: render the empty state rather than spinning forever
+      })
+      .finally(() => !cancelled && setLoaded(true))
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const activeTanks = useMemo(() => tanks.filter((t) => !t.archivedAt), [tanks])
 

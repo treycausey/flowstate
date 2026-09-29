@@ -30,7 +30,7 @@ describe('ReadingList edit note', () => {
     fireEvent.change(noteInput, { target: { value: 'edited note' } })
     fireEvent.click(screen.getByRole('button', { name: /save changes/i }))
 
-    await waitFor(() => expect(screen.getByText(/edited note/i)).toBeInTheDocument())
+    expect(await screen.findByText(/edited note/i)).toBeInTheDocument()
   })
 })
 

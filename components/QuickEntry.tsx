@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useEffectEvent, useRef, useState } from 'react'
 import { addReading, findMostRecentReading, listReadingsWithinHour } from '@/lib/idb'
 import { useTanks } from '@/components/TankProvider'
 import { BOUNDS, METRICS, STEP, type Metric } from '@/lib/models'
@@ -79,32 +79,33 @@ export default function QuickEntry() {
   const disabled = !activeTankId || saving
   const hasTimers = timers.length > 0
 
-  useEffect(() => {
+  // Reset transient form state when switching tanks (adjusting state during render,
+  // rather than in an effect, avoids a flash of the previous tank's errors)
+  const [formTankId, setFormTankId] = useState(activeTankId)
+  if (formTankId !== activeTankId) {
+    setFormTankId(activeTankId)
     setTsTouched(false)
-    setState((s) => ({ ...s, ts: toDatetimeLocalValue(new Date()) }))
     setErrors({})
     setStatus(null)
-  }, [activeTankId])
+  }
+
+  // Each tick advances the clock and alerts once per newly finished timer
+  const onTick = useEffectEvent((at: number) => {
+    setNow(at)
+    const finished = (t: TimerRow) => !t.notified && at - t.startedAt >= t.totalMs
+    if (!timers.some(finished)) return
+    beep(audioRef)
+    setTimers((prev) => prev.map((t) => (finished(t) ? { ...t, notified: true } : t)))
+  })
 
   // Tick only while timers are running
   useEffect(() => {
     if (!hasTimers) return
-    const id = window.setInterval(() => setNow(Date.now()), 250)
+    const id = window.setInterval(() => onTick(Date.now()), 250)
     return () => window.clearInterval(id)
   }, [hasTimers])
 
   useEffect(() => () => void audioRef.current?.close().catch(() => {}), [])
-
-  // Alert once per finished timer
-  useEffect(() => {
-    if (!timers.some((t) => !t.notified && now - t.startedAt >= t.totalMs)) return
-    beep(audioRef)
-    setTimers((prev) =>
-      prev.map((t) =>
-        !t.notified && now - t.startedAt >= t.totalMs ? { ...t, notified: true } : t,
-      ),
-    )
-  }, [now, timers])
 
   const startTimer = (label: string, ms: number) => {
     const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
@@ -208,7 +209,6 @@ export default function QuickEntry() {
           type="datetime-local"
           name="ts"
           value={state.ts}
-          max={toDatetimeLocalValue(new Date(Date.now() + FUTURE_TOLERANCE_MS))}
           onChange={onChange}
           onFocus={() => {
             // Refresh the default before the user starts editing it

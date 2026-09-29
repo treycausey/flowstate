@@ -1,3 +1,6 @@
+// SVG geometry (markers, tick labels, path data) has no accessible role, so these tests
+// inspect the rendered SVG directly.
+/* eslint-disable testing-library/no-container */
 import { fireEvent, render, screen } from '@testing-library/react'
 import MetricChart from '@/components/charts/MetricChart'
 

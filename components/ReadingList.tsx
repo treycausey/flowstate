@@ -36,7 +36,8 @@ function MetricCell({ metric, value }: { metric: Metric; value: number }) {
 export default function ReadingList({ limit = 10 }: { limit?: number }) {
   const { activeTankId } = useTanks()
   const [items, setItems] = useState<Reading[]>([])
-  const [showAll, setShowAll] = useState(false)
+  const [showAllFor, setShowAllFor] = useState<string | null>(null)
+  const showAll = showAllFor !== null && showAllFor === activeTankId
   const [editingReading, setEditingReading] = useState<Reading | null>(null)
   const [draft, setDraft] = useState<DraftReading | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -44,10 +45,8 @@ export default function ReadingList({ limit = 10 }: { limit?: number }) {
 
   useEffect(() => {
     let mounted = true
-    setShowAll(false)
     const load = async () => {
-      if (!activeTankId) return setItems([])
-      const all = await listReadingsByTank(activeTankId)
+      const all = activeTankId ? await listReadingsByTank(activeTankId) : []
       if (mounted) setItems(all.slice().reverse()) // newest first
     }
     load()
@@ -227,7 +226,7 @@ export default function ReadingList({ limit = 10 }: { limit?: number }) {
           type="button"
           className="button button--ghost"
           style={{ marginTop: 'var(--space-3)' }}
-          onClick={() => setShowAll((v) => !v)}
+          onClick={() => setShowAllFor(showAll ? null : activeTankId)}
         >
           {showAll ? 'Show fewer' : `Show all ${items.length}`}
         </button>

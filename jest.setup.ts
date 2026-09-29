@@ -1,30 +1,18 @@
 import '@testing-library/jest-dom'
 import { toHaveNoViolations } from 'jest-axe'
+
 expect.extend(toHaveNoViolations)
+
 // Polyfill structuredClone for fake-indexeddb
-// @ts-ignore
-if (typeof global.structuredClone !== 'function') {
-  // @ts-ignore
-  global.structuredClone = (obj: any) => JSON.parse(JSON.stringify(obj))
+if (typeof globalThis.structuredClone !== 'function') {
+  globalThis.structuredClone = <T>(value: T): T => JSON.parse(JSON.stringify(value))
 }
 
-// Minimal ResizeObserver mock for JSDOM tests where components measure width
-// @ts-ignore
-if (typeof global.ResizeObserver === 'undefined') {
-  // @ts-ignore
-  global.ResizeObserver = class {
-    callback: any
-    constructor(cb: any) {
-      this.callback = cb
-    }
-    observe() {
-      /* no-op */
-    }
-    unobserve() {
-      /* no-op */
-    }
-    disconnect() {
-      /* no-op */
-    }
-  }
+// Minimal ResizeObserver stub for JSDOM tests where components measure width
+if (typeof globalThis.ResizeObserver === 'undefined') {
+  globalThis.ResizeObserver = class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  } as unknown as typeof ResizeObserver
 }

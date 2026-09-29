@@ -29,6 +29,6 @@ describe('integration: create → add reading → visualize', () => {
       expect(readings.length).toBeGreaterThan(0)
     })
     // Note should render in the Recent Readings table
-    await waitFor(() => expect(screen.getByText(/water change/i)).toBeInTheDocument())
+    expect(await screen.findByText(/water change/i)).toBeInTheDocument()
   })
 })

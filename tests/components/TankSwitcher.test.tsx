@@ -11,7 +11,7 @@ function renderWithProvider(ui: React.ReactNode) {
 describe('TankSwitcher', () => {
   it('creates a new tank via prompt', async () => {
     await ensureSeed()
-    const spy = jest.spyOn(window, 'prompt').mockReturnValue('My Test Tank' as any)
+    const spy = jest.spyOn(window, 'prompt').mockReturnValue('My Test Tank')
     renderWithProvider(<TankSwitcher />)
     const createBtn = await screen.findByRole('button', { name: /new/i })
     fireEvent.click(createBtn)

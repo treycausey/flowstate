@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useEffectEvent, useRef } from 'react'
 
 type Props = {
   open: boolean
@@ -11,9 +11,8 @@ type Props = {
 export default function InstructionsModal({ open, onClose, onStartTimer }: Props) {
   const dialogRef = useRef<HTMLDivElement | null>(null)
   const closeBtnRef = useRef<HTMLButtonElement | null>(null)
-  // Keep the latest onClose without re-running the open effect (which would steal focus)
-  const onCloseRef = useRef(onClose)
-  onCloseRef.current = onClose
+  // Reads the latest onClose without re-running the open effect (which would steal focus)
+  const requestClose = useEffectEvent(() => onClose())
 
   useEffect(() => {
     if (!open) return
@@ -21,7 +20,7 @@ export default function InstructionsModal({ open, onClose, onStartTimer }: Props
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault()
-        onCloseRef.current()
+        requestClose()
       }
       if (e.key === 'Tab' && dialogRef.current) {
         // Simple focus trap: cycle within dialog

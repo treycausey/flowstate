@@ -42,7 +42,6 @@ export function generateSeries({
   const genPH = mk(7.1, 0.4, [6.2, 8.4])
   const genNH3 = mk(0.02, 0.04, [0, 1.0])
   const genNO2 = mk(0.01, 0.03, [0, 1.0])
-  const genNO3 = mk(5, 4, [0, 100])
 
   const points = Array.from(
     { length: total },
@@ -61,7 +60,7 @@ export function generateSeries({
   const nitrite: SimPoint[] = []
   const nitrate: SimPoint[] = []
 
-  points.forEach((t, idx) => {
+  points.forEach((t) => {
     pH.push(toPoint(t, genPH(1)))
     // rare ammonia spikes
     const a = genNH3(2, 0.06, 0.4)

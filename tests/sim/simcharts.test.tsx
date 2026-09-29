@@ -18,7 +18,7 @@ describe('Simulated charts', () => {
 
   test('SmallMultiples renders charts with points', () => {
     const series = generateSeries({ days: 7, pointsPerDay: 1, seed: 1 })
-    render(<SmallMultiples series={series as any} />)
+    render(<SmallMultiples series={series} />)
     // Four charts (pH, NH3, NO2, NO3)
     const labeled = screen.queryAllByLabelText(/chart/i)
     if (labeled.length > 0) {

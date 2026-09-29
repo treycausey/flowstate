@@ -86,7 +86,7 @@ describe('QuickEntry', () => {
     act(() => {
       jest.advanceTimersByTime(1000)
     })
-    await waitFor(() => expect(screen.getByText(/00:29/)).toBeInTheDocument())
+    expect(await screen.findByText(/00:29/)).toBeInTheDocument()
     jest.useRealTimers()
   })
 
