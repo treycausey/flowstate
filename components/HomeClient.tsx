@@ -2,6 +2,7 @@
 
 import TankSwitcher from '@/components/TankSwitcher'
 import QuickEntry from '@/components/QuickEntry'
+import TankStatus from '@/components/TankStatus'
 import ReadingList from '@/components/ReadingList'
 import ReminderControls from '@/components/ReminderControls'
 import NotificationsToggle from '@/components/NotificationsToggle'
@@ -20,6 +21,12 @@ export default function HomeClient() {
           Log a test
         </h2>
         <QuickEntry />
+      </section>
+      <section aria-labelledby="status-heading">
+        <h2 id="status-heading" className="section-title">
+          Status
+        </h2>
+        <TankStatus />
       </section>
       <section>
         <ReadingList />

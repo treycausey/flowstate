@@ -1,4 +1,4 @@
-import { BOUNDS, METRICS, type Metric, type MetricValue } from './models'
+import { BOUNDS, METRICS, STEP, type Metric, type MetricValue } from './models'
 
 export function clamp(value: number, min: number, max: number) {
   if (Number.isNaN(value)) return value
@@ -72,4 +72,17 @@ export function parseReadingInputs(raw: Record<Metric, string>): ReadingInputRes
     return { ok: false, errors: {}, formError: 'Enter at least one test result.' }
   }
   return { ok: true, values }
+}
+
+/**
+ * Step a metric's raw text by one kit step (ArrowUp/ArrowDown on a text field).
+ * Blank or unparseable text starts from the metric's minimum. Result is clamped to bounds.
+ */
+export function stepMetricText(metric: Metric, raw: string, direction: 1 | -1): string {
+  const { min, max } = BOUNDS[metric]
+  const current = Number(raw.trim().replace(',', '.'))
+  const base =
+    raw.trim() === '' || !Number.isFinite(current) ? min - direction * STEP[metric] : current
+  const next = clamp(roundToStep(base + direction * STEP[metric], PRECISION[metric]), min, max)
+  return String(next)
 }

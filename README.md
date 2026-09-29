@@ -28,8 +28,15 @@ Local-first app to log freshwater aquarium chemistry and visualize trends with m
 
 ## Key Features
 
-- Quick Entry for pH, Ammonia (NH3/NH4+), Nitrite (NO2−), Nitrate (NO3−), with inline validation
-  (blank or out-of-range values are rejected, never saved as 0)
+- Quick Entry for pH, Ammonia (NH3/NH4+), Nitrite (NO2−), Nitrate (NO3−), with inline validation.
+  **Partial readings:** leave a field blank for "not tested" (saved as `null`, shown as "—",
+  skipped by charts and counts). At least one result is required; a typed value must be in
+  range. Blanks are never saved as 0.
+- **Kit-value chips** under each input: tap a colour-card value from the API Freshwater Master
+  Test Kit (pH has a "High-range kit" toggle); tap the selected chip again to clear it. Free
+  typing still works. Values live in `lib/kit.ts`.
+- **Status card** on the dashboard: nitrogen-cycle status, days since the last test, and the latest
+  value per metric with a trend arrow and out-of-range emphasis (`lib/status.ts`).
 - Minimal small-multiples charts on a shared time axis with optimal/caution bands, out-of-range
   markers (shape + color), and a tap/hover/keyboard readout of value, time, and note
 - Per‑tank reminder cadence with in‑app notices, Snooze 24h / Skip, and optional system
@@ -67,7 +74,7 @@ Local-first app to log freshwater aquarium chemistry and visualize trends with m
 ## Data Schema (v1)
 
 - Tank: `{ id, name, createdAt, archivedAt?, reminderCadence }`
-- Reading: `{ id, tankId, ts, pH, ammonia, nitrite, nitrate, note? }`
+- Reading: `{ id, tankId, ts, pH, ammonia, nitrite, nitrate, note? }` (each metric is `number | null`; `null` = not tested, at least one is non-null)
 - Settings (global): `{ units?, theme?, chartOptions? }`
 
 Conventions
@@ -78,6 +85,11 @@ Conventions
   values are kept (pH/ammonia/nitrite to 0.01, nitrate to 0.1) so kit colors like nitrite 0.25
   survive. Accepted ranges: pH 5–9, ammonia/nitrite 0–10, nitrate 0–200 ppm.
 - Optimal bands: pH 6.5–7.5; Ammonia 0; Nitrite 0; Nitrate 0–20 ppm, 20–40 caution, > 40 high.
+- Nitrogen-cycle status (`cycleStatus` in `lib/status.ts`), from the whole history, skipping untested
+  metrics: **cycling** = latest ammonia or latest nitrite is above 0; **not started** = otherwise,
+  ammonia or nitrite has never been tested; **cycled** = the latest 3 readings that tested both
+  ammonia and nitrite were all 0/0 and nitrate above 0 has been seen; **nearly cycled** = both
+  tested and 0 now but the cycled test is not met yet.
 
 ## CSV Export
 
@@ -106,8 +118,6 @@ pipeline file is in git history before that date.
 ## Known Limitations & Next Steps
 
 - Custom optimal ranges per tank not exposed in the UI yet (planned v1.1).
-- Every reading needs all four metrics; partial tests (e.g. only ammonia/nitrite while cycling)
-  aren't supported yet.
 - Charts are basic SVG for v1; zoom/pan is out of scope.
 - System notifications only fire while the app is open (there's no push server by design), and
   depend on browser support and permission. The in-app reminder always works.
@@ -121,7 +131,14 @@ pipeline file is in git history before that date.
 Storage on desktop
 
 - SQLite file is created under the app’s local data directory (platform-specific path) with filename `flowstate.db`.
-- The web code detects Tauri at runtime and routes all storage calls to SQLite via Rust `invoke('sqlite_*', ...)` commands (implemented with `rusqlite` in `src-tauri/src/main.rs`).
+- The web code detects Tauri at runtime and routes all storage calls to SQLite via Rust `invoke('sqlite_*', ...)` commands (implemented with `rusqlite` in `src-tauri/src/db.rs`, wired up as Tauri commands in `src-tauri/src/main.rs`).
+
+Schema migration
+
+- The desktop database tracks its schema in `PRAGMA user_version`. On launch, a database from
+  before partial readings (version 0) is rebuilt in one transaction so the metric columns accept
+  `NULL`; every existing row is kept unchanged. New databases start at the current version. DB code
+  lives in `src-tauri/src/db.rs` (with unit tests: `cargo test` in `src-tauri`).
 
 Migration from PWA
 
