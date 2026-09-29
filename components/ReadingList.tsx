@@ -4,11 +4,12 @@ import { useEffect, useRef, useState } from 'react'
 import { useTanks } from '@/components/TankProvider'
 import { deleteReading, listReadingsByTank, listReadingsWithinHour, updateReading } from '@/lib/idb'
 import { emitReadingsChanged, onReadingsChanged } from '@/lib/events'
-import { BOUNDS, METRICS, METRIC_SHORT, STEP, type Metric, type Reading } from '@/lib/models'
-import { parseMetricInput } from '@/lib/validation'
+import { METRICS, METRIC_SHORT, type Metric, type Reading } from '@/lib/models'
+import { parseReadingInputs, stepMetricText } from '@/lib/validation'
 import { formatLocal, fromDatetimeLocalValue, toDatetimeLocalValue } from '@/lib/time'
 import { formatMetric } from '@/lib/format'
 import { severity } from '@/lib/series'
+import KitChips from '@/components/KitChips'
 
 type DraftReading = Record<Metric, string> & { ts: string; note: string }
 
@@ -21,7 +22,14 @@ const EDIT_LABEL: Record<Metric, string> = {
 
 const SEVERITY_TEXT = { caution: 'caution', high: 'out of range' } as const
 
-function MetricCell({ metric, value }: { metric: Metric; value: number }) {
+function MetricCell({ metric, value }: { metric: Metric; value: number | null }) {
+  if (value === null)
+    return (
+      <td className="num muted">
+        <span aria-hidden="true">—</span>
+        <span className="visually-hidden">not tested</span>
+      </td>
+    )
   const level = severity(metric, value)
   if (level === 'ok') return <td className="num">{formatMetric(metric, value)}</td>
   return (
@@ -36,7 +44,8 @@ function MetricCell({ metric, value }: { metric: Metric; value: number }) {
 export default function ReadingList({ limit = 10 }: { limit?: number }) {
   const { activeTankId } = useTanks()
   const [items, setItems] = useState<Reading[]>([])
-  const [showAll, setShowAll] = useState(false)
+  const [showAllFor, setShowAllFor] = useState<string | null>(null)
+  const showAll = showAllFor !== null && showAllFor === activeTankId
   const [editingReading, setEditingReading] = useState<Reading | null>(null)
   const [draft, setDraft] = useState<DraftReading | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -44,10 +53,8 @@ export default function ReadingList({ limit = 10 }: { limit?: number }) {
 
   useEffect(() => {
     let mounted = true
-    setShowAll(false)
     const load = async () => {
-      if (!activeTankId) return setItems([])
-      const all = await listReadingsByTank(activeTankId)
+      const all = activeTankId ? await listReadingsByTank(activeTankId) : []
       if (mounted) setItems(all.slice().reverse()) // newest first
     }
     load()
@@ -97,10 +104,10 @@ export default function ReadingList({ limit = 10 }: { limit?: number }) {
     setError(null)
     setDraft({
       ts: toDatetimeLocalValue(new Date(reading.ts)),
-      pH: String(reading.pH),
-      ammonia: String(reading.ammonia),
-      nitrite: String(reading.nitrite),
-      nitrate: String(reading.nitrate),
+      pH: reading.pH === null ? '' : String(reading.pH),
+      ammonia: reading.ammonia === null ? '' : String(reading.ammonia),
+      nitrite: reading.nitrite === null ? '' : String(reading.nitrite),
+      nitrate: reading.nitrate === null ? '' : String(reading.nitrate),
       note: reading.note ?? '',
     })
     setEditingReading(reading)
@@ -108,15 +115,18 @@ export default function ReadingList({ limit = 10 }: { limit?: number }) {
 
   const saveEditing = async () => {
     if (!draft || !editingReading) return
-    const values = {} as Record<Metric, number>
-    for (const m of METRICS) {
-      const res = parseMetricInput(m, draft[m])
-      if (!res.ok) {
-        setError(`${EDIT_LABEL[m]}: ${res.error}`)
-        return
-      }
-      values[m] = res.value
+    const parsed = parseReadingInputs({
+      pH: draft.pH,
+      ammonia: draft.ammonia,
+      nitrite: draft.nitrite,
+      nitrate: draft.nitrate,
+    })
+    if (!parsed.ok) {
+      const bad = METRICS.find((m) => parsed.errors[m])
+      setError(bad ? `${EDIT_LABEL[bad]}: ${parsed.errors[bad]}` : (parsed.formError ?? 'Invalid'))
+      return
     }
+    const values = parsed.values
     const when = fromDatetimeLocalValue(draft.ts)
     if (!when) {
       setError('Enter a valid date and time.')
@@ -227,7 +237,7 @@ export default function ReadingList({ limit = 10 }: { limit?: number }) {
           type="button"
           className="button button--ghost"
           style={{ marginTop: 'var(--space-3)' }}
-          onClick={() => setShowAll((v) => !v)}
+          onClick={() => setShowAllFor(showAll ? null : activeTankId)}
         >
           {showAll ? 'Show fewer' : `Show all ${items.length}`}
         </button>
@@ -262,19 +272,33 @@ export default function ReadingList({ limit = 10 }: { limit?: number }) {
                 </label>
                 <div className="metric-grid">
                   {METRICS.map((m, i) => (
-                    <label key={m}>
-                      {EDIT_LABEL[m]}
-                      <input
-                        ref={i === 0 ? firstFieldRef : undefined}
-                        type="number"
-                        inputMode="decimal"
-                        step={STEP[m]}
-                        min={BOUNDS[m].min}
-                        max={BOUNDS[m].max}
+                    <div className="field" key={m}>
+                      <label htmlFor={`edit-${m}`}>{EDIT_LABEL[m]}</label>
+                      <KitChips
+                        metric={m}
                         value={draft[m]}
-                        onChange={(e) => setDraftField(m, e.target.value)}
-                      />
-                    </label>
+                        onChange={(next) => setDraftField(m, next)}
+                      >
+                        <input
+                          id={`edit-${m}`}
+                          ref={i === 0 ? firstFieldRef : undefined}
+                          type="text"
+                          inputMode="decimal"
+                          autoComplete="off"
+                          value={draft[m]}
+                          onChange={(e) => setDraftField(m, e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return
+                            if (e.shiftKey || e.altKey || e.metaKey || e.ctrlKey) return
+                            e.preventDefault()
+                            setDraftField(
+                              m,
+                              stepMetricText(m, draft[m], e.key === 'ArrowUp' ? 1 : -1),
+                            )
+                          }}
+                        />
+                      </KitChips>
+                    </div>
                   ))}
                 </div>
                 <label>

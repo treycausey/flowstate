@@ -18,10 +18,10 @@ describe('integration: create → add reading → visualize', () => {
     localStorage.setItem('activeTankId', tank.id)
     render(<App />)
     await waitFor(() => expect(screen.getByRole('button', { name: /^save$/i })).toBeEnabled())
-    fireEvent.change(screen.getByLabelText(/pH/i), { target: { value: '7.3' } })
-    fireEvent.change(screen.getByLabelText(/Ammonia/i), { target: { value: '0' } })
-    fireEvent.change(screen.getByLabelText(/Nitrite/i), { target: { value: '0' } })
-    fireEvent.change(screen.getByLabelText(/Nitrate/i), { target: { value: '12' } })
+    fireEvent.change(screen.getByLabelText(/^pH$/), { target: { value: '7.3' } })
+    fireEvent.change(screen.getByLabelText(/^Ammonia \(/), { target: { value: '0' } })
+    fireEvent.change(screen.getByLabelText(/^Nitrite \(/), { target: { value: '0' } })
+    fireEvent.change(screen.getByLabelText(/^Nitrate \(/), { target: { value: '12' } })
     fireEvent.change(screen.getByLabelText(/Note/i), { target: { value: 'water change' } })
     fireEvent.click(screen.getByRole('button', { name: /^save$/i }))
     await waitFor(async () => {
@@ -29,6 +29,6 @@ describe('integration: create → add reading → visualize', () => {
       expect(readings.length).toBeGreaterThan(0)
     })
     // Note should render in the Recent Readings table
-    await waitFor(() => expect(screen.getByText(/water change/i)).toBeInTheDocument())
+    expect(await screen.findByText(/water change/i)).toBeInTheDocument()
   })
 })

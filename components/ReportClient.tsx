@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { listReadingsByTank } from '@/lib/idb'
 import { downloadText, readingsToCsv, safeFilePart } from '@/lib/export'
-import { filterReadingsByDays, summarizeOutOfRange } from '@/lib/report'
+import { filterReadingsByDays, summarizeOutOfRange, summarizeTested } from '@/lib/report'
 import { readingsToSeries } from '@/lib/series'
 import { METRICS, METRIC_LABEL, type Reading } from '@/lib/models'
 import { formatLocal } from '@/lib/time'
@@ -35,7 +35,7 @@ export default function ReportClient() {
     }
   }, [activeTank])
 
-  const { filtered, outOfRange, series, xDomain, from } = useMemo(() => {
+  const { filtered, outOfRange, tested, series, xDomain, from } = useMemo(() => {
     const days = range === 'all' ? 'all' : Number(range)
     const filtered = filterReadingsByDays(readings, days, now)
     const from =
@@ -47,6 +47,7 @@ export default function ReportClient() {
     return {
       filtered,
       outOfRange: summarizeOutOfRange(filtered),
+      tested: summarizeTested(filtered),
       series: readingsToSeries(filtered),
       // Start the axis at the first reading so a sparse range isn't squeezed to one edge;
       // the header still states the full reporting period
@@ -133,7 +134,7 @@ export default function ReportClient() {
                 Out of range
               </th>
               <th scope="col" className="num">
-                Readings
+                Tested
               </th>
             </tr>
           </thead>
@@ -144,7 +145,7 @@ export default function ReportClient() {
                   {METRIC_LABEL[m]}
                 </th>
                 <td className={`num${outOfRange[m] ? ' flag flag--high' : ''}`}>{outOfRange[m]}</td>
-                <td className="num">{filtered.length}</td>
+                <td className="num">{tested[m]}</td>
               </tr>
             ))}
           </tbody>

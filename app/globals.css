@@ -256,6 +256,68 @@ button[disabled],
   font-weight: 600;
 }
 
+/* Kit-value chips: tappable colour-card values under a metric input */
+.kit {
+  display: grid;
+  gap: var(--space-1);
+}
+.kit-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+.kit-chips .kit-chip {
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+}
+.kit-chip {
+  padding: 0.25rem 0.5rem;
+  background: transparent;
+  color: var(--fg);
+  border: 1px solid var(--border);
+  font-size: var(--step--1);
+  font-variant-numeric: tabular-nums;
+}
+.kit-chip[aria-pressed='true'] {
+  background: var(--accent);
+  color: var(--on-accent);
+  border-color: var(--accent);
+  font-weight: 600;
+}
+.kit-range {
+  position: absolute;
+  top: 0;
+  right: 0;
+  min-width: 0;
+  min-height: 1.5rem;
+  padding: 0 0.5rem;
+  color: var(--muted);
+  font-size: var(--step--1);
+}
+/* Keep the visible toggle on the label line but give it a 44px touch area */
+.kit-range::after {
+  content: '';
+  position: absolute;
+  inset: -0.625rem -0.25rem;
+}
+.kit-range[aria-pressed='true'] {
+  color: var(--on-accent);
+}
+.field:has(.kit-range) {
+  position: relative;
+}
+@media (min-width: 40.01rem) {
+  .kit-chips .kit-chip {
+    min-width: 2.25rem;
+    min-height: 2.25rem;
+  }
+}
+/* One column so a full row of chips fits on a single line, even at 375px wide */
+.quick-entry .metric-grid,
+.modal .metric-grid {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 /* Tables */
 table {
   width: 100%;
@@ -348,6 +410,48 @@ table.summary {
   border-radius: var(--radius);
   padding: var(--space-5);
   box-shadow: var(--shadow-1);
+}
+
+/* Tank status card */
+.status-card {
+  display: grid;
+  gap: var(--space-2);
+}
+.status-card p {
+  margin: 0;
+}
+.status-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-4);
+}
+.status-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-3);
+  margin: var(--space-2) 0 0;
+}
+.status-metric {
+  display: grid;
+  gap: var(--space-1);
+}
+.status-metric dt {
+  font-size: var(--step--1);
+  color: var(--muted);
+}
+.status-metric dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+@media (max-width: 40rem) {
+  .status-card {
+    padding: var(--space-4);
+  }
+  .status-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 /* Modal */

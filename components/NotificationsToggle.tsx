@@ -1,22 +1,40 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useSyncExternalStore } from 'react'
 import { showSystemNotification } from '@/lib/notify'
 
-export default function NotificationsToggle() {
-  const [supported, setSupported] = useState(false)
-  const [permission, setPermission] = useState<NotificationPermission>('default')
+type Permission = NotificationPermission | 'unsupported'
+const listeners = new Set<() => void>()
 
-  useEffect(() => {
-    if (typeof window !== 'undefined' && 'Notification' in window) {
-      setSupported(true)
-      setPermission(Notification.permission)
-    }
-  }, [])
+function readPermission(): Permission {
+  return typeof window !== 'undefined' && 'Notification' in window
+    ? Notification.permission
+    : 'unsupported'
+}
+
+function subscribe(onChange: () => void) {
+  listeners.add(onChange)
+  // Reflect changes made in browser site settings, where the Permissions API reports them
+  let status: PermissionStatus | null = null
+  navigator.permissions
+    ?.query({ name: 'notifications' as PermissionName })
+    .then((s) => {
+      status = s
+      s.addEventListener('change', onChange)
+    })
+    .catch(() => {})
+  return () => {
+    listeners.delete(onChange)
+    status?.removeEventListener('change', onChange)
+  }
+}
+
+export default function NotificationsToggle() {
+  const permission = useSyncExternalStore(subscribe, readPermission, () => 'unsupported' as const)
 
   const request = async () => {
     const res = await Notification.requestPermission()
-    setPermission(res)
+    listeners.forEach((l) => l())
     if (res === 'granted') {
       showSystemNotification(
         'Notifications enabled',
@@ -25,7 +43,7 @@ export default function NotificationsToggle() {
     }
   }
 
-  if (!supported) return null
+  if (permission === 'unsupported') return null
 
   return (
     <p className="muted small" style={{ margin: 0 }}>

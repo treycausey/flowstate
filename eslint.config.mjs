@@ -1,17 +1,32 @@
-import { FlatCompat } from '@eslint/eslintrc'
+import nextCoreWebVitals from 'eslint-config-next/core-web-vitals'
+import nextTypescript from 'eslint-config-next/typescript'
 import testingLibrary from 'eslint-plugin-testing-library'
 import jestDom from 'eslint-plugin-jest-dom'
 
-const compat = new FlatCompat({ baseDirectory: import.meta.dirname })
-
 const config = [
   {
-    ignores: ['.next/**', 'node_modules/**', 'out/**', 'dist/**', 'coverage/**'],
+    ignores: [
+      '.next/**',
+      'node_modules/**',
+      'out/**',
+      'dist/**',
+      'coverage/**',
+      'src-tauri/target/**',
+      'next-env.d.ts',
+    ],
   },
-  ...compat.extends('next/core-web-vitals'),
+  ...nextCoreWebVitals,
+  ...nextTypescript,
   {
     files: ['**/*.test.{ts,tsx,js,jsx}'],
-    plugins: { 'testing-library': testingLibrary, 'jest-dom': jestDom },
+    ...testingLibrary.configs['flat/react'],
+  },
+  {
+    files: ['**/*.test.{ts,tsx,js,jsx}'],
+    ...jestDom.configs['flat/recommended'],
+  },
+  {
+    files: ['**/*.test.{ts,tsx,js,jsx}'],
     rules: {
       'testing-library/no-node-access': 'off',
     },

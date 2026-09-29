@@ -52,7 +52,13 @@ export default function MetricChart({
 }: Props) {
   const wrapperRef = useRef<HTMLDivElement>(null)
   const [measured, setMeasured] = useState<number | null>(null)
-  const [active, setActive] = useState<number | null>(null)
+  // The inspected point belongs to one `points` array; new data implicitly clears it
+  const [inspected, setInspected] = useState<{ points: Point[]; index: number } | null>(null)
+  const active = inspected?.points === points ? inspected.index : null
+  const setActive = (update: number | null | ((prev: number | null) => number | null)) => {
+    const index = typeof update === 'function' ? update(active) : update
+    setInspected(index === null ? null : { points, index })
+  }
   const clipId = `clip-${useId().replace(/:/g, '')}`
 
   useEffect(() => {
@@ -66,8 +72,6 @@ export default function MetricChart({
     setMeasured(Math.max(0, Math.floor(el.clientWidth)))
     return () => obs.disconnect()
   }, [width])
-
-  useEffect(() => setActive(null), [points])
 
   const resolvedW = width ?? (measured && measured > 0 ? measured : 320)
   const margin = { left: 40, right: 12, top: 8, bottom: showAxisLabels ? 32 : 20 }

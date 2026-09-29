@@ -1,4 +1,5 @@
 import {
+  calendarDaysBetween,
   formatLocal,
   fromDatetimeLocalValue,
   offsetStringFromMinutes,
@@ -38,5 +39,16 @@ describe('time helpers', () => {
   it('formats local display string', () => {
     const s = formatLocal(new Date('2024-01-01T00:00:00.000Z'), 'en-US', { year: 'numeric' })
     expect(s).toMatch(/\d{4}/)
+  })
+})
+
+describe('calendarDaysBetween', () => {
+  it('counts local calendar days, not 24-hour periods', () => {
+    expect(calendarDaysBetween(new Date(2026, 0, 9, 23), new Date(2026, 0, 10, 9))).toBe(1)
+    expect(calendarDaysBetween(new Date(2026, 0, 9, 0, 1), new Date(2026, 0, 9, 23, 59))).toBe(0)
+    expect(calendarDaysBetween(new Date(2026, 0, 1, 12), new Date(2026, 0, 4, 1))).toBe(3)
+  })
+  it('never goes negative', () => {
+    expect(calendarDaysBetween(new Date(2026, 0, 11), new Date(2026, 0, 10))).toBe(0)
   })
 })

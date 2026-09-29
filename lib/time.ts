@@ -64,3 +64,13 @@ export function formatLocal(d: Date, locale?: string, opts?: Intl.DateTimeFormat
     opts || { dateStyle: 'medium', timeStyle: 'short' },
   ).format(d)
 }
+
+/**
+ * Local calendar days from `from` to `to` (yesterday 11pm to today 9am is 1). Never negative.
+ * Uses UTC arithmetic on the local Y/M/D so DST changes do not skew the count.
+ */
+export function calendarDaysBetween(from: Date, to: Date) {
+  const start = Date.UTC(from.getFullYear(), from.getMonth(), from.getDate())
+  const end = Date.UTC(to.getFullYear(), to.getMonth(), to.getDate())
+  return Math.max(0, Math.round((end - start) / 86_400_000))
+}

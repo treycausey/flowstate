@@ -1,4 +1,4 @@
-import { METRICS, type Dump, type Reading, type Settings, type Tank } from './models'
+import { METRICS, hasAnyMetric, type Dump, type Reading, type Settings, type Tank } from './models'
 import { toStorageTs } from './time'
 
 export class BackupFormatError extends Error {}
@@ -39,18 +39,20 @@ function parseReading(v: unknown, i: number): Reading {
     id: str(v.id, `${label} id`),
     tankId: str(v.tankId, `${label} tankId`),
     ts,
-    pH: 0,
-    ammonia: 0,
-    nitrite: 0,
-    nitrate: 0,
+    pH: null,
+    ammonia: null,
+    nitrite: null,
+    nitrate: null,
   }
   for (const m of METRICS) {
     const n = v[m]
+    if (n === null || n === undefined) continue // metric not tested
     if (typeof n !== 'number' || !Number.isFinite(n)) {
       throw new BackupFormatError(`${label} has an invalid ${m} value`)
     }
     reading[m] = n
   }
+  if (!hasAnyMetric(reading)) throw new BackupFormatError(`${label} has no test results`)
   if (typeof v.note === 'string' && v.note !== '') reading.note = v.note
   return reading
 }

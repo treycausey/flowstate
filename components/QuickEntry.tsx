@@ -1,14 +1,15 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useEffectEvent, useRef, useState } from 'react'
 import { addReading, findMostRecentReading, listReadingsWithinHour } from '@/lib/idb'
 import { useTanks } from '@/components/TankProvider'
-import { BOUNDS, METRICS, STEP, type Metric } from '@/lib/models'
-import { parseMetricInput } from '@/lib/validation'
+import { METRICS, type Metric, type MetricValue } from '@/lib/models'
+import { parseReadingInputs, stepMetricText } from '@/lib/validation'
 import { emitReadingsChanged } from '@/lib/events'
 import { fromDatetimeLocalValue, toDatetimeLocalValue } from '@/lib/time'
 import InstructionsModal from '@/components/InstructionsModal'
 import ProgressRing from '@/components/ProgressRing'
+import KitChips from '@/components/KitChips'
 
 type TimerRow = {
   id: string
@@ -79,32 +80,33 @@ export default function QuickEntry() {
   const disabled = !activeTankId || saving
   const hasTimers = timers.length > 0
 
-  useEffect(() => {
+  // Reset transient form state when switching tanks (adjusting state during render,
+  // rather than in an effect, avoids a flash of the previous tank's errors)
+  const [formTankId, setFormTankId] = useState(activeTankId)
+  if (formTankId !== activeTankId) {
+    setFormTankId(activeTankId)
     setTsTouched(false)
-    setState((s) => ({ ...s, ts: toDatetimeLocalValue(new Date()) }))
     setErrors({})
     setStatus(null)
-  }, [activeTankId])
+  }
+
+  // Each tick advances the clock and alerts once per newly finished timer
+  const onTick = useEffectEvent((at: number) => {
+    setNow(at)
+    const finished = (t: TimerRow) => !t.notified && at - t.startedAt >= t.totalMs
+    if (!timers.some(finished)) return
+    beep(audioRef)
+    setTimers((prev) => prev.map((t) => (finished(t) ? { ...t, notified: true } : t)))
+  })
 
   // Tick only while timers are running
   useEffect(() => {
     if (!hasTimers) return
-    const id = window.setInterval(() => setNow(Date.now()), 250)
+    const id = window.setInterval(() => onTick(Date.now()), 250)
     return () => window.clearInterval(id)
   }, [hasTimers])
 
   useEffect(() => () => void audioRef.current?.close().catch(() => {}), [])
-
-  // Alert once per finished timer
-  useEffect(() => {
-    if (!timers.some((t) => !t.notified && now - t.startedAt >= t.totalMs)) return
-    beep(audioRef)
-    setTimers((prev) =>
-      prev.map((t) =>
-        !t.notified && now - t.startedAt >= t.totalMs ? { ...t, notified: true } : t,
-      ),
-    )
-  }, [now, timers])
 
   const startTimer = (label: string, ms: number) => {
     const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
@@ -133,20 +135,26 @@ export default function QuickEntry() {
     setErrors({})
     setState((s) => ({
       ...s,
-      pH: String(last.pH),
-      ammonia: String(last.ammonia),
-      nitrite: String(last.nitrite),
-      nitrate: String(last.nitrate),
+      pH: last.pH === null ? '' : String(last.pH),
+      ammonia: last.ammonia === null ? '' : String(last.ammonia),
+      nitrite: last.nitrite === null ? '' : String(last.nitrite),
+      nitrate: last.nitrate === null ? '' : String(last.nitrate),
     }))
   }
 
   const validate = () => {
     const next: Errors = {}
-    const values = {} as Record<Metric, number>
-    for (const m of METRICS) {
-      const res = parseMetricInput(m, state[m])
-      if (res.ok) values[m] = res.value
-      else next[m] = res.error
+    const parsed = parseReadingInputs({
+      pH: state.pH,
+      ammonia: state.ammonia,
+      nitrite: state.nitrite,
+      nitrate: state.nitrate,
+    })
+    let values: Record<Metric, MetricValue> | null = null
+    if (parsed.ok) values = parsed.values
+    else {
+      Object.assign(next, parsed.errors)
+      if (parsed.formError) next.form = parsed.formError
     }
     const when = tsTouched ? fromDatetimeLocalValue(state.ts) : new Date()
     if (!when) next.ts = 'Enter a date and time'
@@ -160,8 +168,8 @@ export default function QuickEntry() {
     setStatus(null)
     const { errors: found, values, when } = validate()
     setErrors(found)
-    if (Object.keys(found).length > 0 || !when) {
-      const firstBad = (['ts', ...METRICS] as const).find((k) => found[k])
+    if (Object.keys(found).length > 0 || !when || !values) {
+      const firstBad = (['ts', ...METRICS] as const).find((k) => found[k]) ?? METRICS[0]
       document.getElementById(`qe-${firstBad}`)?.focus()
       return
     }
@@ -208,7 +216,6 @@ export default function QuickEntry() {
           type="datetime-local"
           name="ts"
           value={state.ts}
-          max={toDatetimeLocalValue(new Date(Date.now() + FUTURE_TOLERANCE_MS))}
           onChange={onChange}
           onFocus={() => {
             // Refresh the default before the user starts editing it
@@ -228,21 +235,39 @@ export default function QuickEntry() {
         {METRICS.map((m, i) => (
           <div className="field" key={m}>
             <label htmlFor={`qe-${m}`}>{FIELD_LABEL[m]}</label>
-            <input
-              id={`qe-${m}`}
-              ref={i === 0 ? firstFieldRef : undefined}
-              type="number"
-              inputMode="decimal"
-              step={STEP[m]}
-              min={BOUNDS[m].min}
-              max={BOUNDS[m].max}
-              name={m}
+            <KitChips
+              metric={m}
               value={state[m]}
-              onChange={onChange}
               disabled={disabled}
-              aria-invalid={!!errors[m]}
-              aria-describedby={describedBy(m)}
-            />
+              onChange={(next) => {
+                setStatus(null)
+                setErrors((prev) => ({ ...prev, [m]: undefined, form: undefined }))
+                setState((s) => ({ ...s, [m]: next }))
+              }}
+            >
+              <input
+                id={`qe-${m}`}
+                ref={i === 0 ? firstFieldRef : undefined}
+                type="text"
+                inputMode="decimal"
+                autoComplete="off"
+                name={m}
+                value={state[m]}
+                onChange={onChange}
+                onKeyDown={(e) => {
+                  if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return
+                  if (e.shiftKey || e.altKey || e.metaKey || e.ctrlKey) return
+                  e.preventDefault()
+                  const next = stepMetricText(m, state[m], e.key === 'ArrowUp' ? 1 : -1)
+                  setStatus(null)
+                  setErrors((prev) => ({ ...prev, [m]: undefined, form: undefined }))
+                  setState((s) => ({ ...s, [m]: next }))
+                }}
+                disabled={disabled}
+                aria-invalid={!!errors[m]}
+                aria-describedby={describedBy(m)}
+              />
+            </KitChips>
             {errors[m] && (
               <span id={`qe-${m}-error`} className="field-error">
                 {errors[m]}

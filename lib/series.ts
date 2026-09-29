@@ -70,9 +70,14 @@ export function anomalyCount(metric: Metric, points: Point[]) {
 
 export type MetricSeries = Record<Metric, Point[]>
 
+/** Per-metric series; readings where a metric wasn't tested are skipped for that metric. */
 export function readingsToSeries(readings: Reading[]): MetricSeries {
-  const pick = (m: Metric) =>
-    readings.map((r) => ({ ts: r.ts, value: r[m], ...(r.note ? { note: r.note } : {}) }))
+  const pick = (m: Metric): Point[] =>
+    readings.flatMap((r) => {
+      const value = r[m]
+      if (value === null || value === undefined) return []
+      return [{ ts: r.ts, value, ...(r.note ? { note: r.note } : {}) }]
+    })
   return {
     pH: pick('pH'),
     ammonia: pick('ammonia'),

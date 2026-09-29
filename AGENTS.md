@@ -37,7 +37,8 @@ The original plan in `tasks/tasks-prd-aquarium-water-tracker.md` contains a hist
 - `app/page.tsx` — dashboard/recent readings.
 - `app/tanks/page.tsx` — tank detail with small‑multiples (selection via query param).
 - `app/tanks/report/page.tsx` — printable 30/90‑day report (query param selects tank).
-- `components/QuickEntry.tsx` — single‑screen input for pH, NH3/NH4+, NO2‑, NO3‑ plus note.
+- `components/QuickEntry.tsx` — single‑screen input for pH, NH3/NH4+, NO2‑, NO3‑ plus note; `components/KitChips.tsx` — tappable kit colour-card values (`lib/kit.ts`).
+- `components/TankStatus.tsx` — dashboard status card (`lib/status.ts`).
 - `components/TankSwitcher.tsx`, `components/ReminderControls.tsx`.
 - `components/charts/MetricChart.tsx`, `components/charts/SmallMultiples.tsx`.
 - `lib/idb.ts`, `lib/models.ts`, `lib/validation.ts`, `lib/series.ts`, `lib/export.ts`, `lib/report.ts`, `lib/reminders.ts`, `lib/time.ts`, `lib/backup.ts`.
@@ -47,7 +48,7 @@ The original plan in `tasks/tasks-prd-aquarium-water-tracker.md` contains a hist
 ## Data Model (v1 expectations)
 
 - Tank: `{ id, name, createdAt, archivedAt?, reminderCadence }`
-- Reading: `{ id, tankId, ts, pH, ammonia, nitrite, nitrate, note? }`
+- Reading: `{ id, tankId, ts, pH, ammonia, nitrite, nitrate, note? }` — each metric is `number | null` (`null` = not tested); at least one must be non-null
 - Settings: `{ units, theme, chartOptions }`
   Conventions:
 - Store `ts` as UTC ISO 8601 (`…Z`; `lib/idb.ts` normalizes on write). Display in local timezone.
@@ -130,6 +131,9 @@ A change is “done” when:
 - 2026‑09 (review pass): Nitrate 20–40 ppm is shown as a separate caution band/marker; > 40 ppm is “high”.
 - 2026‑09: Reading timestamps are stored in UTC so IndexedDB/SQLite string ordering is chronological.
 - 2026‑09: Typed metric values are validated (blank/out‑of‑range rejected) and kept at 0.01 precision instead of snapping to kit steps, per FR‑2.3 “allow free typing”.
+- 2026‑09: Partial readings. Blank metrics mean "not tested" and are stored as `null` (not 0); a reading needs at least one result. Charts, counts and CSV skip nulls. The desktop SQLite schema migrates via `PRAGMA user_version` (0 → 2) to drop `NOT NULL` on the metric columns.
+- 2026‑09: Kit chips show the API Freshwater Master Test Kit colour-card values under each input. pH shows one row at a time with a "High-range kit" toggle to keep the form short on phones. Chips set the field text; tapping the selected chip clears it (not tested).
+- 2026‑09: Nitrogen-cycle status rule (`lib/status.ts`): cycling (latest ammonia or nitrite > 0), not-started (otherwise, ammonia or nitrite never tested), cycled (latest 3 readings that tested both were 0/0 and nitrate > 0 was seen), otherwise nearly-cycled (both tested, both 0).
 
 ## Agent Workflow Notes
 

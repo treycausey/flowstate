@@ -1,5 +1,3 @@
-import { isTauri } from './tauri'
-
 export type DbInfo = { dir: string; file: string }
 
 export async function getDbInfo(): Promise<DbInfo | null> {

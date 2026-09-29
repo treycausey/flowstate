@@ -6,14 +6,18 @@ export type Tank = {
   reminderCadence?: number | null // days; null means disabled
 }
 
+/** A metric's value, or null when that test wasn't run for this reading. */
+export type MetricValue = number | null
+
+/** At least one metric is non-null; see `hasAnyMetric`. */
 export type Reading = {
   id: string
   tankId: string
-  ts: string // ISO 8601 with zone offset
-  pH: number
-  ammonia: number // ppm
-  nitrite: number // ppm
-  nitrate: number // ppm
+  ts: string // UTC ISO 8601 (normalized on write)
+  pH: MetricValue
+  ammonia: MetricValue // ppm
+  nitrite: MetricValue // ppm
+  nitrate: MetricValue // ppm
   note?: string
 }
 
@@ -34,6 +38,10 @@ export type Dump = {
 export type Metric = 'pH' | 'ammonia' | 'nitrite' | 'nitrate'
 
 export const METRICS: readonly Metric[] = ['pH', 'ammonia', 'nitrite', 'nitrate']
+
+export function hasAnyMetric(r: Pick<Reading, Metric>) {
+  return METRICS.some((m) => r[m] !== null && r[m] !== undefined)
+}
 
 export const METRIC_LABEL: Record<Metric, string> = {
   pH: 'pH',
