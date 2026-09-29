@@ -2,7 +2,12 @@ import 'fake-indexeddb/auto'
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { TankProvider } from '@/components/TankProvider'
 import ReadingList from '@/components/ReadingList'
-import { addReading, ensureSeed, listReadingsByTank } from '@/lib/idb'
+import { addReading, deleteReading, ensureSeed, listReadingsByTank } from '@/lib/idb'
+
+jest.mock('@/lib/idb', () => {
+  const actual = jest.requireActual('@/lib/idb')
+  return { ...actual, deleteReading: jest.fn(actual.deleteReading) }
+})
 
 function renderWithProvider(ui: React.ReactNode) {
   return render(<TankProvider>{ui}</TankProvider>)
@@ -149,5 +154,34 @@ describe('ReadingList typed input', () => {
     )
     const stored = (await listReadingsByTank(tank.id)).find((r) => r.note === 'typo-edit')
     expect(stored).toMatchObject({ pH: 7, ammonia: 0.5, nitrite: null, nitrate: 10 })
+  })
+})
+
+describe('ReadingList delete failure', () => {
+  it('shows an alert, keeps the dialog open and keeps the reading when delete rejects', async () => {
+    const tank = await ensureSeed()
+    localStorage.setItem('activeTankId', tank.id)
+    await addReading({
+      tankId: tank.id,
+      ts: '2021-06-01T00:00:00.000Z',
+      pH: 7,
+      ammonia: 0,
+      nitrite: 0,
+      nitrate: 5,
+      note: 'delete-fails',
+    })
+    const confirmSpy = jest.spyOn(window, 'confirm').mockReturnValue(true)
+    const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
+    ;(deleteReading as jest.Mock).mockRejectedValueOnce(new Error('disk full'))
+    renderWithProvider(<ReadingList />)
+    const row = (await screen.findByText('delete-fails')).closest('tr')!
+    fireEvent.click(within(row).getByRole('button', { name: /edit/i }))
+    const dialog = await screen.findByRole('dialog', { name: /edit reading/i })
+    fireEvent.click(within(dialog).getByRole('button', { name: /^delete$/i }))
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Couldn’t delete: disk full')
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+    expect(screen.getByText('delete-fails')).toBeInTheDocument()
+    consoleSpy.mockRestore()
+    confirmSpy.mockRestore()
   })
 })

@@ -36,12 +36,16 @@ export function normalizeInput(metric: Metric, value: number) {
 
 export type ParseResult = { ok: true; value: number } | { ok: false; error: string }
 
+// Plain decimals only: digits with one optional separator (`.` or `,`), `.5` allowed.
+// Number() would also accept 0x10, 1e1, +7 and Infinity.
+const PLAIN_DECIMAL = /^-?(\d+([.,]\d*)?|[.,]\d+)$/
+
 /** Parse a raw form string for a metric; rejects blanks, non-numbers, and out-of-range values. */
 export function parseMetricInput(metric: Metric, raw: string): ParseResult {
-  const trimmed = raw.trim().replace(',', '.')
+  const trimmed = raw.trim()
   if (trimmed === '') return { ok: false, error: 'Required' }
-  const value = Number(trimmed)
-  if (!Number.isFinite(value)) return { ok: false, error: 'Enter a number' }
+  if (!PLAIN_DECIMAL.test(trimmed)) return { ok: false, error: 'Enter a number' }
+  const value = Number(trimmed.replace(',', '.'))
   const { min, max } = BOUNDS[metric]
   if (value < min || value > max) return { ok: false, error: `Must be ${min}–${max}` }
   return { ok: true, value: normalizeInput(metric, value) }
@@ -76,13 +80,13 @@ export function parseReadingInputs(raw: Record<Metric, string>): ReadingInputRes
 
 /**
  * Step a metric's raw text by one kit step (ArrowUp/ArrowDown on a text field).
- * Blank or unparseable text starts from the metric's minimum. Result is clamped to bounds.
+ * Blank text starts from the metric's minimum; text that is not a plain decimal is returned unchanged. Result is clamped to bounds.
  */
 export function stepMetricText(metric: Metric, raw: string, direction: 1 | -1): string {
   const { min, max } = BOUNDS[metric]
-  const current = Number(raw.trim().replace(',', '.'))
-  const base =
-    raw.trim() === '' || !Number.isFinite(current) ? min - direction * STEP[metric] : current
+  const trimmed = raw.trim()
+  if (trimmed !== '' && !PLAIN_DECIMAL.test(trimmed)) return raw
+  const base = trimmed === '' ? min - direction * STEP[metric] : Number(trimmed.replace(',', '.'))
   const next = clamp(roundToStep(base + direction * STEP[metric], PRECISION[metric]), min, max)
   return String(next)
 }

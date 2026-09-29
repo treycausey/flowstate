@@ -288,7 +288,7 @@ export default function QuickEntry() {
           autoComplete="off"
         />
       </div>
-      <div className="cluster">
+      <div className="cluster quick-entry-actions">
         <button className="button" type="submit" disabled={disabled}>
           {saving ? 'Saving…' : 'Save'}
         </button>

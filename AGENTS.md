@@ -130,7 +130,7 @@ A change is “done” when:
 
 - 2026‑09 (review pass): Nitrate 20–40 ppm is shown as a separate caution band/marker; > 40 ppm is “high”.
 - 2026‑09: Reading timestamps are stored in UTC so IndexedDB/SQLite string ordering is chronological.
-- 2026‑09: Typed metric values are validated (blank/out‑of‑range rejected) and kept at 0.01 precision instead of snapping to kit steps, per FR‑2.3 “allow free typing”.
+- 2026‑09: Typed metric values are validated (out‑of‑range and non‑numeric rejected; blank = not tested since the partial‑readings change) and kept at 0.01 precision instead of snapping to kit steps, per FR‑2.3 “allow free typing”.
 - 2026‑09: Partial readings. Blank metrics mean "not tested" and are stored as `null` (not 0); a reading needs at least one result. Charts, counts and CSV skip nulls. The desktop SQLite schema migrates via `PRAGMA user_version` (0 → 2) to drop `NOT NULL` on the metric columns.
 - 2026‑09: Kit chips show the API Freshwater Master Test Kit colour-card values under each input. pH shows one row at a time with a "High-range kit" toggle to keep the form short on phones. Chips set the field text; tapping the selected chip clears it (not tested).
 - 2026‑09: Nitrogen-cycle status rule (`lib/status.ts`): cycling (latest ammonia or nitrite > 0), not-started (otherwise, ammonia or nitrite never tested), cycled (latest 3 readings that tested both were 0/0 and nitrate > 0 was seen), otherwise nearly-cycled (both tested, both 0).
@@ -153,3 +153,13 @@ Once a framework is scaffolded:
 - Build: `bun run build`
 
 Update this AGENTS.md or relevant product documentation when an authorized change makes it inaccurate. Leave the historical checklist unchanged; record new work in the current task or issue.
+
+<!-- BEGIN:nextjs-agent-rules -->
+
+# This is NOT the Next.js you know
+
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+
+This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+
+<!-- END:nextjs-agent-rules -->

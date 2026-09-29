@@ -10,6 +10,37 @@ use serde::{Deserialize, Serialize};
 /// 2: metric columns nullable, so a reading can leave metrics untested.
 pub const SCHEMA_VERSION: i64 = 2;
 
+/// Failure to open or migrate the database.
+#[derive(Debug)]
+pub enum DbError {
+    Sqlite(rusqlite::Error),
+    /// The file was written by a newer build than this one.
+    NewerVersion {
+        found: i64,
+        supported: i64,
+    },
+}
+
+impl std::fmt::Display for DbError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DbError::Sqlite(e) => e.fmt(f),
+            DbError::NewerVersion { found, supported } => write!(
+                f,
+                "database was created by a newer Flowstate (schema version {found}, this build supports up to {supported})"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for DbError {}
+
+impl From<rusqlite::Error> for DbError {
+    fn from(e: rusqlite::Error) -> Self {
+        DbError::Sqlite(e)
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct Tank {
     pub id: String,
@@ -90,15 +121,13 @@ fn readings_table_exists(conn: &Connection) -> rusqlite::Result<bool> {
 
 /// Create the schema on a fresh database, or migrate an older one. Idempotent.
 /// All changes run in one transaction, so a failure leaves the database untouched.
-pub fn init_schema(conn: &mut Connection) -> rusqlite::Result<()> {
+pub fn init_schema(conn: &mut Connection) -> Result<(), DbError> {
     let version = user_version(conn)?;
     if version > SCHEMA_VERSION {
-        return Err(rusqlite::Error::ToSqlConversionFailure(
-            format!(
-                "database was created by a newer Flowstate (schema version {version}, this build supports up to {SCHEMA_VERSION})"
-            )
-            .into(),
-        ));
+        return Err(DbError::NewerVersion {
+            found: version,
+            supported: SCHEMA_VERSION,
+        });
     }
     if version == SCHEMA_VERSION {
         return Ok(());
@@ -136,7 +165,8 @@ pub fn init_schema(conn: &mut Connection) -> rusqlite::Result<()> {
     }
     tx.execute_batch(CREATE_INDEXES)?;
     tx.execute_batch(&format!("PRAGMA user_version = {};", SCHEMA_VERSION))?;
-    tx.commit()
+    tx.commit()?;
+    Ok(())
 }
 
 fn tank_from_row(r: &rusqlite::Row) -> rusqlite::Result<Tank> {

@@ -38,6 +38,18 @@ export function severity(metric: Metric, value: number): Severity {
   return 'high'
 }
 
+const MIN_TIME_SPAN_MS = 24 * 60 * 60 * 1000
+
+/**
+ * Widen a degenerate or very short time domain to at least a day, centred on the
+ * original span, so a single reading gets a readable axis and sits inside it.
+ */
+export function padTimeDomain(x0: number, x1: number): [number, number] {
+  if (x1 - x0 >= MIN_TIME_SPAN_MS) return [x0, x1]
+  const mid = (x0 + x1) / 2
+  return [mid - MIN_TIME_SPAN_MS / 2, mid + MIN_TIME_SPAN_MS / 2]
+}
+
 /**
  * Y domain for a metric. pH always shows its optimal band; ppm metrics start at 0
  * (negative concentrations are meaningless) with headroom above the max.

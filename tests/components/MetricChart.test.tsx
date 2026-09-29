@@ -38,6 +38,38 @@ describe('MetricChart', () => {
     expect(container.querySelector('path')?.getAttribute('d')).not.toContain('NaN')
   })
 
+  it('gives a single reading one distinct x tick per label and a centred point', () => {
+    const { container } = render(
+      <MetricChart metric="pH" points={[{ ts: pts[0].ts, value: 7 }]} width={300} />,
+    )
+    const labels = Array.from(container.querySelectorAll('text'))
+      .map((t) => t.textContent ?? '')
+      .filter((l) => /[A-Z][a-z]{2} \d/.test(l))
+    expect(labels.length).toBeGreaterThan(1)
+    expect(new Set(labels).size).toBe(labels.length)
+    const cx = Number(container.querySelector('circle')?.getAttribute('cx'))
+    expect(cx).toBeCloseTo(40 + (300 - 40 - 12) / 2, 3)
+  })
+
+  it('never repeats an x tick label when the shared domain is under an hour wide', () => {
+    const t0 = new Date(pts[0].ts).getTime()
+    const { container } = render(
+      <MetricChart
+        metric="pH"
+        points={[{ ts: pts[0].ts, value: 7 }]}
+        xDomain={[t0, t0 + 20 * 60 * 1000]}
+        width={300}
+      />,
+    )
+    const labels = Array.from(container.querySelectorAll('text'))
+      .map((t) => t.textContent ?? '')
+      .filter((l) => /[A-Z][a-z]{2} \d/.test(l))
+    expect(new Set(labels).size).toBe(labels.length)
+    const cx = Number(container.querySelector('circle')?.getAttribute('cx'))
+    expect(cx).toBeGreaterThan(40)
+    expect(cx).toBeLessThan(300 - 12)
+  })
+
   it('shows an empty state', () => {
     render(<MetricChart metric="pH" points={[]} width={300} />)
     expect(screen.getByText(/no data/i)).toBeInTheDocument()
