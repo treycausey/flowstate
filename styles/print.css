@@ -4,9 +4,18 @@
     --bg: #fff;
     --fg: #000;
     --ink: #000;
+    --ink-muted: #444;
     --muted: #444;
+    --hairline: #bbb;
     --border: #bbb;
+    --field-border: #888;
+    --field-bg: #fff;
+    --panel-bg: #fff;
+    --panel-solid: #fff;
+    --chart-ink: #000;
     --grid: #e5e5e5;
+    --accent: #000;
+    --accent-ink: #fff;
     --danger: #b91c1c;
     --caution: #92400e;
     --band-ok: #e7f5dc;
@@ -32,8 +41,33 @@
     margin: 12mm;
   }
 
+  /* The tank scene and the frosted panel are screen-only: print a plain white page */
+  .tank-layer {
+    display: none !important;
+  }
+  .app-panel,
+  .app-panel[data-wide] {
+    position: static !important;
+    width: auto !important;
+    max-height: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: visible !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    background: #fff !important;
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+    min-height: 0 !important;
+  }
+  .app-panel::before {
+    display: none !important;
+  }
+
   /* Remove UI chrome for print */
   .site-header,
+  .panel-header,
   .no-print,
   .chart-readout,
   button,

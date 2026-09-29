@@ -10,6 +10,8 @@ import { fromDatetimeLocalValue, toDatetimeLocalValue } from '@/lib/time'
 import InstructionsModal from '@/components/InstructionsModal'
 import ProgressRing from '@/components/ProgressRing'
 import KitChips from '@/components/KitChips'
+import FieldHint from '@/components/FieldHint'
+import { fieldHint } from '@/lib/hints'
 
 type TimerRow = {
   id: string
@@ -206,10 +208,14 @@ export default function QuickEntry() {
   }
 
   const describedBy = (key: keyof Errors) => (errors[key] ? `qe-${key}-error` : undefined)
+  const metricDescribedBy = (m: Metric) =>
+    [describedBy(m), fieldHint(m, state[m]) ? `qe-${m}-hint` : undefined]
+      .filter(Boolean)
+      .join(' ') || undefined
 
   return (
     <form onSubmit={onSubmit} className="stack quick-entry" noValidate>
-      <div className="field">
+      <div className="field field--row">
         <label htmlFor="qe-ts">Date &amp; time</label>
         <input
           id="qe-ts"
@@ -265,7 +271,7 @@ export default function QuickEntry() {
                 }}
                 disabled={disabled}
                 aria-invalid={!!errors[m]}
-                aria-describedby={describedBy(m)}
+                aria-describedby={metricDescribedBy(m)}
               />
             </KitChips>
             {errors[m] && (
@@ -273,6 +279,7 @@ export default function QuickEntry() {
                 {errors[m]}
               </span>
             )}
+            <FieldHint id={`qe-${m}-hint`} hint={fieldHint(m, state[m])} />
           </div>
         ))}
       </div>
@@ -289,8 +296,8 @@ export default function QuickEntry() {
         />
       </div>
       <div className="cluster quick-entry-actions">
-        <button className="button" type="submit" disabled={disabled}>
-          {saving ? 'Saving…' : 'Save'}
+        <button className="button quick-entry-primary" type="submit" disabled={disabled}>
+          {saving ? 'Saving…' : 'Save reading'}
         </button>
         <button
           className="button button--ghost"

@@ -17,13 +17,15 @@ describe('integration: create → add reading → visualize', () => {
     const tank = await ensureSeed()
     localStorage.setItem('activeTankId', tank.id)
     render(<App />)
-    await waitFor(() => expect(screen.getByRole('button', { name: /^save$/i })).toBeEnabled())
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /^save reading$/i })).toBeEnabled(),
+    )
     fireEvent.change(screen.getByLabelText(/^pH$/), { target: { value: '7.3' } })
     fireEvent.change(screen.getByLabelText(/^Ammonia \(/), { target: { value: '0' } })
     fireEvent.change(screen.getByLabelText(/^Nitrite \(/), { target: { value: '0' } })
     fireEvent.change(screen.getByLabelText(/^Nitrate \(/), { target: { value: '12' } })
     fireEvent.change(screen.getByLabelText(/Note/i), { target: { value: 'water change' } })
-    fireEvent.click(screen.getByRole('button', { name: /^save$/i }))
+    fireEvent.click(screen.getByRole('button', { name: /^save reading$/i }))
     await waitFor(async () => {
       const readings = await listReadingsByTank(tank.id)
       expect(readings.length).toBeGreaterThan(0)

@@ -4,7 +4,7 @@ export const dynamic = 'force-static'
 
 export default function DevChartsPage() {
   return (
-    <main className="container stack" style={{ paddingTop: '1.25rem', paddingBottom: '2rem' }}>
+    <div className="container stack" style={{ paddingTop: '1.25rem', paddingBottom: '2rem' }}>
       <header>
         <h1>Simulated Charts</h1>
         <p className="ink" style={{ color: 'var(--muted)' }}>
@@ -12,6 +12,6 @@ export default function DevChartsPage() {
         </p>
       </header>
       <SimChartsClient />
-    </main>
+    </div>
   )
 }

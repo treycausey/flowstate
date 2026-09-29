@@ -1,4 +1,5 @@
 import SettingsClient from '@/components/SettingsClient'
+import TankSwitcher from '@/components/TankSwitcher'
 
 export const metadata = {
   title: 'Settings — Flowstate',
@@ -6,7 +7,7 @@ export const metadata = {
 
 export default function SettingsPage() {
   return (
-    <main className="container stack page">
+    <div className="stack page">
       <header>
         <h1 className="page-title">Settings</h1>
         <p className="ink" style={{ color: 'var(--muted)' }}>
@@ -14,7 +15,13 @@ export default function SettingsPage() {
           IndexedDB.
         </p>
       </header>
+      <section aria-labelledby="tanks-heading">
+        <h2 id="tanks-heading" className="section-title">
+          Tanks
+        </h2>
+        <TankSwitcher />
+      </section>
       <SettingsClient />
-    </main>
+    </div>
   )
 }

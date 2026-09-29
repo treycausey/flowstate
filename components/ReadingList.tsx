@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useTanks } from '@/components/TankProvider'
 import { deleteReading, listReadingsWithinHour, updateReading } from '@/lib/idb'
 import { emitReadingsChanged } from '@/lib/events'
@@ -232,100 +233,104 @@ export default function ReadingList({ limit = 10 }: { limit?: number }) {
           {showAll ? 'Show fewer' : `Show all ${items.length}`}
         </button>
       )}
-      {editingReading && draft ? (
-        <div className="modal-overlay" role="presentation">
-          <div
-            className="modal"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby={`edit-${editingReading.id}`}
-          >
-            <form
-              className="stack"
-              noValidate
-              onSubmit={(event) => {
-                event.preventDefault()
-                saveEditing()
-              }}
-            >
-              <h3 id={`edit-${editingReading.id}`} style={{ margin: 0 }}>
-                Edit Reading
-              </h3>
-              <div className="stack" style={{ gap: 'var(--space-3)' }}>
-                <label>
-                  Date &amp; time
-                  <input
-                    type="datetime-local"
-                    value={draft.ts}
-                    onChange={(e) => setDraftField('ts', e.target.value)}
-                  />
-                </label>
-                <div className="metric-grid">
-                  {METRICS.map((m, i) => (
-                    <div className="field" key={m}>
-                      <label htmlFor={`edit-${m}`}>{EDIT_LABEL[m]}</label>
-                      <KitChips
-                        metric={m}
-                        value={draft[m]}
-                        onChange={(next) => setDraftField(m, next)}
-                      >
-                        <input
-                          id={`edit-${m}`}
-                          ref={i === 0 ? firstFieldRef : undefined}
-                          type="text"
-                          inputMode="decimal"
-                          autoComplete="off"
-                          value={draft[m]}
-                          onChange={(e) => setDraftField(m, e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return
-                            if (e.shiftKey || e.altKey || e.metaKey || e.ctrlKey) return
-                            e.preventDefault()
-                            setDraftField(
-                              m,
-                              stepMetricText(m, draft[m], e.key === 'ArrowUp' ? 1 : -1),
-                            )
-                          }}
-                        />
-                      </KitChips>
-                    </div>
-                  ))}
-                </div>
-                <label>
-                  Note
-                  <input
-                    type="text"
-                    maxLength={200}
-                    value={draft.note}
-                    onChange={(e) => setDraftField('note', e.target.value)}
-                  />
-                </label>
-                {error ? (
-                  <div role="alert" className="danger">
-                    {error}
-                  </div>
-                ) : null}
-              </div>
-              <div className="cluster" style={{ justifyContent: 'flex-end' }}>
-                <button
-                  className="button button--ghost button--danger"
-                  type="button"
-                  style={{ marginRight: 'auto' }}
-                  onClick={() => onDelete(editingReading)}
+      {editingReading && draft
+        ? // Portal: the frosted panel's backdrop-filter would otherwise trap position: fixed
+          createPortal(
+            <div className="modal-overlay" role="presentation">
+              <div
+                className="modal"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby={`edit-${editingReading.id}`}
+              >
+                <form
+                  className="stack"
+                  noValidate
+                  onSubmit={(event) => {
+                    event.preventDefault()
+                    saveEditing()
+                  }}
                 >
-                  Delete
-                </button>
-                <button className="button button--ghost" type="button" onClick={cancelEditing}>
-                  Cancel
-                </button>
-                <button className="button" type="submit">
-                  Save changes
-                </button>
+                  <h3 id={`edit-${editingReading.id}`} style={{ margin: 0 }}>
+                    Edit Reading
+                  </h3>
+                  <div className="stack" style={{ gap: 'var(--space-3)' }}>
+                    <label>
+                      Date &amp; time
+                      <input
+                        type="datetime-local"
+                        value={draft.ts}
+                        onChange={(e) => setDraftField('ts', e.target.value)}
+                      />
+                    </label>
+                    <div className="metric-grid">
+                      {METRICS.map((m, i) => (
+                        <div className="field" key={m}>
+                          <label htmlFor={`edit-${m}`}>{EDIT_LABEL[m]}</label>
+                          <KitChips
+                            metric={m}
+                            value={draft[m]}
+                            onChange={(next) => setDraftField(m, next)}
+                          >
+                            <input
+                              id={`edit-${m}`}
+                              ref={i === 0 ? firstFieldRef : undefined}
+                              type="text"
+                              inputMode="decimal"
+                              autoComplete="off"
+                              value={draft[m]}
+                              onChange={(e) => setDraftField(m, e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return
+                                if (e.shiftKey || e.altKey || e.metaKey || e.ctrlKey) return
+                                e.preventDefault()
+                                setDraftField(
+                                  m,
+                                  stepMetricText(m, draft[m], e.key === 'ArrowUp' ? 1 : -1),
+                                )
+                              }}
+                            />
+                          </KitChips>
+                        </div>
+                      ))}
+                    </div>
+                    <label>
+                      Note
+                      <input
+                        type="text"
+                        maxLength={200}
+                        value={draft.note}
+                        onChange={(e) => setDraftField('note', e.target.value)}
+                      />
+                    </label>
+                    {error ? (
+                      <div role="alert" className="danger">
+                        {error}
+                      </div>
+                    ) : null}
+                  </div>
+                  <div className="cluster" style={{ justifyContent: 'flex-end' }}>
+                    <button
+                      className="button button--ghost button--danger"
+                      type="button"
+                      style={{ marginRight: 'auto' }}
+                      onClick={() => onDelete(editingReading)}
+                    >
+                      Delete
+                    </button>
+                    <button className="button button--ghost" type="button" onClick={cancelEditing}>
+                      Cancel
+                    </button>
+                    <button className="button" type="submit">
+                      Save changes
+                    </button>
+                  </div>
+                </form>
               </div>
-            </form>
-          </div>
-        </div>
-      ) : null}
+            </div>,
+            document.body,
+          )
+        : null}
     </div>
   )
 }

@@ -2,13 +2,16 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import Logo from '@/components/Logo'
 import ThemeToggle from '@/components/ThemeToggle'
 import { useTanks } from '@/components/TankProvider'
+import { useTankReadings } from '@/lib/useTankReadings'
+import { daysSinceLastTest, lastTestText } from '@/lib/status'
 
+/** Panel header: tabs, serif wordmark, current tank and how long since the last test. */
 export default function NavBar() {
   const pathname = usePathname() ?? '/'
-  const { activeTankId } = useTanks()
+  const { activeTankId, activeTank } = useTanks()
+  const { readings } = useTankReadings(activeTankId)
   const q = activeTankId ? `?tankId=${encodeURIComponent(activeTankId)}` : ''
   const links = [
     { href: '/', label: 'Log', match: (p: string) => p === '/' },
@@ -21,14 +24,11 @@ export default function NavBar() {
     { href: '/settings', label: 'Settings', match: (p: string) => p.startsWith('/settings') },
   ]
   const clean = pathname.replace(/\.html$/, '').replace(/\/$/, '') || '/'
+  const lastTest = readings ? lastTestText(daysSinceLastTest(readings)) : null
 
   return (
-    <header className="site-header">
-      <div className="container site-header__inner">
-        <Link href="/" className="brand">
-          <Logo size={24} title="" />
-          <span>Flowstate</span>
-        </Link>
+    <header className="panel-header site-header">
+      <div className="panel-tabs">
         <nav aria-label="Main">
           <ul className="nav-links">
             {links.map((l) => (
@@ -42,6 +42,16 @@ export default function NavBar() {
         </nav>
         <ThemeToggle />
       </div>
+      <Link href="/" className="wordmark">
+        Flowstate
+      </Link>
+      {activeTank && (
+        <p className="panel-tank">
+          <span className="panel-tank__name">{activeTank.name}</span>
+          {lastTest && <span className="panel-tank__last">{lastTest}</span>}
+          <span className="phase-moon" aria-hidden="true" />
+        </p>
+      )}
     </header>
   )
 }

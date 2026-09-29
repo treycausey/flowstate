@@ -14,12 +14,14 @@ describe('QuickEntry', () => {
     // Ensure provider picks the same active tank
     localStorage.setItem('activeTankId', tank.id)
     renderWithProvider(<QuickEntry />)
-    await waitFor(() => expect(screen.getByRole('button', { name: /^save$/i })).toBeEnabled())
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /^save reading$/i })).toBeEnabled(),
+    )
     fireEvent.change(screen.getByLabelText(/^pH$/), { target: { value: '7.2' } })
     fireEvent.change(screen.getByLabelText(/^Ammonia \(/), { target: { value: '0' } })
     fireEvent.change(screen.getByLabelText(/^Nitrite \(/), { target: { value: '0' } })
     fireEvent.change(screen.getByLabelText(/^Nitrate \(/), { target: { value: '10' } })
-    fireEvent.click(screen.getByRole('button', { name: /^save$/i }))
+    fireEvent.click(screen.getByRole('button', { name: /^save reading$/i }))
     await waitFor(
       async () => {
         const readings = await listReadingsByTank(tank.id)
@@ -111,11 +113,13 @@ describe('QuickEntry validation', () => {
     localStorage.setItem('activeTankId', tank.id)
     const before = (await listReadingsByTank(tank.id)).length
     renderWithProvider(<QuickEntry />)
-    await waitFor(() => expect(screen.getByRole('button', { name: /^save$/i })).toBeEnabled())
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /^save reading$/i })).toBeEnabled(),
+    )
     const confirmSpy = jest.spyOn(window, 'confirm').mockReturnValue(true)
     fireEvent.change(screen.getByLabelText(/^Ammonia \(/), { target: { value: '0.5' } })
     fireEvent.change(screen.getByLabelText(/^Nitrite \(/), { target: { value: '0.25' } })
-    fireEvent.click(screen.getByRole('button', { name: /^save$/i }))
+    fireEvent.click(screen.getByRole('button', { name: /^save reading$/i }))
     expect(await screen.findByText('Reading saved.')).toBeInTheDocument()
     const all = await listReadingsByTank(tank.id)
     expect(all).toHaveLength(before + 1)
@@ -129,8 +133,10 @@ describe('QuickEntry validation', () => {
     localStorage.setItem('activeTankId', tank.id)
     const before = (await listReadingsByTank(tank.id)).length
     renderWithProvider(<QuickEntry />)
-    await waitFor(() => expect(screen.getByRole('button', { name: /^save$/i })).toBeEnabled())
-    fireEvent.click(screen.getByRole('button', { name: /^save$/i }))
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /^save reading$/i })).toBeEnabled(),
+    )
+    fireEvent.click(screen.getByRole('button', { name: /^save reading$/i }))
     expect(await screen.findByText('Enter at least one test result.')).toBeInTheDocument()
     expect(screen.queryByText('Required')).not.toBeInTheDocument()
     expect(screen.getByLabelText(/^pH$/)).toHaveFocus()
@@ -141,9 +147,11 @@ describe('QuickEntry validation', () => {
     const tank = await ensureSeed()
     localStorage.setItem('activeTankId', tank.id)
     renderWithProvider(<QuickEntry />)
-    await waitFor(() => expect(screen.getByRole('button', { name: /^save$/i })).toBeEnabled())
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /^save reading$/i })).toBeEnabled(),
+    )
     fireEvent.change(screen.getByLabelText(/^pH$/), { target: { value: '12' } })
-    fireEvent.click(screen.getByRole('button', { name: /^save$/i }))
+    fireEvent.click(screen.getByRole('button', { name: /^save reading$/i }))
     expect(await screen.findByText('Must be 5–9')).toBeInTheDocument()
     expect(screen.getByLabelText(/^pH$/)).toHaveAttribute('aria-invalid', 'true')
     expect(screen.getByLabelText(/^pH$/)).toHaveFocus()
@@ -153,13 +161,15 @@ describe('QuickEntry validation', () => {
     const tank = await ensureSeed()
     localStorage.setItem('activeTankId', tank.id)
     renderWithProvider(<QuickEntry />)
-    await waitFor(() => expect(screen.getByRole('button', { name: /^save$/i })).toBeEnabled())
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /^save reading$/i })).toBeEnabled(),
+    )
     const confirmSpy = jest.spyOn(window, 'confirm').mockReturnValue(true)
     fireEvent.change(screen.getByLabelText(/^pH$/), { target: { value: '7.6' } })
     fireEvent.change(screen.getByLabelText(/^Ammonia \(/), { target: { value: '0' } })
     fireEvent.change(screen.getByLabelText(/^Nitrite \(/), { target: { value: '0.25' } })
     fireEvent.change(screen.getByLabelText(/^Nitrate \(/), { target: { value: '5' } })
-    fireEvent.click(screen.getByRole('button', { name: /^save$/i }))
+    fireEvent.click(screen.getByRole('button', { name: /^save reading$/i }))
     expect(await screen.findByText('Reading saved.')).toBeInTheDocument()
     const last = await findMostRecentReading(tank.id)
     expect(last?.nitrite).toBe(0.25)
@@ -173,7 +183,9 @@ describe('QuickEntry kit chips', () => {
     const tank = await ensureSeed()
     localStorage.setItem('activeTankId', tank.id)
     renderWithProvider(<QuickEntry />)
-    await waitFor(() => expect(screen.getByRole('button', { name: /^save$/i })).toBeEnabled())
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /^save reading$/i })).toBeEnabled(),
+    )
     const confirmSpy = jest.spyOn(window, 'confirm').mockReturnValue(true)
 
     const chip = screen.getByRole('button', { name: 'NH3 0.5' })
@@ -194,7 +206,7 @@ describe('QuickEntry kit chips', () => {
     // Chips only, nothing typed
     fireEvent.click(screen.getByRole('button', { name: 'NH3 0.5' }))
     fireEvent.click(screen.getByRole('button', { name: 'NO2 0.25' }))
-    fireEvent.click(screen.getByRole('button', { name: /^save$/i }))
+    fireEvent.click(screen.getByRole('button', { name: /^save reading$/i }))
     expect(await screen.findByText('Reading saved.')).toBeInTheDocument()
     const last = await findMostRecentReading(tank.id)
     expect(last).toMatchObject({ pH: null, ammonia: 0.5, nitrite: 0.25, nitrate: null })
@@ -205,7 +217,9 @@ describe('QuickEntry kit chips', () => {
     const tank = await ensureSeed()
     localStorage.setItem('activeTankId', tank.id)
     renderWithProvider(<QuickEntry />)
-    await waitFor(() => expect(screen.getByRole('button', { name: /^save$/i })).toBeEnabled())
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /^save reading$/i })).toBeEnabled(),
+    )
     fireEvent.change(screen.getByLabelText(/^Nitrate \(/), { target: { value: '20' } })
     expect(screen.getByRole('button', { name: 'NO3 20' })).toHaveAttribute('aria-pressed', 'true')
 
@@ -222,11 +236,13 @@ describe('QuickEntry typed input', () => {
     const tank = await ensureSeed()
     localStorage.setItem('activeTankId', tank.id)
     renderWithProvider(<QuickEntry />)
-    await waitFor(() => expect(screen.getByRole('button', { name: /^save$/i })).toBeEnabled())
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /^save reading$/i })).toBeEnabled(),
+    )
     const before = (await listReadingsByTank(tank.id)).length
     fireEvent.change(screen.getByLabelText(/^pH$/), { target: { value: '7.2' } })
     fireEvent.change(screen.getByLabelText(/^Ammonia \(/), { target: { value: 'o.5' } })
-    fireEvent.click(screen.getByRole('button', { name: /^save$/i }))
+    fireEvent.click(screen.getByRole('button', { name: /^save reading$/i }))
     expect(await screen.findByText('Enter a number')).toBeInTheDocument()
     expect(screen.getByLabelText(/^Ammonia \(/)).toHaveAttribute('aria-invalid', 'true')
     expect(await listReadingsByTank(tank.id)).toHaveLength(before)
@@ -236,11 +252,13 @@ describe('QuickEntry typed input', () => {
     const tank = await ensureSeed()
     localStorage.setItem('activeTankId', tank.id)
     renderWithProvider(<QuickEntry />)
-    await waitFor(() => expect(screen.getByRole('button', { name: /^save$/i })).toBeEnabled())
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /^save reading$/i })).toBeEnabled(),
+    )
     fireEvent.change(screen.getByLabelText(/^Ammonia \(/), { target: { value: '0,25' } })
     expect(screen.getByRole('button', { name: 'NH3 0.25' })).toHaveAttribute('aria-pressed', 'true')
     const confirmSpy = jest.spyOn(window, 'confirm').mockReturnValue(true)
-    fireEvent.click(screen.getByRole('button', { name: /^save$/i }))
+    fireEvent.click(screen.getByRole('button', { name: /^save reading$/i }))
     expect(await screen.findByText('Reading saved.')).toBeInTheDocument()
     expect(await findMostRecentReading(tank.id)).toMatchObject({ ammonia: 0.25 })
     confirmSpy.mockRestore()
@@ -250,7 +268,9 @@ describe('QuickEntry typed input', () => {
     const tank = await ensureSeed()
     localStorage.setItem('activeTankId', tank.id)
     renderWithProvider(<QuickEntry />)
-    await waitFor(() => expect(screen.getByRole('button', { name: /^save$/i })).toBeEnabled())
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /^save reading$/i })).toBeEnabled(),
+    )
     const ammonia = screen.getByLabelText(/^Ammonia \(/)
     fireEvent.keyDown(ammonia, { key: 'ArrowUp' })
     expect(ammonia).toHaveValue('0')
@@ -266,7 +286,9 @@ describe('QuickEntry chip keyboard navigation', () => {
     const tank = await ensureSeed()
     localStorage.setItem('activeTankId', tank.id)
     renderWithProvider(<QuickEntry />)
-    await waitFor(() => expect(screen.getByRole('button', { name: /^save$/i })).toBeEnabled())
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /^save reading$/i })).toBeEnabled(),
+    )
 
     // Focus order after the pH input: the pH row has exactly one tabbable chip
     const phGroup = screen.getByRole('group', { name: 'pH kit values' })
@@ -297,7 +319,9 @@ describe('QuickEntry chip keyboard navigation', () => {
     const tank = await ensureSeed()
     localStorage.setItem('activeTankId', tank.id)
     renderWithProvider(<QuickEntry />)
-    await waitFor(() => expect(screen.getByRole('button', { name: /^save$/i })).toBeEnabled())
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /^save reading$/i })).toBeEnabled(),
+    )
     fireEvent.change(screen.getByLabelText(/^pH$/), { target: { value: '8.0' } })
     const chip = screen.getByRole('button', { name: 'pH 8.0' })
     chip.focus()
@@ -313,7 +337,9 @@ describe('QuickEntry chip keyboard navigation', () => {
     const tank = await ensureSeed()
     localStorage.setItem('activeTankId', tank.id)
     renderWithProvider(<QuickEntry />)
-    await waitFor(() => expect(screen.getByRole('button', { name: /^save$/i })).toBeEnabled())
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /^save reading$/i })).toBeEnabled(),
+    )
     const names = screen.getAllByRole('group').map((g) => g.getAttribute('aria-label'))
     expect(names).toEqual([
       'pH kit values',
@@ -330,12 +356,36 @@ describe('QuickEntry chip keyboard navigation', () => {
     const tank = await ensureSeed()
     localStorage.setItem('activeTankId', tank.id)
     renderWithProvider(<QuickEntry />)
-    await waitFor(() => expect(screen.getByRole('button', { name: /^save$/i })).toBeEnabled())
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /^save reading$/i })).toBeEnabled(),
+    )
     const focusable = Array.from(
       document.querySelectorAll<HTMLElement>('input, button, select, textarea, [tabindex]'),
     ).filter((el) => el.tabIndex >= 0 && !(el as HTMLButtonElement).disabled)
     const from = focusable.indexOf(screen.getByLabelText(/^pH$/))
     const ammoniaInput = focusable.indexOf(screen.getByLabelText(/^Ammonia \(/))
     expect(ammoniaInput - from).toBeLessThanOrEqual(2)
+  })
+
+  it('shows inline hints for the typed or selected value, and clears them at safe values', async () => {
+    const tank = await ensureSeed()
+    localStorage.setItem('activeTankId', tank.id)
+    renderWithProvider(<QuickEntry />)
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /^save reading$/i })).toBeEnabled(),
+    )
+    const ammonia = screen.getByLabelText(/^Ammonia \(/)
+    fireEvent.click(screen.getByRole('button', { name: 'NH3 0.5' }))
+    expect(screen.getByText('Above 0 — toxic to fish')).toBeInTheDocument()
+    expect(ammonia).toHaveAccessibleDescription('Above 0 — toxic to fish')
+    fireEvent.change(ammonia, { target: { value: '0' } })
+    expect(screen.queryByText('Above 0 — toxic to fish')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'NO3 20' }))
+    expect(screen.queryByText(/^(Caution|High) —/)).not.toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText(/^Nitrate \(/), { target: { value: '30' } })
+    expect(screen.getByText('Caution — 20 to 40 ppm')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'NO3 80' }))
+    expect(screen.getByText('High — above 40 ppm')).toBeInTheDocument()
   })
 })

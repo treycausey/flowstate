@@ -36,12 +36,12 @@ describe('TankStatusView', () => {
     expect(screen.getByText('Last test: 2 days ago')).toBeInTheDocument()
 
     const ammonia = screen.getByText('NH3').closest('div')!
-    expect(within(ammonia).getByText(/0\.5 ppm/)).toHaveClass('flag--high')
+    expect(within(ammonia).getByText(/^0\.5/)).toHaveClass('flag--high')
     expect(within(ammonia).getByText(/out of range/)).toBeInTheDocument()
     expect(within(ammonia).getByText(/trend up from 0\.25/)).toBeInTheDocument()
 
     const nitrate = screen.getByText('NO3').closest('div')!
-    expect(within(nitrate).getByText(/30 ppm/)).toHaveClass('flag--caution')
+    expect(within(nitrate).getByText(/^30/)).toHaveClass('flag--caution')
     expect(within(nitrate).getByText(/trend up from 10/)).toBeInTheDocument()
 
     // Only one nitrite test: no trend. pH never tested.

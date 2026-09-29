@@ -15,7 +15,9 @@ describe('first run and tank selection', () => {
         <HomeClient />
       </TankProvider>,
     )
-    await waitFor(() => expect(screen.getByRole('button', { name: /^save$/i })).toBeEnabled())
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /^save reading$/i })).toBeEnabled(),
+    )
     expect(screen.getByRole('combobox', { name: /^tank$/i })).toHaveDisplayValue('My Tank')
     expect(await listTanks()).toHaveLength(1)
   })

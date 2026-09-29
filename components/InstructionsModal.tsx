@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useEffectEvent, useRef } from 'react'
+import { createPortal } from 'react-dom'
 
 type Props = {
   open: boolean
@@ -51,7 +52,8 @@ export default function InstructionsModal({ open, onClose, onStartTimer }: Props
 
   if (!open) return null
 
-  return (
+  // Portal: the frosted panel's backdrop-filter would otherwise trap position: fixed
+  return createPortal(
     <div
       className="modal-overlay"
       onClick={(e) => {
@@ -142,6 +144,7 @@ export default function InstructionsModal({ open, onClose, onStartTimer }: Props
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
