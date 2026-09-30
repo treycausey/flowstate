@@ -1,7 +1,9 @@
 'use client'
 
 import { useEffect, useRef, useState, type RefObject } from 'react'
-import { BettaSim, type BettaFrame, type Rect } from '@/lib/tank/betta'
+import type { BettaFrame, Rect } from '@/lib/tank/betta'
+import { Livestock, type LivestockFrame } from '@/lib/tank/livestock'
+import { MAX_CREATURES, planStock, type StockEntry } from '@/lib/tank/stock'
 import { getEnvironment, type Environment, type Hemisphere } from '@/lib/tank/environment'
 import { FramePacer } from '@/lib/tank/pacing'
 import { isNewYearWindow } from '@/lib/tank/eggs'
@@ -23,6 +25,8 @@ export type TankSceneControls = {
   /** Ask the betta to look at a random point. */
   focusRandom(): void
   frame(): BettaFrame | null
+  /** Everything drawn this frame (betta, creatures, pellets). */
+  livestock(): LivestockFrame | null
 }
 
 export type ScriptedEvent = {
@@ -49,12 +53,24 @@ export type TankSceneProps = {
   /** Force the reduced-motion single frame. */
   reducedMotion?: boolean
   seed?: number
+  /** Recorded livestock. Empty (or missing) shows the betta alone. */
+  stock?: readonly StockEntry[]
   controlsRef?: RefObject<TankSceneControls | null>
   onStats?: (stats: { fps: number; frameMs: number; level: 'full' | 'half' }) => void
 }
 
 const INTERACTIVE =
   'a, button, input, select, textarea, label, summary, [role="button"], [data-tank-ignore]'
+
+/** Species ids the stock needs loaded (the betta has its own poses). */
+function speciesOf(stock: readonly StockEntry[]) {
+  return planStock(stock).groups.map((g) => g.profile.id)
+}
+
+/** Normalised y of the substrate line: the carpet along the front of the plate. */
+function floorFor(r: { plateToView(u: number, v: number): [number, number] }) {
+  return Math.min(0.94, Math.max(0.8, r.plateToView(0.5, 0.925)[1]))
+}
 
 function webgl2Available() {
   return typeof window !== 'undefined' && typeof WebGL2RenderingContext !== 'undefined'
@@ -70,6 +86,7 @@ export default function TankScene({
   freezeScript,
   reducedMotion,
   seed = 1,
+  stock,
   controlsRef,
   onStats,
 }: TankSceneProps) {
@@ -92,6 +109,7 @@ export default function TankScene({
     freezeScript,
     reducedMotion,
     onStats,
+    stock,
   })
   useEffect(() => {
     live.current = {
@@ -104,6 +122,7 @@ export default function TankScene({
       freezeScript,
       reducedMotion,
       onStats,
+      stock,
     }
   })
   const api = useRef<{ dirty: () => void; configure: () => void } | null>(null)
@@ -125,7 +144,7 @@ export default function TankScene({
   useEffect(() => {
     api.current?.dirty()
     api.current?.configure()
-  }, [water, exclusion, environment, hemisphere, freezeAt, freezeScript, reducedMotion])
+  }, [water, exclusion, environment, hemisphere, freezeAt, freezeScript, reducedMotion, stock])
 
   useEffect(() => {
     if (!host) return
@@ -151,8 +170,8 @@ export default function TankScene({
     let disposed = false
     let staticFrameQueued = false
 
-    const sim = new BettaSim(seed)
-    let frame: BettaFrame = sim.frame()
+    const sim = new Livestock(seed, {}, live.current.stock ?? [])
+    let frame: LivestockFrame = sim.frame()
     let elapsed = 0
     let lastTs = 0
     let ripple: { x: number; y: number; t0: number } | null = null
@@ -208,14 +227,23 @@ export default function TankScene({
       if (!renderer || width === 0 || height === 0) return
       const l = live.current
       const rest = renderer.plateToView(REST_PLATE[0], REST_PLATE[1])
+      const rr = renderer
+      sim.setStock(l.stock ?? [])
       sim.configure({
         aspect: width / height,
         fishWidth: fishWidthFor(width),
         exclusion: normRect(l.exclusion),
         restSpot: { x: rest[0], y: rest[1] },
+        floorY: floorFor(rr),
+        plateToView: (u, v) => rr.plateToView(u, v),
       })
       const e = l.environment ?? env
-      sim.setContext({ night: e.phase === 'night', mood: l.water.mood })
+      sim.setContext({
+        night: e.phase === 'night',
+        dusk: e.phase === 'dusk',
+        mood: l.water.mood,
+      })
+      renderer.loadStock(speciesOf(l.stock ?? []))
       renderer.setPhase(e.phase)
     }
 
@@ -229,13 +257,15 @@ export default function TankScene({
         time: elapsed,
         env: e,
         water: l.water,
-        betta: frame,
+        betta: frame.betta,
+        creatures: frame.creatures,
+        pellets: frame.pellets,
         fishWidth: fishWidthFor(width),
         ripple,
         instant: isStatic(),
       })
       // Fade the canvas in only once the plate and the fish are both on screen (no pop-in).
-      if (!marked && renderer.ready && renderer.hasImage('betta-cruise')) {
+      if (!marked && renderer.ready && (!sim.hasBetta || renderer.hasImage('betta-cruise'))) {
         marked = true
         canvas.dataset.ready = '1'
         // Halloween night: the betta flares once, just after the tank fades in.
@@ -257,18 +287,22 @@ export default function TankScene({
       const l = live.current
       const target = l.freezeAt ?? 9
       // Deterministic: fresh sim stepped in fixed 1/30 s slices.
-      const fresh = new BettaSim(seed)
+      const fresh = new Livestock(seed, {}, l.stock ?? [])
       const rest = renderer.plateToView(REST_PLATE[0], REST_PLATE[1])
+      const rr = renderer
       fresh.configure({
         aspect: width / height,
         fishWidth: fishWidthFor(width),
         exclusion: normRect(l.exclusion),
         restSpot: { x: rest[0], y: rest[1] },
+        floorY: floorFor(rr),
+        plateToView: (u, v) => rr.plateToView(u, v),
       })
       const e =
         l.environment ?? getEnvironment(l.clock?.() ?? new Date(), { hemisphere: l.hemisphere })
-      fresh.setContext({ night: e.phase === 'night', mood: l.water.mood })
-      let f = fresh.frame()
+      fresh.setContext({ night: e.phase === 'night', dusk: e.phase === 'dusk', mood: l.water.mood })
+      renderer.loadStock(speciesOf(l.stock ?? []))
+      let f: LivestockFrame = fresh.frame()
       const steps = Math.round(target * 30)
       const script = [...(l.freezeScript ?? [])].sort((a, b) => a.t - b.t)
       let next = 0
@@ -311,6 +345,7 @@ export default function TankScene({
 
       const t0 = performance.now()
       elapsed += pace.step
+      sim.setBudget(level === 'half' ? Math.floor(MAX_CREATURES / 2) : MAX_CREATURES)
       frame = sim.step(pace.step)
       draw()
       statMs = statMs * 0.9 + (performance.now() - t0) * 0.1
@@ -365,20 +400,28 @@ export default function TankScene({
     // Load in priority order: plate (first), betta, then the rest.
     const initialEnv = currentEnv(performance.now())
     r.setPhase(initialEnv.phase)
-    void r
-      .loadImage('betta-cruise')
-      .then(() =>
-        Promise.all([
-          r.loadImage('betta-flare'),
-          r.loadImage('betta-clamped'),
-          r.loadImage('fg-stems'),
-        ]),
-      )
+    const initialStock = live.current.stock ?? []
+    const wantsBetta = planStock(initialStock).betta
+    // The betta loads first when it swims; the rest of the stock follows.
+    const loadFirst = wantsBetta ? r.loadImage('betta-cruise') : Promise.resolve()
+    void loadFirst.then(() => {
+      r.loadStock(speciesOf(initialStock))
+      return Promise.all([
+        wantsBetta ? r.loadImage('betta-flare') : undefined,
+        wantsBetta ? r.loadImage('betta-clamped') : undefined,
+        r.loadImage('fg-stems'),
+      ])
+    })
     resize()
     api.current = { dirty: () => isStatic() && requestStatic(), configure }
     if (process.env.NODE_ENV !== 'production') {
       // Dev-only probe for screenshot scripts.
-      ;(window as unknown as { __tankFrame?: () => BettaFrame }).__tankFrame = () => frame
+      const probe = window as unknown as {
+        __tankFrame?: () => BettaFrame | null
+        __tankLive?: () => LivestockFrame
+      }
+      probe.__tankFrame = () => frame.betta
+      probe.__tankLive = () => frame
     }
     if (controlsRef) {
       controlsRef.current = {
@@ -389,7 +432,8 @@ export default function TankScene({
           sim.focusAt({ x: 0.35 + rnd() * 0.55, y: 0.25 + rnd() * 0.5 })
           window.setTimeout(() => sim.blur(), 6000)
         },
-        frame: () => frame,
+        frame: () => frame.betta,
+        livestock: () => frame,
       }
     }
 
@@ -408,9 +452,10 @@ export default function TankScene({
     function handleTap(x: number, y: number) {
       const n = toNorm(x, y)
       const fw = fishWidthFor(width)
-      const dx = Math.abs(n.x - frame.x)
-      const dy = Math.abs(n.y - frame.y) / (width / height)
-      if (dx < fw * 0.5 * frame.scale && dy < fw * 0.36 * frame.scale) {
+      const b = frame.betta
+      const dx = b ? Math.abs(n.x - b.x) : Infinity
+      const dy = b ? Math.abs(n.y - b.y) / (width / height) : Infinity
+      if (b && dx < fw * 0.5 * b.scale && dy < fw * 0.36 * b.scale) {
         sim.flare()
       } else {
         sim.lookAt(n)

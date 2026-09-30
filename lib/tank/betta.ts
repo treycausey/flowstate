@@ -4,7 +4,10 @@
 // viewport widths (y is divided by the aspect ratio first), so 0.06 means 6% of the width per second
 // in any direction. z is depth for focus: 0 far, 0.5 focal plane, 1 near the glass.
 
+import type { Pellet, PelletField } from './pellets'
 import type { Mood } from './waterState'
+
+export type { Pellet }
 
 export type BettaMode = 'wander' | 'approach' | 'chase' | 'flare' | 'rest' | 'sulk' | 'inspect'
 
@@ -23,7 +26,16 @@ export type BettaConfig = {
 
 export type BettaContext = { night: boolean; mood: Mood }
 
-export type Pellet = { id: number; x: number; y: number; age: number; alpha: number }
+/** What makes one solitary fish differ from the betta (the honey gourami is calmer and never flares). */
+export type SoloTraits = {
+  /** Multiplies every swim speed. */
+  speed: number
+  flare: boolean
+  /** Beds down at the rest spot at night. */
+  rest: boolean
+  inspect: boolean
+}
+const BETTA_TRAITS: SoloTraits = { speed: 1, flare: true, rest: true, inspect: true }
 
 export type BettaFrame = {
   mode: BettaMode
@@ -163,8 +175,8 @@ type Move = {
 
 type WanderState = 'settle' | 'hover' | 'turn' | 'move'
 
-const fallbackGeometry = (cfg: BettaConfig): Geometry => {
-  const { aspect, fishWidth: fw, exclusion: e } = cfg
+/** The largest rectangle of open water: the viewport minus the panel, the surface band and the substrate. */
+export function largestFreeRect(e: Rect | null): Rect {
   const top = SURFACE_BAND
   const bottom = 1 - SUBSTRATE_BAND
   let free: Rect = { x0: 0, y0: top, x1: 1, y1: bottom }
@@ -180,6 +192,12 @@ const fallbackGeometry = (cfg: BettaConfig): Geometry => {
     const area = (r: Rect) => Math.max(0, r.x1 - r.x0) * Math.max(0, r.y1 - r.y0)
     free = candidates.reduce((best, r) => (area(r) > area(best) ? r : best))
   }
+  return free
+}
+
+const fallbackGeometry = (cfg: BettaConfig): Geometry => {
+  const { aspect, fishWidth: fw, exclusion: e } = cfg
+  const free = largestFreeRect(e)
   const freeW = free.x1 - free.x0
   const freeH = (free.y1 - free.y0) / aspect
   const marginX = Math.max(0.06 * freeW, 0.03)
@@ -252,7 +270,10 @@ export class BettaSim {
   private inspectStage: 'in' | 'stare' | 'out' = 'in'
   private inspectTimer = 0
   private focusPoint: Vec | null = null
-  private pellets: Pellet[] = []
+  private ownPellets: Pellet[] = []
+  /** When set (the livestock shares one pellet field), the field owns, sinks and fades the pellets. */
+  private shared: PelletField | null = null
+  private traits: SoloTraits = BETTA_TRAITS
   private nextPelletId = 1
   private noiseSeed: [number, number, number, number]
 
@@ -307,6 +328,29 @@ export class BettaSim {
     this.ctx = ctx
   }
 
+  /** Use a pellet field shared with the rest of the livestock instead of the fish's own list. */
+  usePelletField(field: PelletField | null) {
+    this.shared = field
+  }
+
+  setTraits(traits: Partial<SoloTraits>) {
+    this.traits = { ...BETTA_TRAITS, ...traits }
+  }
+
+  private get pellets(): Pellet[] {
+    return this.shared ? this.shared.pellets : this.ownPellets
+  }
+
+  private removePellet(p: Pellet) {
+    if (this.shared) this.shared.remove(p)
+    else this.ownPellets = this.ownPellets.filter((q) => q !== p)
+  }
+
+  /** A pellet the fish can go for: not fading, and within reach of the lowest mouth position. */
+  private edible(p: Pellet) {
+    return p.alpha > 0.5 && p.y <= this.geo.bounds.y1 + (PELLET_FLOOR_GAP + 0.004) * this.cfg.aspect
+  }
+
   // ---- input events ----
 
   /** Any user activity resets the idle timer and cancels an inspect. */
@@ -318,8 +362,8 @@ export class BettaSim {
     }
   }
 
-  /** `at` is normalised; without it the pellet falls from near the surface at a random spot. */
-  dropPellet(at?: Vec) {
+  /** Where a pellet dropped for this fish starts (`at` is normalised; without it, just ahead of the fish). */
+  pelletSpot(at?: Vec): Vec {
     this.activity()
     const reach = this.mouthOffset()
     // Just ahead of the fish, so the drop reads as "for the betta".
@@ -329,24 +373,28 @@ export class BettaSim {
     // Use the shortest reach the fish has at any depth, so the range holds whatever z it drifts to.
     const b = this.geo.bounds
     const minReach = this.cfg.fishWidth * MOUTH_REACH * scaleForZ(Z_MIN) * this.geo.fit
-    const x = clamp(raw.x, b.x0 - minReach + 0.005, b.x1 + minReach - 0.005)
-    this.pellets.push({
-      id: this.nextPelletId++,
-      x,
+    return {
+      x: clamp(raw.x, b.x0 - minReach + 0.005, b.x1 + minReach - 0.005),
       y: clamp(raw.y, 0.03, 0.2),
-      age: 0,
-      alpha: 1,
-    })
-    if (this.pellets.length > 6) this.pellets.shift()
+    }
+  }
+
+  /** `at` is normalised; without it the pellet falls from near the surface at a random spot. */
+  dropPellet(at?: Vec) {
+    const spot = this.pelletSpot(at)
+    this.ownPellets.push({ id: this.nextPelletId++, x: spot.x, y: spot.y, age: 0, alpha: 1 })
+    if (this.ownPellets.length > 6) this.ownPellets.shift()
   }
 
   flare() {
+    if (!this.traits.flare) return
     this.activity()
     this.flareTimer = 1.5 + this.rng()
   }
 
   /** The "betta" easter egg: a happy flare and one quick loop-the-loop. */
   celebrate() {
+    if (!this.traits.flare) return
     this.activity()
     this.flareTimer = 2.2
     this.loopT = 0
@@ -378,6 +426,7 @@ export class BettaSim {
 
   /** Force the idle easter egg (dev drawer). */
   triggerInspect() {
+    if (!this.traits.inspect) return
     this.startInspect()
   }
 
@@ -514,10 +563,11 @@ export class BettaSim {
       const length = Math.hypot(dxw, dyw)
       // Cap peak speed so the ease-in never exceeds a gentle acceleration, even on short hops.
       const aCap = rare ? 0.02 : 0.012
-      const peak = Math.min(
-        rare ? lerp(0.033, 0.04, this.rng()) : lerp(0.012, 0.026, this.rng()),
-        Math.sqrt((aCap * length) / 1.64),
-      )
+      const peak =
+        Math.min(
+          rare ? lerp(0.033, 0.04, this.rng()) : lerp(0.012, 0.026, this.rng()),
+          Math.sqrt((aCap * length) / 1.64),
+        ) * this.traits.speed
       return {
         sx: this.px,
         sy: this.py,
@@ -553,8 +603,8 @@ export class BettaSim {
     if (this.flareTimer > 0) return 'flare'
     if (this.ctx.mood === 'stressed') return 'sulk'
     if (this.mode === 'inspect') return 'inspect'
-    if (this.pellets.some((p) => p.alpha > 0.5) && this.satisfiedTimer <= 0) return 'chase'
-    if (this.ctx.night) return 'rest'
+    if (this.pellets.some((p) => this.edible(p)) && this.satisfiedTimer <= 0) return 'chase'
+    if (this.ctx.night && this.traits.rest) return 'rest'
     if (this.focusPoint) return 'approach'
     return 'wander'
   }
@@ -615,6 +665,7 @@ export class BettaSim {
       this.idleTime > IDLE_INSPECT_SECONDS &&
       this.sinceInspect > 240 &&
       this.ctx.mood !== 'stressed' &&
+      this.traits.inspect &&
       !this.ctx.night
     ) {
       this.startInspect()
@@ -633,6 +684,7 @@ export class BettaSim {
   }
 
   private stepPellets(dt: number) {
+    if (this.shared) return
     const b = this.geo.bounds
     for (const p of this.pellets) {
       p.age += dt
@@ -644,7 +696,7 @@ export class BettaSim {
         p.alpha = Math.max(0, p.alpha - dt / 8)
       }
     }
-    this.pellets = this.pellets.filter((p) => p.alpha > 0)
+    this.ownPellets = this.ownPellets.filter((p) => p.alpha > 0)
   }
 
   /** Per-mode plan: where to go, how fast, and how it should look. */
@@ -735,7 +787,7 @@ export class BettaSim {
         fin = 0.65
         const tip = { x: this.px + this.heading * mouth, y: this.py }
         if (Math.hypot(this.worldDx(tip.x, pellet.x), this.worldDy(tip.y, pellet.y)) < EAT_RADIUS) {
-          this.pellets = this.pellets.filter((p) => p !== pellet)
+          this.removePellet(pellet)
           this.satisfiedTimer = 1.8
           this.gulpT = 0
         }
@@ -856,7 +908,7 @@ export class BettaSim {
     let best: Pellet | null = null
     let bestD = Infinity
     for (const p of this.pellets) {
-      if (p.alpha <= 0.5) continue
+      if (!this.edible(p)) continue
       const d = Math.hypot(this.worldDx(this.px, p.x), this.worldDy(this.py, p.y))
       if (d < bestD) {
         best = p
