@@ -1,0 +1,1066 @@
+// WebGL2 renderer for the living tank. One canvas, premultiplied alpha, no dependencies.
+// Layers back to front: plate + grade + caustics + shafts, far motes, bubbles, props, betta,
+// pellets, near motes, algae, glass dust, foreground stems.
+
+import type { BettaFrame } from './betta'
+import type { Environment, Phase } from './environment'
+import { computeGrade, type Grade } from './grade'
+import { BACKGROUND_FRAG, FULLSCREEN_VERT } from './shaders/background'
+import { AXIS_Y, BETTA_FRAG, BETTA_VERT } from './shaders/betta'
+import {
+  BUBBLE_FRAG,
+  BUBBLE_VERT,
+  COVER_FRAG,
+  DISC_FRAG,
+  DISC_VERT,
+  DUST_FRAG,
+  PARTICLE_FRAG,
+  PARTICLE_VERT,
+  SPRITE_FRAG,
+  SPRITE_VERT,
+} from './shaders/sprites'
+import type { WaterState } from './waterState'
+
+const ASSET_BASE = '/tank'
+const PLATE_ASPECT = 2560 / 1707
+const CROSSFADE_SECONDS = 6
+const PARTICLE_COUNT = 200
+const BUBBLE_SLOTS = 18
+/** The plates are cropped by this factor so parallax never shows an edge. */
+const PLATE_CROP = 0.975
+
+export type RenderInput = {
+  /** Seconds. Drives every animation; pass a fixed value for a deterministic frame. */
+  time: number
+  env: Environment
+  water: WaterState
+  betta: BettaFrame
+  /** Sprite width of the betta in view widths. */
+  fishWidth: number
+  /** Latest tap ripple, if any. Coordinates are normalised view space, t0 is in `time` seconds. */
+  ripple: { x: number; y: number; t0: number } | null
+  /** Snap slow fades (bubble nest) to their target; used for single deterministic frames. */
+  instant?: boolean
+}
+
+type Tex = { tex: WebGLTexture; w: number; h: number }
+
+class Prog {
+  readonly program: WebGLProgram
+  private locs = new Map<string, WebGLUniformLocation | null>()
+  constructor(
+    private gl: WebGL2RenderingContext,
+    vs: string,
+    fs: string,
+    label: string,
+  ) {
+    const compile = (type: number, src: string) => {
+      const sh = gl.createShader(type)
+      if (!sh) throw new Error(`tank: cannot create shader (${label})`)
+      gl.shaderSource(sh, src)
+      gl.compileShader(sh)
+      if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) {
+        const log = gl.getShaderInfoLog(sh)
+        gl.deleteShader(sh)
+        throw new Error(
+          `tank: ${label} ${type === gl.VERTEX_SHADER ? 'vertex' : 'fragment'} shader failed: ${log}`,
+        )
+      }
+      return sh
+    }
+    const v = compile(gl.VERTEX_SHADER, vs)
+    const f = compile(gl.FRAGMENT_SHADER, fs)
+    const p = gl.createProgram()
+    if (!p) throw new Error(`tank: cannot create program (${label})`)
+    gl.attachShader(p, v)
+    gl.attachShader(p, f)
+    gl.linkProgram(p)
+    gl.deleteShader(v)
+    gl.deleteShader(f)
+    if (!gl.getProgramParameter(p, gl.LINK_STATUS)) {
+      throw new Error(`tank: ${label} link failed: ${gl.getProgramInfoLog(p)}`)
+    }
+    this.program = p
+  }
+  use() {
+    this.gl.useProgram(this.program)
+  }
+  private loc(name: string) {
+    let l = this.locs.get(name)
+    if (l === undefined) {
+      l = this.gl.getUniformLocation(this.program, name)
+      this.locs.set(name, l)
+    }
+    return l
+  }
+  f1(name: string, a: number) {
+    this.gl.uniform1f(this.loc(name), a)
+  }
+  f2(name: string, a: number, b: number) {
+    this.gl.uniform2f(this.loc(name), a, b)
+  }
+  f3(name: string, a: number, b: number, c: number) {
+    this.gl.uniform3f(this.loc(name), a, b, c)
+  }
+  v3(name: string, v: readonly number[]) {
+    this.gl.uniform3f(this.loc(name), v[0], v[1], v[2])
+  }
+  i1(name: string, a: number) {
+    this.gl.uniform1i(this.loc(name), a)
+  }
+  v4(name: string, v: Float32Array) {
+    this.gl.uniform4fv(this.loc(name), v)
+  }
+}
+
+const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v))
+const lerp = (a: number, b: number, t: number) => a + (b - a) * t
+const smoothstep = (a: number, b: number, x: number) => {
+  const t = clamp((x - a) / (b - a), 0, 1)
+  return t * t * (3 - 2 * t)
+}
+
+/** Betta sprite width in view widths for a given viewport width in CSS px. */
+export function fishWidthFor(viewWidth: number): number {
+  if (viewWidth < 520) return 0.66
+  if (viewWidth < 900) return lerp(0.6, 0.42, (viewWidth - 520) / 380)
+  return 0.34
+}
+
+export function mulberry(seed: number) {
+  let a = seed >>> 0
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0
+    let t = a
+    t = Math.imul(t ^ (t >>> 15), t | 1)
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+}
+
+export class TankRenderer {
+  private gl!: WebGL2RenderingContext
+  private lost = false
+  private width = 1
+  private height = 1
+  private aspect = 1
+  private dpr = 1
+  private focal: [number, number] = [0.5, 0.5]
+  private pointer: [number, number] = [0, 0] // -1..1
+  private parallaxPx = 8
+
+  private progs!: {
+    bg: Prog
+    betta: Prog
+    sprite: Prog
+    cover: Prog
+    disc: Prog
+    particle: Prog
+    bubble: Prog
+    dust: Prog
+  }
+  private vao!: {
+    fullscreen: WebGLVertexArrayObject
+    grid: WebGLVertexArrayObject
+    gridCount: number
+    betta: WebGLVertexArrayObject
+    bettaCount: number
+    disc: WebGLVertexArrayObject
+    particles: WebGLVertexArrayObject
+    bubbles: WebGLVertexArrayObject
+  }
+  private buffers: WebGLBuffer[] = []
+
+  // Assets.
+  private plates = new Map<Phase, { sm: Tex | null; lg: Tex | null; loading: Set<string> }>()
+  private images = new Map<string, Tex>()
+  private requested = new Set<string>()
+  private phaseCur: Phase | null = null
+  private fade: { to: Phase; t0: number | null } | null = null
+  private onAsset: () => void = () => {}
+
+  private nestAlpha = 0
+  private lastTime = 0
+  private floatBuf = new Float32Array(12)
+  private poseUniform = new Float32Array([
+    0.933,
+    0.464,
+    879 / 1200,
+    1, // cruise
+    0.935,
+    0.475,
+    879 / 1200,
+    1, // flare
+    0.923,
+    0.39,
+    626 / 1200,
+    0.86, // clamped
+  ])
+
+  static create(canvas: HTMLCanvasElement, onAssetLoaded: () => void): TankRenderer | null {
+    if (typeof WebGL2RenderingContext === 'undefined') return null
+    const r = new TankRenderer(canvas, onAssetLoaded)
+    return r.initGL() ? r : null
+  }
+
+  private constructor(
+    private canvas: HTMLCanvasElement,
+    onAssetLoaded: () => void,
+  ) {
+    this.onAsset = onAssetLoaded
+    canvas.addEventListener('webglcontextlost', this.handleLost)
+    canvas.addEventListener('webglcontextrestored', this.handleRestored)
+  }
+
+  private handleLost = (e: Event) => {
+    e.preventDefault()
+    this.lost = true
+  }
+
+  private handleRestored = () => {
+    this.plates.clear()
+    this.images.clear()
+    this.buffers = []
+    if (this.initGL()) {
+      this.lost = false
+      const again = [...this.requested]
+      this.requested.clear()
+      if (this.phaseCur) void this.loadPlate(this.phaseCur)
+      for (const key of again) if (!key.startsWith('plate')) void this.loadImage(key)
+      this.onAsset()
+    }
+  }
+
+  get isLost() {
+    return this.lost
+  }
+
+  private initGL(): boolean {
+    const gl = this.canvas.getContext('webgl2', {
+      alpha: true,
+      premultipliedAlpha: true,
+      antialias: false,
+      depth: false,
+      stencil: false,
+      powerPreference: 'high-performance',
+    })
+    if (!gl) return false
+    this.gl = gl
+    try {
+      this.progs = {
+        bg: new Prog(gl, FULLSCREEN_VERT, BACKGROUND_FRAG, 'background'),
+        betta: new Prog(gl, BETTA_VERT, BETTA_FRAG, 'betta'),
+        sprite: new Prog(gl, SPRITE_VERT, SPRITE_FRAG, 'sprite'),
+        cover: new Prog(gl, FULLSCREEN_VERT, COVER_FRAG, 'cover'),
+        disc: new Prog(gl, DISC_VERT, DISC_FRAG, 'disc'),
+        particle: new Prog(gl, PARTICLE_VERT, PARTICLE_FRAG, 'particle'),
+        bubble: new Prog(gl, BUBBLE_VERT, BUBBLE_FRAG, 'bubble'),
+        dust: new Prog(gl, FULLSCREEN_VERT, DUST_FRAG, 'dust'),
+      }
+    } catch (err) {
+      console.error(err)
+      return false
+    }
+    this.buildGeometry()
+    gl.disable(gl.DEPTH_TEST)
+    gl.disable(gl.CULL_FACE)
+    gl.enable(gl.BLEND)
+    gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA)
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true)
+    return true
+  }
+
+  private buffer(data: ArrayBufferView, target: number = this.gl.ARRAY_BUFFER) {
+    const gl = this.gl
+    const b = gl.createBuffer()
+    if (!b) throw new Error('tank: cannot create buffer')
+    gl.bindBuffer(target, b)
+    gl.bufferData(target, data, gl.STATIC_DRAW)
+    this.buffers.push(b)
+    return b
+  }
+
+  private gridMesh(cols: number, rows: number, x0: number, y0: number, x1: number, y1: number) {
+    const verts = new Float32Array((cols + 1) * (rows + 1) * 2)
+    let k = 0
+    for (let j = 0; j <= rows; j++) {
+      for (let i = 0; i <= cols; i++) {
+        verts[k++] = lerp(x0, x1, i / cols)
+        verts[k++] = lerp(y0, y1, j / rows)
+      }
+    }
+    const idx = new Uint16Array(cols * rows * 6)
+    k = 0
+    for (let j = 0; j < rows; j++) {
+      for (let i = 0; i < cols; i++) {
+        const a = j * (cols + 1) + i
+        const b = a + 1
+        const c = a + cols + 1
+        const d = c + 1
+        idx.set([a, b, c, b, d, c], k)
+        k += 6
+      }
+    }
+    return { verts, idx }
+  }
+
+  private buildGeometry() {
+    const gl = this.gl
+    const make = () => {
+      const v = gl.createVertexArray()
+      if (!v) throw new Error('tank: cannot create vertex array')
+      return v
+    }
+
+    const fullscreen = make()
+    gl.bindVertexArray(fullscreen)
+    this.buffer(new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]))
+    gl.enableVertexAttribArray(0)
+    gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0)
+
+    const grid = make()
+    gl.bindVertexArray(grid)
+    const g = this.gridMesh(12, 6, 0, 0, 1, 1)
+    this.buffer(g.verts)
+    gl.enableVertexAttribArray(0)
+    gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0)
+    this.buffer(g.idx, gl.ELEMENT_ARRAY_BUFFER)
+
+    const betta = make()
+    gl.bindVertexArray(betta)
+    const bm = this.gridMesh(64, 32, -0.56, -0.46, 0.56, 0.46)
+    this.buffer(bm.verts)
+    gl.enableVertexAttribArray(0)
+    gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0)
+    this.buffer(bm.idx, gl.ELEMENT_ARRAY_BUFFER)
+
+    const disc = make()
+    gl.bindVertexArray(disc)
+    this.buffer(new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]))
+    gl.enableVertexAttribArray(0)
+    gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0)
+
+    const quad = new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1])
+    const particles = make()
+    gl.bindVertexArray(particles)
+    this.buffer(quad)
+    gl.enableVertexAttribArray(0)
+    gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0)
+    const rand = mulberry(20260929)
+    const seeds = new Float32Array(PARTICLE_COUNT * 4)
+    const index = new Float32Array(PARTICLE_COUNT)
+    for (let i = 0; i < PARTICLE_COUNT; i++) {
+      seeds[i * 4] = rand()
+      seeds[i * 4 + 1] = rand()
+      // Far motes outnumber near ones.
+      const r = rand()
+      seeds[i * 4 + 2] = r < 0.68 ? (r / 0.68) * 0.5 : 0.5 + ((r - 0.68) / 0.32) * 0.5
+      seeds[i * 4 + 3] = rand()
+      index[i] = rand()
+    }
+    this.buffer(seeds)
+    gl.enableVertexAttribArray(1)
+    gl.vertexAttribPointer(1, 4, gl.FLOAT, false, 0, 0)
+    gl.vertexAttribDivisor(1, 1)
+    this.buffer(index)
+    gl.enableVertexAttribArray(2)
+    gl.vertexAttribPointer(2, 1, gl.FLOAT, false, 0, 0)
+    gl.vertexAttribDivisor(2, 1)
+
+    const bubbles = make()
+    gl.bindVertexArray(bubbles)
+    this.buffer(quad)
+    gl.enableVertexAttribArray(0)
+    gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0)
+    const ks = new Float32Array(BUBBLE_SLOTS)
+    for (let i = 0; i < BUBBLE_SLOTS; i++) ks[i] = i
+    this.buffer(ks)
+    gl.enableVertexAttribArray(1)
+    gl.vertexAttribPointer(1, 1, gl.FLOAT, false, 0, 0)
+    gl.vertexAttribDivisor(1, 1)
+
+    gl.bindVertexArray(null)
+    this.vao = {
+      fullscreen,
+      grid,
+      gridCount: g.idx.length,
+      betta,
+      bettaCount: bm.idx.length,
+      disc,
+      particles,
+      bubbles,
+    }
+  }
+
+  // ---- sizing and view mapping ----
+
+  resize(cssWidth: number, cssHeight: number, dpr: number) {
+    this.width = Math.max(1, cssWidth)
+    this.height = Math.max(1, cssHeight)
+    this.dpr = dpr
+    this.aspect = this.width / this.height
+    this.canvas.width = Math.max(1, Math.round(this.width * dpr))
+    this.canvas.height = Math.max(1, Math.round(this.height * dpr))
+  }
+
+  /** Point of the plate (0..1) to keep in view when the viewport is narrower than the plate. */
+  setFocal(x: number, y: number) {
+    this.focal = [x, y]
+  }
+
+  /** Pointer or device tilt, each axis -1..1. */
+  setPointer(x: number, y: number) {
+    this.pointer = [clamp(x, -1, 1), clamp(y, -1, 1)]
+  }
+
+  private plateMapping() {
+    const a = this.aspect
+    const span: [number, number] =
+      a > PLATE_ASPECT
+        ? [PLATE_CROP, (PLATE_CROP * PLATE_ASPECT) / a]
+        : [(PLATE_CROP * a) / PLATE_ASPECT, PLATE_CROP]
+    const center: [number, number] = [
+      clamp(this.focal[0], span[0] / 2, 1 - span[0] / 2),
+      clamp(this.focal[1], span[1] / 2, 1 - span[1] / 2),
+    ]
+    return { span, center }
+  }
+
+  /** Plate uv (0..1) to normalised view coordinates. */
+  plateToView(px: number, py: number): [number, number] {
+    const { span, center } = this.plateMapping()
+    return [(px - center[0]) / span[0] + 0.5, (py - center[1]) / span[1] + 0.5]
+  }
+
+  /** Plate width expressed in view widths. */
+  plateWidthInView(): number {
+    return 1 / this.plateMapping().span[0]
+  }
+
+  private parallaxView(mult: number): [number, number] {
+    // Normalised view units for +-parallaxPx CSS pixels.
+    return [
+      (this.pointer[0] * this.parallaxPx * mult) / this.width,
+      (this.pointer[1] * this.parallaxPx * mult) / this.height,
+    ]
+  }
+
+  // ---- assets ----
+
+  private async decode(url: string): Promise<HTMLImageElement | null> {
+    const img = new Image()
+    img.decoding = 'async'
+    img.src = url
+    try {
+      await img.decode()
+      return img
+    } catch (err) {
+      console.warn(`tank: failed to load ${url}`, err)
+      return null
+    }
+  }
+
+  private upload(img: HTMLImageElement): Tex | null {
+    const gl = this.gl
+    const tex = gl.createTexture()
+    if (!tex) return null
+    gl.bindTexture(gl.TEXTURE_2D, tex)
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true)
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, img)
+    gl.generateMipmap(gl.TEXTURE_2D)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+    return { tex, w: img.naturalWidth, h: img.naturalHeight }
+  }
+
+  /** Load a cut-out or overlay by file stem, e.g. 'betta-cruise'. */
+  async loadImage(name: string): Promise<void> {
+    if (this.images.has(name) || this.requested.has(name)) return
+    this.requested.add(name)
+    const img = await this.decode(`${ASSET_BASE}/${name}.webp`)
+    if (!img || this.lost) return
+    const t = this.upload(img)
+    if (t) {
+      this.images.set(name, t)
+      this.onAsset()
+    }
+  }
+
+  private plateEntry(phase: Phase) {
+    let e = this.plates.get(phase)
+    if (!e) {
+      e = { sm: null, lg: null, loading: new Set() }
+      this.plates.set(phase, e)
+    }
+    return e
+  }
+
+  /** Small plate first so the first paint is fast, then the large one. */
+  async loadPlate(phase: Phase): Promise<void> {
+    const e = this.plateEntry(phase)
+    const load = async (size: 'sm' | 'lg') => {
+      if (e[size] || e.loading.has(size)) return
+      e.loading.add(size)
+      const url = `${ASSET_BASE}/plate-${phase}${size === 'sm' ? '-sm' : ''}.webp`
+      const img = await this.decode(url)
+      e.loading.delete(size)
+      if (!img || this.lost) return
+      const t = this.upload(img)
+      if (t) {
+        e[size] = t
+        this.onAsset()
+      }
+    }
+    await load('sm')
+    await load('lg')
+  }
+
+  private plateTex(phase: Phase): Tex | null {
+    const e = this.plates.get(phase)
+    return e ? (e.lg ?? e.sm) : null
+  }
+
+  /** Switch the plate. The first call snaps; later calls crossfade over six seconds. */
+  setPhase(phase: Phase) {
+    if (this.phaseCur === null) {
+      this.phaseCur = phase
+      void this.loadPlate(phase)
+      return
+    }
+    if (phase === this.phaseCur && !this.fade) return
+    if (this.fade && this.fade.to === phase) return
+    if (this.fade) {
+      // Changed phase mid-fade: land on the incoming plate, then fade to the new one.
+      this.freePlate(this.phaseCur)
+      this.phaseCur = this.fade.to
+      this.fade = null
+    }
+    if (phase === this.phaseCur) return
+    this.fade = { to: phase, t0: null }
+    void this.loadPlate(phase)
+  }
+
+  private freePlate(phase: Phase) {
+    const e = this.plates.get(phase)
+    if (!e) return
+    if (e.sm) this.gl.deleteTexture(e.sm.tex)
+    if (e.lg) this.gl.deleteTexture(e.lg.tex)
+    this.plates.delete(phase)
+  }
+
+  /** True once the current plate has a texture to draw. */
+  get ready() {
+    return this.phaseCur !== null && this.plateTex(this.phaseCur) !== null
+  }
+
+  // ---- drawing ----
+
+  render(input: RenderInput) {
+    if (this.lost) return
+    const gl = this.gl
+    const { time, env, water } = input
+    const dtRender = Math.max(0, Math.min(0.25, time - this.lastTime))
+    this.lastTime = time
+    gl.viewport(0, 0, this.canvas.width, this.canvas.height)
+    gl.clearColor(0, 0, 0, 0)
+    gl.clear(gl.COLOR_BUFFER_BIT)
+    if (!this.phaseCur) return
+    const curTex = this.plateTex(this.phaseCur)
+    if (!curTex) return
+
+    let mix = 0
+    let nextTex: Tex | null = null
+    if (this.fade) {
+      nextTex = this.plateTex(this.fade.to)
+      if (nextTex) {
+        if (this.fade.t0 === null) this.fade.t0 = time
+        const k = clamp((time - this.fade.t0) / CROSSFADE_SECONDS, 0, 1)
+        mix = k * k * (3 - 2 * k)
+        if (k >= 1) {
+          this.freePlate(this.phaseCur)
+          this.phaseCur = this.fade.to
+          this.fade = null
+          mix = 0
+          nextTex = null
+        }
+      }
+    }
+    const activeTex = this.plateTex(this.phaseCur) ?? curTex
+
+    const grade = computeGrade(env, water)
+    const { span, center } = this.plateMapping()
+    const par = this.parallaxView(1)
+    const parallaxUV: [number, number] = [par[0] * span[0], par[1] * span[1]]
+    const sunDir = env.light.sunDir
+    const nestTarget = water.bubbleNest ? 1 : 0
+    this.nestAlpha = input.instant
+      ? nestTarget
+      : this.nestAlpha + (nestTarget - this.nestAlpha) * (1 - Math.exp(-dtRender / 2.5))
+
+    // Leaf position (autumn), also feeds the caustic shadow.
+    const leafOn = env.season === 'autumn' ? 1 : 0
+    const leafPos = this.leafPose(time)
+    const leafView = this.plateToView(leafPos.x, leafPos.y)
+    const plateW = this.plateWidthInView()
+
+    // 1. Background.
+    const bg = this.progs.bg
+    bg.use()
+    gl.disable(gl.BLEND)
+    gl.activeTexture(gl.TEXTURE0)
+    gl.bindTexture(gl.TEXTURE_2D, activeTex.tex)
+    bg.i1('u_plateA', 0)
+    gl.activeTexture(gl.TEXTURE1)
+    gl.bindTexture(gl.TEXTURE_2D, (nextTex ?? activeTex).tex)
+    bg.i1('u_plateB', 1)
+    bg.f1('u_mix', mix)
+    bg.f1('u_hasB', nextTex ? 1 : 0)
+    bg.f2('u_plateCenter', center[0], center[1])
+    bg.f2('u_plateSpan', span[0], span[1])
+    bg.f2('u_parallax', parallaxUV[0], parallaxUV[1])
+    bg.f1('u_aspect', this.aspect)
+    bg.f1('u_time', time)
+    this.gradeUniforms(bg, grade, water)
+    bg.f2('u_sunDir', sunDir[0], sunDir[1])
+    bg.f1('u_leafShadow', leafOn)
+    this.floatBuf[0] = leafView[0]
+    this.floatBuf[1] = leafView[1]
+    this.floatBuf[2] = leafPos.w * plateW * 0.55
+    this.floatBuf[3] = leafPos.w * plateW * 0.4 * this.aspect * 0.55
+    bg.v4('u_leaf', this.floatBuf.subarray(0, 4))
+    bg.f1('u_vignette', 0.22)
+    gl.bindVertexArray(this.vao.fullscreen)
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4)
+    gl.enable(gl.BLEND)
+
+    // 2. Far motes, bubbles, props.
+    this.drawParticles(input, grade, water, 0, 0.5, par)
+    this.drawBubbles(input, grade, par)
+    if (this.nestAlpha > 0.01) this.drawNest(time, grade, par)
+    if (leafOn) this.drawLeaf(time, grade, leafPos, par)
+    this.drawShrimp(time, grade, par)
+
+    // 3. Betta and pellets.
+    this.drawBetta(input, grade, water, activeTex, center, span, parallaxUV)
+    this.drawPellets(input, grade)
+
+    // 4. Near motes, overlays, foreground.
+    this.drawParticles(input, grade, water, 0.5, 1.01, par)
+    if (water.algae > 0.01) this.drawAlgae(grade, water, center, span, parallaxUV)
+    if (water.dust > 0.01) this.drawDust(time, grade, water)
+    this.drawStems(grade, water)
+  }
+
+  private gradeUniforms(p: Prog, g: Grade, water: WaterState) {
+    p.f1('u_exposure', g.exposure)
+    p.v3('u_tint', g.tint)
+    p.f1('u_saturation', g.saturation)
+    p.f1('u_haze', water.haze)
+    p.f1('u_algae', water.algae)
+    p.v3('u_hazeColor', g.hazeColor)
+    p.f1('u_causticGain', g.causticGain)
+    p.v3('u_causticTint', g.causticTint)
+    p.f1('u_shaftGain', g.shaftGain)
+    p.v3('u_shaftTint', g.shaftTint)
+  }
+
+  private lightVec(g: Grade): [number, number, number] {
+    const k = g.exposure * g.ambient
+    return [g.tint[0] * k, g.tint[1] * k, g.tint[2] * k]
+  }
+
+  private bindTex(unit: number, t: Tex) {
+    const gl = this.gl
+    gl.activeTexture(gl.TEXTURE0 + unit)
+    gl.bindTexture(gl.TEXTURE_2D, t.tex)
+  }
+
+  private drawParticles(
+    input: RenderInput,
+    g: Grade,
+    water: WaterState,
+    z0: number,
+    z1: number,
+    par: [number, number],
+  ) {
+    const gl = this.gl
+    const p = this.progs.particle
+    p.use()
+    p.f1('u_time', input.time)
+    p.f1('u_aspect', this.aspect)
+    p.f1('u_px', 1 / this.width)
+    p.f2('u_zRange', z0, z1)
+    p.f2('u_sunDir', input.env.light.sunDir[0], input.env.light.sunDir[1])
+    p.f1('u_shaftGain', g.shaftGain)
+    p.f1('u_sparkle', water.sparkle)
+    p.f1('u_count', 0.55 + 0.45 * water.sparkle - 0.15 * water.haze)
+    p.f2('u_parallax', par[0], par[1])
+    const r = input.ripple
+    const age = r ? input.time - r.t0 : 99
+    p.f2('u_pointer', r ? r.x : 0, r ? r.y : 0)
+    p.f1('u_ripple', r ? Math.exp(-age * 1.8) * smoothstep(0, 0.05, age) : 0)
+    p.v3('u_tint', g.moteTint)
+    p.f1('u_exposure', g.exposure)
+    gl.bindVertexArray(this.vao.particles)
+    gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, PARTICLE_COUNT)
+  }
+
+  private drawBubbles(input: RenderInput, g: Grade, par: [number, number]) {
+    const gl = this.gl
+    const p = this.progs.bubble
+    p.use()
+    const night = g.darkness
+    const origin = this.plateToView(0.955, 0.62)
+    p.f1('u_time', input.time)
+    p.f1('u_aspect', this.aspect)
+    p.f1('u_px', 1 / this.width)
+    p.f2('u_origin', origin[0], origin[1])
+    p.f1('u_period', lerp(26, 44, night))
+    p.f1('u_count', Math.round(lerp(BUBBLE_SLOTS, 7, night)))
+    p.f1('u_rise', lerp(4.6, 7.5, night))
+    p.f2('u_parallax', par[0], par[1])
+    p.v3('u_tint', g.moteTint)
+    p.f1('u_exposure', g.exposure)
+    gl.bindVertexArray(this.vao.bubbles)
+    gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, BUBBLE_SLOTS)
+  }
+
+  private spriteDraw(
+    tex: Tex,
+    center: [number, number],
+    widthView: number,
+    heightScale: number,
+    rot: number,
+    flip: number,
+    light: readonly number[],
+    alpha: number,
+    time: number,
+    warp: number,
+    par: [number, number],
+  ) {
+    const gl = this.gl
+    const p = this.progs.sprite
+    p.use()
+    this.bindTex(0, tex)
+    p.i1('u_tex', 0)
+    p.f2('u_center', center[0], center[1])
+    p.f2('u_size', widthView, widthView * (tex.h / tex.w) * heightScale)
+    p.f1('u_aspect', this.aspect)
+    p.f1('u_rot', rot)
+    p.f1('u_flip', flip)
+    p.f1('u_time', time)
+    p.f1('u_warp', warp)
+    p.f2('u_shift', par[0], par[1])
+    p.v3('u_light', light)
+    p.f1('u_alpha', alpha)
+    p.f1('u_bias', 0)
+    gl.bindVertexArray(this.vao.grid)
+    gl.drawElements(gl.TRIANGLES, this.vao.gridCount, gl.UNSIGNED_SHORT, 0)
+  }
+
+  private leafPose(t: number) {
+    return {
+      x: 0.5 + 0.09 * Math.sin(t * 0.022) + 0.02 * Math.sin(t * 0.09),
+      y: 0.085 + 0.004 * Math.sin(t * 0.45) + 0.0015 * Math.sin(t * 1.3),
+      rot: 0.35 + 0.08 * Math.sin(t * 0.05),
+      w: 0.085,
+    }
+  }
+
+  private drawLeaf(
+    time: number,
+    g: Grade,
+    pose: ReturnType<TankRenderer['leafPose']>,
+    par: [number, number],
+  ) {
+    const tex = this.images.get('leaf')
+    if (!tex) return
+    const v = this.plateToView(pose.x, pose.y)
+    const day = 1 - g.darkness
+    const l = this.lightVec(g)
+    const k = 0.45 + 0.5 * day
+    this.spriteDraw(
+      tex,
+      v,
+      pose.w * this.plateWidthInView(),
+      0.55,
+      pose.rot,
+      1,
+      [l[0] * k, l[1] * k * 0.96, l[2] * k * 0.85],
+      0.82,
+      time,
+      0,
+      [par[0] * 1.1, par[1] * 1.1],
+    )
+  }
+
+  private drawNest(time: number, g: Grade, par: [number, number]) {
+    const tex = this.images.get('nest')
+    if (!tex) return
+    const v = this.plateToView(0.79, 0.09 + 0.002 * Math.sin(time * 0.6))
+    const l = this.lightVec(g)
+    const k = 0.7 + 0.5 * (1 - g.darkness)
+    this.spriteDraw(
+      tex,
+      v,
+      0.13 * this.plateWidthInView(),
+      0.7,
+      0.05 * Math.sin(time * 0.2),
+      1,
+      [l[0] * k, l[1] * k, l[2] * k],
+      0.8 * this.nestAlpha,
+      time,
+      0,
+      [par[0] * 1.1, par[1] * 1.1],
+    )
+  }
+
+  private drawShrimp(time: number, g: Grade, par: [number, number]) {
+    const tex = this.images.get('shrimp')
+    if (!tex) return
+    const vis = smoothstep(0.55, 0.85, g.darkness)
+    if (vis < 0.01) return
+    const v = this.plateToView(0.87, 0.815)
+    const twitch = Math.pow(Math.max(0, Math.sin(time * 0.53 + 1.1)), 24)
+    const twitch2 = Math.pow(Math.max(0, Math.sin(time * 0.29 + 4.0)), 30)
+    v[0] += (twitch * -0.0035 + twitch2 * 0.002) * this.plateWidthInView()
+    const rot = -0.05 + 0.02 * Math.sin(time * 0.31) + twitch * 0.05
+    const l = [g.tint[0] * g.exposure, g.tint[1] * g.exposure, g.tint[2] * g.exposure]
+    const k = 0.7
+    this.spriteDraw(
+      tex,
+      v,
+      0.065 * this.plateWidthInView(),
+      1,
+      rot,
+      1,
+      [l[0] * k * 0.9, l[1] * k * 0.95, l[2] * k * 1.1],
+      vis,
+      time,
+      1 + twitch2 * 3,
+      par,
+    )
+  }
+
+  private drawStems(g: Grade, water: WaterState) {
+    const tex = this.images.get('fg-stems')
+    if (!tex) return
+    const gl = this.gl
+    const p = this.progs.cover
+    p.use()
+    this.bindTex(0, tex)
+    p.i1('u_tex', 0)
+    const ia = tex.w / tex.h
+    const widthView = this.aspect < 0.8 ? 1.5 : this.aspect < 1.3 ? 1.0 : 0.72
+    const sx = widthView
+    const sy = (widthView * this.aspect) / ia
+    const spanX = 1 / sx
+    const spanY = 1 / sy
+    p.f2('u_span', spanX, spanY)
+    p.f2('u_center', 0.5 * spanX, 1 - 0.5 * spanY)
+    const par = this.parallaxView(4.2)
+    p.f2('u_shift', par[0] * spanX, par[1] * spanY)
+    const l = this.lightVec(g)
+    const k = 0.62
+    p.f3('u_light', l[0] * k, l[1] * k * 0.98, l[2] * k * 1.02)
+    p.f1('u_alpha', 1)
+    p.f1('u_haze', water.haze)
+    p.v3('u_hazeColor', [
+      g.hazeColor[0] * g.exposure,
+      g.hazeColor[1] * g.exposure,
+      g.hazeColor[2] * g.exposure,
+    ])
+    p.f1('u_bias', 0)
+    gl.bindVertexArray(this.vao.fullscreen)
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4)
+  }
+
+  private drawAlgae(
+    g: Grade,
+    water: WaterState,
+    center: [number, number],
+    span: [number, number],
+    parallaxUV: [number, number],
+  ) {
+    const tex = this.images.get('algae')
+    if (!tex) return
+    const gl = this.gl
+    const p = this.progs.cover
+    p.use()
+    this.bindTex(0, tex)
+    p.i1('u_tex', 0)
+    p.f2('u_span', span[0], span[1])
+    p.f2('u_center', center[0], center[1])
+    p.f2('u_shift', parallaxUV[0] * 1.3, parallaxUV[1] * 1.3)
+    const l = this.lightVec(g)
+    p.f3('u_light', l[0] * 0.55, l[1] * 0.62, l[2] * 0.42)
+    p.f1('u_alpha', clamp(water.algae * 0.62, 0, 1))
+    p.f1('u_haze', water.haze * 0.5)
+    p.v3('u_hazeColor', [
+      g.hazeColor[0] * g.exposure,
+      g.hazeColor[1] * g.exposure,
+      g.hazeColor[2] * g.exposure,
+    ])
+    p.f1('u_bias', 0.5)
+    gl.bindVertexArray(this.vao.fullscreen)
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4)
+  }
+
+  private drawDust(time: number, g: Grade, water: WaterState) {
+    const gl = this.gl
+    const p = this.progs.dust
+    p.use()
+    p.f1('u_dust', water.dust)
+    p.f1('u_aspect', this.aspect)
+    p.f1('u_time', time)
+    const l = this.lightVec(g)
+    p.f3('u_light', l[0] * 0.8 + 0.1, l[1] * 0.8 + 0.1, l[2] * 0.8 + 0.1)
+    gl.bindVertexArray(this.vao.fullscreen)
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4)
+  }
+
+  private drawPellets(input: RenderInput, g: Grade) {
+    if (input.betta.pellets.length === 0) return
+    const gl = this.gl
+    const p = this.progs.disc
+    p.use()
+    gl.bindVertexArray(this.vao.disc)
+    const l = this.lightVec(g)
+    for (const pellet of input.betta.pellets) {
+      const wob = 0.004 * Math.sin(pellet.age * 3.1 + pellet.id * 2.0)
+      const r = 5.2 / this.width
+      p.f2('u_center', pellet.x + wob, pellet.y)
+      p.f2('u_radius', r, r * this.aspect)
+      const k = 0.75 + 0.3 * (1 - g.darkness)
+      p.f3('u_color', 0.55 * l[0] * k, 0.36 * l[1] * k, 0.2 * l[2] * k)
+      p.f1('u_alpha', pellet.alpha * 0.95)
+      p.f1('u_mode', 0)
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4)
+    }
+  }
+
+  private drawBetta(
+    input: RenderInput,
+    g: Grade,
+    water: WaterState,
+    plate: Tex,
+    plateCenter: [number, number],
+    plateSpan: [number, number],
+    parallaxUV: [number, number],
+  ) {
+    const gl = this.gl
+    const b = input.betta
+    const cruise = this.images.get('betta-cruise')
+    if (!cruise) return
+    const flare = this.images.get('betta-flare')
+    const clamped = this.images.get('betta-clamped')
+    let wc = b.pose.cruise
+    let wf = flare ? b.pose.flare : 0
+    let wk = clamped ? b.pose.clamped : 0
+    const sum = wc + wf + wk
+    if (sum < 0.001) wc = 1
+    else {
+      wc /= sum
+      wf /= sum
+      wk /= sum
+    }
+
+    const par = this.parallaxView(1.7)
+    const fw = input.fishWidth
+
+    // Soft shadow on the substrate when the fish is low.
+    const floorY = 0.9
+    const gap = floorY - b.y
+    const shadowA = 0.32 * (1 - smoothstep(0.06, 0.34, gap)) * (1 - g.darkness * 0.5)
+    if (shadowA > 0.01) {
+      const d = this.progs.disc
+      d.use()
+      gl.bindVertexArray(this.vao.disc)
+      d.f2('u_center', b.x + par[0] * 0.6 + 0.01, floorY)
+      d.f2('u_radius', fw * 0.36 * b.scale, fw * 0.06 * this.aspect)
+      d.f3('u_color', 0.01, 0.02, 0.01)
+      d.f1('u_alpha', shadowA)
+      d.f1('u_mode', 1)
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4)
+    }
+
+    const p = this.progs.betta
+    p.use()
+    this.bindTex(0, cruise)
+    this.bindTex(1, flare ?? cruise)
+    this.bindTex(2, clamped ?? cruise)
+    this.bindTex(3, plate)
+    p.i1('u_texCruise', 0)
+    p.i1('u_texFlare', 1)
+    p.i1('u_texClamped', 2)
+    p.i1('u_plate', 3)
+    p.f3('u_poseW', wc, wf, wk)
+    p.v4('u_pose', this.poseUniform)
+
+    const turn = b.turnProgress
+    const squash = turn > 0 ? 0.15 + 0.85 * Math.abs(Math.cos(Math.PI * turn)) : 1
+    const widthScale = squash * (1 - 0.32 * b.viewerFacing)
+    p.f2('u_center', b.x, b.y)
+    p.f2('u_shift', par[0], par[1])
+    p.f1('u_aspect', this.aspect)
+    p.f1('u_spriteW', fw)
+    p.f1('u_scale', b.scale)
+    p.f1('u_facing', b.facing)
+    p.f1('u_widthScale', widthScale)
+    p.f1('u_rot', -b.pitch * b.facing)
+    p.f1('u_bend', turn > 0 ? 0.09 * Math.sin(Math.PI * turn) * b.heading : 0)
+    p.f1('u_time', input.time)
+    p.f1('u_tailPhase', b.tailBeatPhase)
+    p.f1('u_pecPhase', b.pectoralPhase)
+    p.f1('u_breathPhase', b.breathPhase)
+    p.f1('u_speedN', clamp(b.speed / 0.06, 0, 1.4))
+    p.f2('u_accel', b.accel.forward, b.accel.up)
+    p.f1('u_fin', b.finSpread)
+    p.f1('u_amp', b.mode === 'flare' ? 1.5 : 1)
+    p.f2('u_plateCenter', plateCenter[0], plateCenter[1])
+    p.f2('u_plateSpan', plateSpan[0], plateSpan[1])
+    p.f2('u_parallax', parallaxUV[0], parallaxUV[1])
+
+    const coc = Math.abs(b.z - 0.5) * 2
+    p.f1('u_bias', coc * 3.2)
+    p.f1('u_exposure', g.exposure)
+    p.v3('u_tint', g.tint)
+    p.f1('u_darkness', g.darkness)
+    p.f1('u_saturation', 0.88)
+    p.f1('u_causticGain', g.causticGain)
+    p.v3('u_causticTint', g.causticTint)
+    p.v3('u_shaftTint', g.shaftTint)
+    const sun = input.env.light.sunDir
+    p.f2('u_lightLocal', sun[0] * b.facing, sun[1])
+    p.f1('u_rimGain', 0.34 * (0.4 + g.shaftGain * 1.4))
+    const stress = water.mood === 'stressed' ? 1 : 0
+    p.f1('u_stress', stress)
+    p.f1('u_fishHaze', water.haze * 0.42)
+    p.v3('u_hazeColor', g.hazeColor)
+    p.f1('u_opacity', 1)
+    gl.bindVertexArray(this.vao.betta)
+    gl.drawElements(gl.TRIANGLES, this.vao.bettaCount, gl.UNSIGNED_SHORT, 0)
+    void AXIS_Y
+  }
+
+  destroy() {
+    this.canvas.removeEventListener('webglcontextlost', this.handleLost)
+    this.canvas.removeEventListener('webglcontextrestored', this.handleRestored)
+    if (this.lost || !this.gl) return
+    const gl = this.gl
+    for (const e of this.plates.values()) {
+      if (e.sm) gl.deleteTexture(e.sm.tex)
+      if (e.lg) gl.deleteTexture(e.lg.tex)
+    }
+    for (const t of this.images.values()) gl.deleteTexture(t.tex)
+    for (const b of this.buffers) gl.deleteBuffer(b)
+    const v = this.vao
+    for (const a of [v.fullscreen, v.grid, v.betta, v.disc, v.particles, v.bubbles])
+      gl.deleteVertexArray(a)
+    for (const prog of Object.values(this.progs)) gl.deleteProgram(prog.program)
+    this.plates.clear()
+    this.images.clear()
+  }
+}
