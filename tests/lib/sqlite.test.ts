@@ -1,4 +1,4 @@
-import { invoke } from '@tauri-apps/api/tauri'
+import { invoke } from '@tauri-apps/api/core'
 import {
   addPlant,
   addPlantCheck,
@@ -12,7 +12,7 @@ import {
   updatePlant,
 } from '@/lib/sqlite'
 
-jest.mock('@tauri-apps/api/tauri', () => ({
+jest.mock('@tauri-apps/api/core', () => ({
   invoke: jest.fn(),
 }))
 

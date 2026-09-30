@@ -1,8 +1,9 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { isTauri } from '@/lib/tauri'
-import { getDbInfo, revealDb } from '@/lib/desktop'
+import { isIos, isTauri } from '@/lib/tauri'
+import { getBuildInfo, getDbInfo, revealDb } from '@/lib/desktop'
+import type { BuildInfo } from '@/lib/desktop'
 import { exportDump, importDump, listTanks } from '@/lib/idb'
 import { BackupFormatError } from '@/lib/backup'
 import { errorText } from '@/lib/errors'
@@ -34,6 +35,8 @@ function stockSuffix(stock: unknown) {
 export default function SettingsClient() {
   const [db, setDb] = useState<DbInfo | null>(null)
   const [tauri, setTauri] = useState(false)
+  const [ios, setIos] = useState(false)
+  const [build, setBuild] = useState<BuildInfo | null>(null)
   const [message, setMessage] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null)
   const { refresh, activeTank } = useTanks()
   const [prefs, setPrefs] = useState<TankPrefs>(DEFAULT_PREFS)
@@ -67,9 +70,13 @@ export default function SettingsClient() {
   useEffect(() => {
     ;(async () => {
       // Prefer runtime detection first so UI shows even if API import fails
-      setTauri(isTauri())
+      const inTauri = isTauri()
+      setTauri(inTauri)
+      setIos(isIos())
+      if (!inTauri) return
       const info = await getDbInfo()
       if (info) setDb(info)
+      setBuild(await getBuildInfo())
     })()
   }, [])
 
@@ -97,8 +104,8 @@ export default function SettingsClient() {
     const defaultName = `flowstate-export-${date}.json`
     if (isTauri()) {
       try {
-        const dialog = await import('@tauri-apps/api/dialog')
-        const fs = await import('@tauri-apps/api/fs')
+        const dialog = await import('@tauri-apps/plugin-dialog')
+        const fs = await import('@tauri-apps/plugin-fs')
         const target = await dialog.save({ defaultPath: defaultName })
         if (target) {
           await fs.writeTextFile(target, content)
@@ -158,8 +165,8 @@ export default function SettingsClient() {
   const onImportJson = async () => {
     if (isTauri()) {
       try {
-        const dialog = await import('@tauri-apps/api/dialog')
-        const fs = await import('@tauri-apps/api/fs')
+        const dialog = await import('@tauri-apps/plugin-dialog')
+        const fs = await import('@tauri-apps/plugin-fs')
         const selected = await dialog.open({
           multiple: false,
           filters: [{ name: 'JSON', extensions: ['json'] }],
@@ -237,13 +244,11 @@ export default function SettingsClient() {
               <div>Data Folder:</div>
               <code style={{ display: 'block', wordBreak: 'break-all' }}>{db?.dir ?? '…'}</code>
               <div className="cluster" style={{ marginTop: 8 }}>
-                <button
-                  type="button"
-                  className="button button--ghost"
-                  onClick={() => revealDb('folder')}
-                >
-                  Reveal in Finder/Explorer
-                </button>
+                {!ios && (
+                  <button type="button" className="button button--ghost" onClick={() => revealDb()}>
+                    Reveal in Finder/Explorer
+                  </button>
+                )}
                 <button
                   type="button"
                   className="button button--ghost"
@@ -257,13 +262,11 @@ export default function SettingsClient() {
               <div>Database File:</div>
               <code style={{ display: 'block', wordBreak: 'break-all' }}>{db?.file ?? '…'}</code>
               <div className="cluster" style={{ marginTop: 8 }}>
-                <button
-                  type="button"
-                  className="button button--ghost"
-                  onClick={() => revealDb('file')}
-                >
-                  Open DB Path
-                </button>
+                {!ios && (
+                  <button type="button" className="button button--ghost" onClick={() => revealDb()}>
+                    Open DB Path
+                  </button>
+                )}
                 <button
                   type="button"
                   className="button button--ghost"
@@ -281,6 +284,17 @@ export default function SettingsClient() {
           </p>
         )}
       </section>
+
+      {build && (
+        <section aria-labelledby="about-heading">
+          <h2 id="about-heading" className="section-title">
+            About
+          </h2>
+          <p className="muted small">
+            Build {build.build} · {build.hash}
+          </p>
+        </section>
+      )}
 
       <section>
         <h2 className="section-title">Backup & Migrate</h2>
