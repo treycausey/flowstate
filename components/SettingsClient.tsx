@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { isTauri } from '@/lib/tauri'
 import { getDbInfo, revealDb } from '@/lib/desktop'
-import { exportDump, importDump } from '@/lib/idb'
+import { exportDump, importDump, listTanks } from '@/lib/idb'
 import { BackupFormatError } from '@/lib/backup'
 import { downloadText } from '@/lib/export'
 import { emitReadingsChanged } from '@/lib/events'
@@ -23,7 +23,7 @@ export default function SettingsClient() {
   const [db, setDb] = useState<DbInfo | null>(null)
   const [tauri, setTauri] = useState(false)
   const [message, setMessage] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null)
-  const { refresh, tanks } = useTanks()
+  const { refresh } = useTanks()
   const [prefs, setPrefs] = useState<TankPrefs>(DEFAULT_PREFS)
 
   useEffect(() => {
@@ -105,9 +105,18 @@ export default function SettingsClient() {
       )
       if (!ok) return
       await importDump(data)
-      await refresh()
-      await refreshTankPrefs()
-      for (const t of tanks) emitReadingsChanged(t.id)
+      try {
+        await refresh()
+        await refreshTankPrefs()
+        for (const t of await listTanks()) emitReadingsChanged(t.id)
+      } catch (err) {
+        console.error('Refresh after import failed', err)
+        setMessage({
+          kind: 'error',
+          text: 'Imported, but couldn’t refresh — reload the app.',
+        })
+        return
+      }
       setMessage({
         kind: 'ok',
         text: `Imported ${data.tanks.length} tank(s) and ${data.readings.length} reading(s).`,

@@ -93,9 +93,10 @@ export default function ReadingList({ limit = 10 }: { limit?: number }) {
       }
     }
     window.addEventListener('keydown', handler)
+    // Capture now: strict mode's simulated unmount would otherwise null the ref before real close.
+    const trigger = triggerRef.current
     return () => {
       window.removeEventListener('keydown', handler)
-      const trigger = triggerRef.current
       triggerRef.current = null
       if (trigger?.isConnected) trigger.focus()
     }

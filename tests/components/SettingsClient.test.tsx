@@ -9,9 +9,12 @@ const mockImport = jest.fn()
 jest.mock('@/lib/idb', () => ({
   exportDump: jest.fn(),
   importDump: (d: unknown) => mockImport(d),
+  listTanks: async () => [{ id: 'after' }],
 }))
 const mockSave = jest.fn()
 const mockRefresh = jest.fn()
+const mockEmit = jest.fn()
+jest.mock('@/lib/events', () => ({ emitReadingsChanged: (id: string) => mockEmit(id) }))
 jest.mock('@/lib/tank/prefs', () => ({
   ...jest.requireActual('@/lib/tank/prefs'),
   loadTankPrefs: async () => ({ livingTank: true, hemisphere: 'north', shimmerSeen: [] }),
@@ -49,4 +52,38 @@ describe('SettingsClient living-tank prefs', () => {
     await input.onchange?.(new Event('change'))
     await waitFor(() => expect(mockRefresh).toHaveBeenCalled())
   })
+
+  it('emits change events for the tanks present after import', async () => {
+    mockImport.mockResolvedValue(undefined)
+    mockRefresh.mockResolvedValue(undefined)
+    const input = await pickImport()
+    await input.onchange?.(new Event('change'))
+    await waitFor(() => expect(mockEmit).toHaveBeenCalledWith('after'))
+  })
+
+  it('reports an accurate message when the post-import refresh fails', async () => {
+    mockImport.mockResolvedValue(undefined)
+    mockRefresh.mockRejectedValue(new Error('boom'))
+    jest.spyOn(console, 'error').mockImplementation(() => {})
+    const input = await pickImport()
+    await input.onchange?.(new Event('change'))
+    expect(await screen.findByText(/imported, but couldn’t refresh/i)).toBeInTheDocument()
+    expect(screen.queryByText(/nothing was changed/i)).not.toBeInTheDocument()
+  })
 })
+
+async function pickImport() {
+  jest.restoreAllMocks()
+  jest.spyOn(window, 'confirm').mockReturnValue(true)
+  const input = document.createElement('input')
+  jest
+    .spyOn(document, 'createElement')
+    .mockImplementation(((tag: string) =>
+      tag === 'input' ? input : Document.prototype.createElement.call(document, tag)) as never)
+  jest.spyOn(input, 'click').mockImplementation(() => {})
+  render(<SettingsClient />)
+  fireEvent.click(await screen.findByRole('button', { name: /import backup/i }))
+  const file = { text: async () => JSON.stringify({ tanks: [], readings: [] }) }
+  Object.defineProperty(input, 'files', { value: [file] })
+  return input
+}

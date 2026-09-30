@@ -187,7 +187,8 @@ body {
 }
 @media (min-width: 900px) {
   .tank-layer {
-    background-image: var(--plate);
+    /* Large plate over the small one: an offline first load may only have the small one cached */
+    background-image: var(--plate), var(--plate-sm);
     background-position: center;
   }
 }

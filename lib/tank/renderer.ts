@@ -1124,5 +1124,7 @@ export class TankRenderer {
     this.images.clear()
     // Release the context now instead of waiting for GC (browsers cap live contexts).
     gl.getExtension('WEBGL_lose_context')?.loseContext()
+    // Late image/plate decodes check this flag and skip their upload.
+    this.lost = true
   }
 }

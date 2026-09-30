@@ -13,6 +13,7 @@ export type TankPrefs = {
 export const DEFAULT_PREFS: TankPrefs = { livingTank: true, hemisphere: 'north', shimmerSeen: [] }
 
 const bus = new EventTarget()
+let saveQueue: Promise<void> = Promise.resolve()
 
 export function prefsFromSettings(s: Settings | undefined): TankPrefs {
   return {
@@ -27,12 +28,21 @@ export async function loadTankPrefs(): Promise<TankPrefs> {
 }
 
 /** Merge into the stored settings (other keys are kept) and notify listeners. */
-export async function saveTankPrefs(patch: Partial<TankPrefs>): Promise<TankPrefs> {
-  const current = (await getSettings()) ?? {}
-  await setSettings({ ...current, ...patch })
-  const next = prefsFromSettings({ ...current, ...patch })
-  bus.dispatchEvent(new CustomEvent('change', { detail: next }))
-  return next
+export function saveTankPrefs(patch: Partial<TankPrefs>): Promise<TankPrefs> {
+  const run = async () => {
+    const current = (await getSettings()) ?? {}
+    await setSettings({ ...current, ...patch })
+    const next = prefsFromSettings({ ...current, ...patch })
+    bus.dispatchEvent(new CustomEvent('change', { detail: next }))
+    return next
+  }
+  // Serialize: each save reads the settings only after the previous write finished.
+  const result = saveQueue.then(run, run)
+  saveQueue = result.then(
+    () => undefined,
+    () => undefined,
+  )
+  return result
 }
 
 /** Re-read the stored settings and notify listeners (after a backup import replaced them). */
