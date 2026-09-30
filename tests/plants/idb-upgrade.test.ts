@@ -89,9 +89,9 @@ describe('IndexedDB upgrade from version 1', () => {
       req.onsuccess = () => resolve(req.result)
       req.onerror = () => reject(req.error)
     })
-    expect(db.version).toBe(2)
+    expect(db.version).toBe(3)
     expect([...db.objectStoreNames].sort()).toEqual(
-      ['plantChecks', 'plants', 'readings', 'settings', 'tanks'].sort(),
+      ['plantChecks', 'plants', 'readings', 'settings', 'stock', 'stockEvents', 'tanks'].sort(),
     )
     const checks = db.transaction('plantChecks').objectStore('plantChecks')
     expect([...checks.indexNames].sort()).toEqual(['by_plant', 'by_tank'])

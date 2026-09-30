@@ -14,6 +14,7 @@ import {
 } from '@/lib/status'
 import Sparkline from '@/components/charts/Sparkline'
 import PlantsStatusLine from '@/components/plants/PlantsStatusLine'
+import StockStatusLine from '@/components/stock/StockStatusLine'
 
 const CYCLE_LABEL: Record<CycleStatus, string> = {
   'not-started': 'Not started',
@@ -132,6 +133,7 @@ export default function TankStatus() {
   return (
     <>
       <TankStatusView readings={readings} />
+      <StockStatusLine tankId={activeTankId} />
       <PlantsStatusLine tankId={activeTankId} />
     </>
   )

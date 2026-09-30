@@ -6,6 +6,8 @@ import {
   type PlantCheck,
   type Reading,
   type Settings,
+  type StockEvent,
+  type StockGroup,
   type Tank,
 } from './models'
 import { isHealth, isSymptomId } from './plants/health'
@@ -26,7 +28,8 @@ function str(v: unknown, field: string): string {
 function parseTank(v: unknown, i: number): Tank {
   if (!isObject(v)) throw new BackupFormatError(`Tank #${i + 1} is not an object`)
   const cadence = v.reminderCadence
-  return {
+  const volume = v.volumeL
+  const tank: Tank = {
     id: str(v.id, `tank #${i + 1} id`),
     name: str(v.name, `tank #${i + 1} name`),
     createdAt: typeof v.createdAt === 'string' ? v.createdAt : new Date().toISOString(),
@@ -34,6 +37,8 @@ function parseTank(v: unknown, i: number): Tank {
     reminderCadence:
       typeof cadence === 'number' && Number.isInteger(cadence) && cadence > 0 ? cadence : null,
   }
+  if (typeof volume === 'number' && Number.isFinite(volume) && volume > 0) tank.volumeL = volume
+  return tank
 }
 
 function parseReading(v: unknown, i: number): Reading {
@@ -128,6 +133,59 @@ function parsePlantCheck(v: unknown, i: number): PlantCheck {
   return check
 }
 
+const STOCK_KINDS = ['fed', 'observed', 'health', 'lost', 'rehomed', 'added'] as const
+const STOCK_HEALTH = ['ok', 'concern', 'sick'] as const
+
+function parseStock(v: unknown, i: number): StockGroup {
+  const label = `stock group #${i + 1}`
+  if (!isObject(v)) throw new BackupFormatError(`${label} is not an object`)
+  if (typeof v.count !== 'number' || !Number.isInteger(v.count) || v.count < 0) {
+    throw new BackupFormatError(`${label} has an invalid count`)
+  }
+  const group: StockGroup = {
+    id: str(v.id, `${label} id`),
+    tankId: str(v.tankId, `${label} tankId`),
+    speciesId: optionalStr(v.speciesId),
+    name: str(v.name, `${label} name`),
+    count: v.count,
+    addedAt: utc(v.addedAt, label, 'addedAt'),
+    removedAt: v.removedAt ? utc(v.removedAt, label, 'removedAt') : null,
+  }
+  const note = optionalStr(v.note)
+  if (note) group.note = note
+  return group
+}
+
+function parseStockEvent(v: unknown, i: number): StockEvent {
+  const label = `stock event #${i + 1}`
+  if (!isObject(v)) throw new BackupFormatError(`${label} is not an object`)
+  if (typeof v.kind !== 'string' || !(STOCK_KINDS as readonly string[]).includes(v.kind)) {
+    throw new BackupFormatError(`${label} has an invalid kind`)
+  }
+  const event: StockEvent = {
+    id: str(v.id, `${label} id`),
+    tankId: str(v.tankId, `${label} tankId`),
+    stockId: optionalStr(v.stockId),
+    ts: utc(v.ts, label, 'ts'),
+    kind: v.kind as StockEvent['kind'],
+  }
+  if (v.countDelta !== undefined && v.countDelta !== null) {
+    if (typeof v.countDelta !== 'number' || !Number.isInteger(v.countDelta)) {
+      throw new BackupFormatError(`${label} has an invalid countDelta`)
+    }
+    event.countDelta = v.countDelta
+  }
+  if (v.health !== undefined && v.health !== null) {
+    if (typeof v.health !== 'string' || !(STOCK_HEALTH as readonly string[]).includes(v.health)) {
+      throw new BackupFormatError(`${label} has an invalid health value`)
+    }
+    event.health = v.health as StockEvent['health']
+  }
+  const note = optionalStr(v.note)
+  if (note) event.note = note
+  return event
+}
+
 function list(v: unknown, field: string): unknown[] {
   if (v === undefined || v === null) return [] // backups made before plants existed
   if (!Array.isArray(v)) throw new BackupFormatError(`"${field}" must be an array`)
@@ -160,7 +218,22 @@ export function parseDump(data: unknown): Dump {
       `Plant check ${strayCheck.id} is on a different tank than its plant`,
     )
   }
-  const dump: Dump = { tanks, readings, plants, plantChecks }
+  const stock = list(data.stock, 'stock').map(parseStock)
+  const stockIds = new Map(stock.map((g) => [g.id, g.tankId]))
+  const orphanGroup = stock.find((g) => !known.has(g.tankId))
+  if (orphanGroup) {
+    throw new BackupFormatError(`Stock group ${orphanGroup.id} refers to an unknown tank`)
+  }
+  const stockEvents = list(data.stockEvents, 'stockEvents').map(parseStockEvent)
+  const badEvent = stockEvents.find(
+    (e) =>
+      !known.has(e.tankId) ||
+      (e.stockId !== null && (!stockIds.has(e.stockId) || stockIds.get(e.stockId) !== e.tankId)),
+  )
+  if (badEvent) {
+    throw new BackupFormatError(`Stock event ${badEvent.id} refers to an unknown group or tank`)
+  }
+  const dump: Dump = { tanks, readings, plants, plantChecks, stock, stockEvents }
   if (isObject(data.settings)) dump.settings = data.settings as Settings
   return dump
 }

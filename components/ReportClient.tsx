@@ -12,6 +12,9 @@ import { useTanks } from '@/components/TankProvider'
 import TankFromQuery from '@/components/TankFromQuery'
 import SmallMultiples from '@/components/charts/SmallMultiples'
 import PlantsReportSection from '@/components/plants/PlantsReportSection'
+import StockReportSection from '@/components/stock/StockReportSection'
+import { latestReadingsOf } from '@/lib/plants/health'
+import { useStock } from '@/lib/stock/useStock'
 import { usePlants } from '@/lib/plants/usePlants'
 
 type Range = '30' | '90' | 'all'
@@ -38,6 +41,11 @@ export default function ReportClient() {
   // Fixed at mount so the report window doesn't drift between renders
   const [now] = useState(() => new Date())
   const { plants, checks, failed: plantsFailed } = usePlants(activeTank?.id ?? null)
+  const {
+    groups: stockGroups,
+    events: stockEvents,
+    failed: stockFailed,
+  } = useStock(activeTank?.id ?? null)
   // Keyed by tank so switching tanks drops an old error without resetting state in the effect
   const [readingsFailure, setReadingsFailure] = useState<{ tankId: string; text: string } | null>(
     null,
@@ -197,6 +205,20 @@ export default function ReportClient() {
           <SmallMultiples series={series} xDomain={xDomain} chartHeight={110} />
         )}
       </section>
+
+      {stockFailed && (
+        <p role="alert" className="danger">
+          Couldn&apos;t load stock.
+        </p>
+      )}
+      {activeTank && stockGroups && stockEvents && (
+        <StockReportSection
+          tank={activeTank}
+          groups={stockGroups}
+          events={stockEvents}
+          latestPH={latestReadingsOf(readings).pH?.value ?? null}
+        />
+      )}
 
       {plantsFailed && (
         <p role="alert" className="danger">

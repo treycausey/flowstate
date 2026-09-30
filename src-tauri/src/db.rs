@@ -9,7 +9,8 @@ use serde::{Deserialize, Serialize};
 /// 0: original schema (metric columns NOT NULL; the version was never set).
 /// 2: metric columns nullable, so a reading can leave metrics untested.
 /// 3: `plants` and `plant_checks` tables. Only adds tables; existing rows are untouched.
-pub const SCHEMA_VERSION: i64 = 3;
+/// 4: `stock` and `stock_events` tables and a nullable `tanks.volumeL` column. Only adds.
+pub const SCHEMA_VERSION: i64 = 4;
 
 /// Failure to open or migrate the database.
 #[derive(Debug)]
@@ -52,6 +53,9 @@ pub struct Tank {
     pub archived_at: Option<String>,
     #[serde(rename = "reminderCadence")]
     pub reminder_cadence: Option<i64>,
+    /// Water volume in litres.
+    #[serde(default, rename = "volumeL")]
+    pub volume_l: Option<f64>,
 }
 
 /// A metric is `None` when that test was not run for the reading.
@@ -102,6 +106,42 @@ pub struct PlantCheck {
     pub note: Option<String>,
 }
 
+/// A group of one species in a tank. `species_id` is None for a custom species.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct StockGroup {
+    pub id: String,
+    #[serde(rename = "tankId")]
+    pub tank_id: String,
+    #[serde(rename = "speciesId")]
+    pub species_id: Option<String>,
+    pub name: String,
+    pub count: i64,
+    #[serde(rename = "addedAt")]
+    pub added_at: String,
+    #[serde(default, rename = "removedAt")]
+    pub removed_at: Option<String>,
+    #[serde(default)]
+    pub note: Option<String>,
+}
+
+/// Something that happened to a group (`stock_id` set) or to the whole tank (None).
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct StockEvent {
+    pub id: String,
+    #[serde(rename = "tankId")]
+    pub tank_id: String,
+    #[serde(rename = "stockId")]
+    pub stock_id: Option<String>,
+    pub ts: String,
+    pub kind: String,
+    #[serde(default, rename = "countDelta")]
+    pub count_delta: Option<i64>,
+    #[serde(default)]
+    pub health: Option<String>,
+    #[serde(default)]
+    pub note: Option<String>,
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Settings {
     pub units: Option<String>,
@@ -123,6 +163,11 @@ pub struct Dump {
     pub plants: Vec<Plant>,
     #[serde(default, rename = "plantChecks")]
     pub plant_checks: Vec<PlantCheck>,
+    /// Absent in backups made before stock existed.
+    #[serde(default)]
+    pub stock: Vec<StockGroup>,
+    #[serde(default, rename = "stockEvents")]
+    pub stock_events: Vec<StockEvent>,
     pub settings: Option<Settings>,
 }
 
@@ -171,6 +216,34 @@ const CREATE_PLANTS: &str = r#"
     CREATE INDEX IF NOT EXISTS plants_by_tank ON plants(tankId);
     CREATE INDEX IF NOT EXISTS plant_checks_by_plant ON plant_checks(plantId);
     CREATE INDEX IF NOT EXISTS plant_checks_by_tank_ts ON plant_checks(tankId, ts);
+"#;
+
+const CREATE_STOCK: &str = r#"
+    CREATE TABLE IF NOT EXISTS stock (
+      id TEXT PRIMARY KEY,
+      tankId TEXT NOT NULL,
+      speciesId TEXT,
+      name TEXT NOT NULL,
+      count INTEGER NOT NULL,
+      addedAt TEXT NOT NULL,
+      removedAt TEXT,
+      note TEXT,
+      FOREIGN KEY(tankId) REFERENCES tanks(id)
+    );
+    CREATE TABLE IF NOT EXISTS stock_events (
+      id TEXT PRIMARY KEY,
+      tankId TEXT NOT NULL,
+      stockId TEXT,
+      ts TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      countDelta INTEGER,
+      health TEXT,
+      note TEXT,
+      FOREIGN KEY(tankId) REFERENCES tanks(id)
+    );
+    CREATE INDEX IF NOT EXISTS stock_by_tank ON stock(tankId);
+    CREATE INDEX IF NOT EXISTS stock_events_by_stock ON stock_events(stockId);
+    CREATE INDEX IF NOT EXISTS stock_events_by_tank_ts ON stock_events(tankId, ts);
 "#;
 
 const CREATE_INDEXES: &str = r#"
@@ -237,6 +310,15 @@ pub fn init_schema(conn: &mut Connection) -> Result<(), DbError> {
     }
     tx.execute_batch(CREATE_INDEXES)?;
     tx.execute_batch(CREATE_PLANTS)?;
+    tx.execute_batch(CREATE_STOCK)?;
+    let has_volume: i64 = tx.query_row(
+        "SELECT COUNT(*) FROM pragma_table_info('tanks') WHERE name = 'volumeL'",
+        [],
+        |r| r.get(0),
+    )?;
+    if has_volume == 0 {
+        tx.execute_batch("ALTER TABLE tanks ADD COLUMN volumeL REAL;")?;
+    }
     tx.execute_batch(&format!("PRAGMA user_version = {};", SCHEMA_VERSION))?;
     tx.commit()?;
     Ok(())
@@ -249,8 +331,11 @@ fn tank_from_row(r: &rusqlite::Row) -> rusqlite::Result<Tank> {
         created_at: r.get(2)?,
         archived_at: r.get(3)?,
         reminder_cadence: r.get(4)?,
+        volume_l: r.get(5)?,
     })
 }
+
+const TANK_COLS: &str = "id, name, createdAt, archivedAt, reminderCadence, volumeL";
 
 fn reading_from_row(r: &rusqlite::Row) -> rusqlite::Result<Reading> {
     Ok(Reading {
@@ -268,9 +353,9 @@ fn reading_from_row(r: &rusqlite::Row) -> rusqlite::Result<Reading> {
 const READING_COLS: &str = "id, tankId, ts, pH, ammonia, nitrite, nitrate, note";
 
 pub fn list_tanks(conn: &Connection) -> rusqlite::Result<Vec<Tank>> {
-    let mut stmt = conn.prepare(
-        "SELECT id, name, createdAt, archivedAt, reminderCadence FROM tanks ORDER BY createdAt ASC",
-    )?;
+    let mut stmt = conn.prepare(&format!(
+        "SELECT {TANK_COLS} FROM tanks ORDER BY createdAt ASC"
+    ))?;
     let rows = stmt.query_map([], tank_from_row)?;
     rows.collect()
 }
@@ -287,6 +372,7 @@ pub fn create_tank(
         created_at: now_iso(),
         archived_at: None,
         reminder_cadence,
+        volume_l: None,
     };
     conn.execute(
         "INSERT INTO tanks (id, name, createdAt, archivedAt, reminderCadence) VALUES (?, ?, ?, ?, ?)",
@@ -316,6 +402,14 @@ pub fn set_tank_reminder_cadence(
     conn.execute(
         "UPDATE tanks SET reminderCadence = ? WHERE id = ?",
         params![days, id],
+    )?;
+    Ok(())
+}
+
+pub fn set_tank_volume(conn: &Connection, id: &str, volume_l: Option<f64>) -> rusqlite::Result<()> {
+    conn.execute(
+        "UPDATE tanks SET volumeL = ? WHERE id = ?",
+        params![volume_l, id],
     )?;
     Ok(())
 }
@@ -496,6 +590,157 @@ pub fn list_plant_checks_by_tank(
     rows.collect()
 }
 
+fn stock_from_row(r: &rusqlite::Row) -> rusqlite::Result<StockGroup> {
+    Ok(StockGroup {
+        id: r.get(0)?,
+        tank_id: r.get(1)?,
+        species_id: r.get(2)?,
+        name: r.get(3)?,
+        count: r.get(4)?,
+        added_at: r.get(5)?,
+        removed_at: r.get(6)?,
+        note: r.get(7)?,
+    })
+}
+
+const STOCK_COLS: &str = "id, tankId, speciesId, name, count, addedAt, removedAt, note";
+
+pub fn add_stock(conn: &Connection, group: &StockGroup) -> rusqlite::Result<()> {
+    conn.execute(
+        &format!("INSERT INTO stock ({STOCK_COLS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"),
+        params![
+            group.id,
+            group.tank_id,
+            group.species_id,
+            group.name,
+            group.count,
+            group.added_at,
+            group.removed_at,
+            group.note
+        ],
+    )?;
+    Ok(())
+}
+
+pub fn update_stock(conn: &Connection, group: &StockGroup) -> rusqlite::Result<()> {
+    conn.execute(
+        "UPDATE stock SET tankId = ?, speciesId = ?, name = ?, count = ?, addedAt = ?, removedAt = ?, note = ? WHERE id = ?",
+        params![
+            group.tank_id,
+            group.species_id,
+            group.name,
+            group.count,
+            group.added_at,
+            group.removed_at,
+            group.note,
+            group.id
+        ],
+    )?;
+    Ok(())
+}
+
+/// Deletes the group and its events in one transaction. Does not rely on foreign keys being on.
+pub fn delete_stock(conn: &Connection, id: &str) -> rusqlite::Result<()> {
+    let tx = conn.unchecked_transaction()?;
+    tx.execute("DELETE FROM stock_events WHERE stockId = ?", params![id])?;
+    tx.execute("DELETE FROM stock WHERE id = ?", params![id])?;
+    tx.commit()
+}
+
+/// Every group of a tank, removed ones included, oldest added first.
+pub fn list_stock_by_tank(conn: &Connection, tank_id: &str) -> rusqlite::Result<Vec<StockGroup>> {
+    let mut stmt = conn.prepare(&format!(
+        "SELECT {STOCK_COLS} FROM stock WHERE tankId = ? ORDER BY addedAt ASC"
+    ))?;
+    let rows = stmt.query_map(params![tank_id], stock_from_row)?;
+    rows.collect()
+}
+
+fn stock_event_from_row(r: &rusqlite::Row) -> rusqlite::Result<StockEvent> {
+    Ok(StockEvent {
+        id: r.get(0)?,
+        tank_id: r.get(1)?,
+        stock_id: r.get(2)?,
+        ts: r.get(3)?,
+        kind: r.get(4)?,
+        count_delta: r.get(5)?,
+        health: r.get(6)?,
+        note: r.get(7)?,
+    })
+}
+
+const EVENT_COLS: &str = "id, tankId, stockId, ts, kind, countDelta, health, note";
+
+/// Adds the event. For lost, rehomed and added it also changes the group's count in the same
+/// transaction (never below 0; a group at 0 gets `removedAt`, and adding to one brings it back).
+/// The stored `countDelta` is the signed change that was really applied. Returns the stored event.
+pub fn add_stock_event(conn: &Connection, event: &StockEvent) -> Result<StockEvent, String> {
+    let mut saved = event.clone();
+    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    if let Some(stock_id) = &event.stock_id {
+        let (count, removed_at): (i64, Option<String>) = tx
+            .query_row(
+                "SELECT count, removedAt FROM stock WHERE id = ?",
+                params![stock_id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .map_err(|_| "That group no longer exists.".to_string())?;
+        if matches!(event.kind.as_str(), "lost" | "rehomed" | "added") {
+            let raw = event.count_delta.unwrap_or(0);
+            if raw == 0 {
+                return Err("Enter how many animals.".to_string());
+            }
+            let signed = if event.kind == "added" {
+                raw.abs()
+            } else {
+                -raw.abs()
+            };
+            let next = (count + signed).max(0);
+            let removed = if next == 0 {
+                Some(event.ts.clone())
+            } else if count == 0 {
+                None
+            } else {
+                removed_at
+            };
+            tx.execute(
+                "UPDATE stock SET count = ?, removedAt = ? WHERE id = ?",
+                params![next, removed, stock_id],
+            )
+            .map_err(|e| e.to_string())?;
+            saved.count_delta = Some(next - count);
+        }
+    }
+    tx.execute(
+        &format!("INSERT INTO stock_events ({EVENT_COLS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"),
+        params![
+            saved.id,
+            saved.tank_id,
+            saved.stock_id,
+            saved.ts,
+            saved.kind,
+            saved.count_delta,
+            saved.health,
+            saved.note
+        ],
+    )
+    .map_err(|e| e.to_string())?;
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(saved)
+}
+
+/// All stock events of a tank, oldest first.
+pub fn list_stock_events_by_tank(
+    conn: &Connection,
+    tank_id: &str,
+) -> rusqlite::Result<Vec<StockEvent>> {
+    let mut stmt = conn.prepare(&format!(
+        "SELECT {EVENT_COLS} FROM stock_events WHERE tankId = ? ORDER BY ts ASC"
+    ))?;
+    let rows = stmt.query_map(params![tank_id], stock_event_from_row)?;
+    rows.collect()
+}
+
 pub fn get_settings(conn: &Connection) -> Result<Option<Settings>, String> {
     let mut stmt = conn
         .prepare("SELECT value FROM settings WHERE key = 'global' LIMIT 1")
@@ -523,7 +768,7 @@ pub fn set_settings(conn: &Connection, value: &Settings) -> Result<(), String> {
 
 pub fn export_dump(conn: &Connection) -> Result<Dump, String> {
     let mut st = conn
-        .prepare("SELECT id, name, createdAt, archivedAt, reminderCadence FROM tanks")
+        .prepare(&format!("SELECT {TANK_COLS} FROM tanks"))
         .map_err(|e| e.to_string())?;
     let tanks = st
         .query_map([], tank_from_row)
@@ -554,12 +799,30 @@ pub fn export_dump(conn: &Connection) -> Result<Dump, String> {
         .map_err(|e| e.to_string())?
         .collect::<rusqlite::Result<Vec<_>>>()
         .map_err(|e| e.to_string())?;
+    let mut sg = conn
+        .prepare(&format!("SELECT {STOCK_COLS} FROM stock"))
+        .map_err(|e| e.to_string())?;
+    let stock = sg
+        .query_map([], stock_from_row)
+        .map_err(|e| e.to_string())?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(|e| e.to_string())?;
+    let mut se = conn
+        .prepare(&format!("SELECT {EVENT_COLS} FROM stock_events"))
+        .map_err(|e| e.to_string())?;
+    let stock_events = se
+        .query_map([], stock_event_from_row)
+        .map_err(|e| e.to_string())?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(|e| e.to_string())?;
     let settings = get_settings(conn)?;
     Ok(Dump {
         tanks,
         readings,
         plants,
         plant_checks,
+        stock,
+        stock_events,
         settings,
     })
 }
@@ -568,10 +831,10 @@ pub fn import_dump(conn: &mut Connection, dump: &Dump) -> Result<(), String> {
     let tx = conn.transaction().map_err(|e| e.to_string())?;
     for t in dump.tanks.iter() {
         tx.execute(
-            "INSERT INTO tanks (id, name, createdAt, archivedAt, reminderCadence)
-       VALUES (?1, ?2, ?3, ?4, ?5)
-       ON CONFLICT(id) DO UPDATE SET name=excluded.name, createdAt=excluded.createdAt, archivedAt=excluded.archivedAt, reminderCadence=excluded.reminderCadence",
-            params![t.id, t.name, t.created_at, t.archived_at, t.reminder_cadence],
+            "INSERT INTO tanks (id, name, createdAt, archivedAt, reminderCadence, volumeL)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+       ON CONFLICT(id) DO UPDATE SET name=excluded.name, createdAt=excluded.createdAt, archivedAt=excluded.archivedAt, reminderCadence=excluded.reminderCadence, volumeL=excluded.volumeL",
+            params![t.id, t.name, t.created_at, t.archived_at, t.reminder_cadence, t.volume_l],
         )
         .map_err(|e| e.to_string())?;
     }
@@ -611,6 +874,42 @@ pub fn import_dump(conn: &mut Connection, dump: &Dump) -> Result<(), String> {
             params![c.id, c.plant_id, c.tank_id, c.ts, c.health, symptoms, c.action, c.note],
         )
         .map_err(|e| e.to_string())?;
+    }
+    for g in dump.stock.iter() {
+        tx.execute(
+            "INSERT INTO stock (id, tankId, speciesId, name, count, addedAt, removedAt, note)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+       ON CONFLICT(id) DO UPDATE SET tankId=excluded.tankId, speciesId=excluded.speciesId, name=excluded.name, count=excluded.count, addedAt=excluded.addedAt, removedAt=excluded.removedAt, note=excluded.note",
+            params![
+                g.id,
+                g.tank_id,
+                g.species_id,
+                g.name,
+                g.count,
+                g.added_at,
+                g.removed_at,
+                g.note
+            ],
+        )
+        .map_err(|e| e.to_string())?;
+    }
+    for e in dump.stock_events.iter() {
+        tx.execute(
+            "INSERT INTO stock_events (id, tankId, stockId, ts, kind, countDelta, health, note)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+       ON CONFLICT(id) DO UPDATE SET tankId=excluded.tankId, stockId=excluded.stockId, ts=excluded.ts, kind=excluded.kind, countDelta=excluded.countDelta, health=excluded.health, note=excluded.note",
+            params![
+                e.id,
+                e.tank_id,
+                e.stock_id,
+                e.ts,
+                e.kind,
+                e.count_delta,
+                e.health,
+                e.note
+            ],
+        )
+        .map_err(|err| err.to_string())?;
     }
     if let Some(s) = &dump.settings {
         let json = serde_json::to_string(s).map_err(|e| e.to_string())?;
@@ -874,8 +1173,8 @@ mod tests {
     fn fresh_db_has_plant_tables() {
         let mut conn = Connection::open_in_memory().unwrap();
         init_schema(&mut conn).unwrap();
-        assert_eq!(SCHEMA_VERSION, 3);
-        assert_eq!(user_version(&conn).unwrap(), 3);
+        assert_eq!(SCHEMA_VERSION, 4);
+        assert_eq!(user_version(&conn).unwrap(), 4);
         assert!(table_exists(&conn, "plants"));
         assert!(table_exists(&conn, "plant_checks"));
     }
@@ -895,7 +1194,7 @@ mod tests {
 
         init_schema(&mut conn).unwrap();
 
-        assert_eq!(user_version(&conn).unwrap(), 3);
+        assert_eq!(user_version(&conn).unwrap(), 4);
         assert!(table_exists(&conn, "plants"));
         let after = export_dump(&conn).unwrap();
         assert_eq!(after.readings, before);
@@ -920,7 +1219,7 @@ mod tests {
         )
         .unwrap();
         init_schema(&mut conn).unwrap();
-        assert_eq!(user_version(&conn).unwrap(), 3);
+        assert_eq!(user_version(&conn).unwrap(), 4);
         assert_eq!(list_readings_by_tank(&conn, "t1").unwrap().len(), 1);
         assert!(table_exists(&conn, "plant_checks"));
     }
@@ -1063,5 +1362,232 @@ mod tests {
         assert!(old.plants.is_empty() && old.plant_checks.is_empty());
         import_dump(&mut target, &old).unwrap();
         assert_eq!(list_plants_by_tank(&target, "t1").unwrap().len(), 1);
+    }
+
+    fn group(id: &str, species: Option<&str>, count: i64, added_at: &str) -> StockGroup {
+        StockGroup {
+            id: id.into(),
+            tank_id: "t1".into(),
+            species_id: species.map(|v| v.into()),
+            name: "Neon tetra".into(),
+            count,
+            added_at: added_at.into(),
+            removed_at: None,
+            note: None,
+        }
+    }
+
+    fn event(id: &str, stock_id: Option<&str>, kind: &str, delta: Option<i64>) -> StockEvent {
+        StockEvent {
+            id: id.into(),
+            tank_id: "t1".into(),
+            stock_id: stock_id.map(|v| v.into()),
+            ts: "2026-09-20T08:00:00Z".into(),
+            kind: kind.into(),
+            count_delta: delta,
+            health: None,
+            note: None,
+        }
+    }
+
+    const V3_SCHEMA: &str = r#"
+    CREATE TABLE tanks (id TEXT PRIMARY KEY, name TEXT NOT NULL, createdAt TEXT NOT NULL, archivedAt TEXT, reminderCadence INTEGER);
+    CREATE TABLE readings (
+      id TEXT PRIMARY KEY, tankId TEXT NOT NULL, ts TEXT NOT NULL,
+      pH REAL, ammonia REAL, nitrite REAL, nitrate REAL,
+      note TEXT, FOREIGN KEY(tankId) REFERENCES tanks(id));
+    CREATE INDEX readings_by_tank ON readings(tankId);
+    CREATE INDEX readings_by_tank_ts ON readings(tankId, ts);
+    CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT);
+    CREATE TABLE plants (id TEXT PRIMARY KEY, tankId TEXT NOT NULL, speciesId TEXT, name TEXT NOT NULL, placement TEXT NOT NULL, plantedAt TEXT NOT NULL, removedAt TEXT, note TEXT);
+    CREATE TABLE plant_checks (id TEXT PRIMARY KEY, plantId TEXT NOT NULL, tankId TEXT NOT NULL, ts TEXT NOT NULL, health TEXT NOT NULL, symptoms TEXT NOT NULL DEFAULT '[]', action TEXT, note TEXT);
+    PRAGMA user_version = 3;
+    "#;
+
+    #[test]
+    fn fresh_db_has_stock_tables_and_volume_column() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        init_schema(&mut conn).unwrap();
+        assert!(table_exists(&conn, "stock"));
+        assert!(table_exists(&conn, "stock_events"));
+        create_tank(&conn, "T".into(), None, "t1".into()).unwrap();
+        assert_eq!(list_tanks(&conn).unwrap()[0].volume_l, None);
+        set_tank_volume(&conn, "t1", Some(60.0)).unwrap();
+        assert_eq!(list_tanks(&conn).unwrap()[0].volume_l, Some(60.0));
+        set_tank_volume(&conn, "t1", None).unwrap();
+        assert_eq!(list_tanks(&conn).unwrap()[0].volume_l, None);
+    }
+
+    #[test]
+    fn migrates_v3_database_keeping_readings_and_plants() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(V3_SCHEMA).unwrap();
+        conn.execute_batch(
+            "INSERT INTO tanks VALUES ('t1','Main','2026-01-01T00:00:00Z',NULL,3);
+             INSERT INTO readings VALUES ('r1','t1','2026-01-02T10:00:00Z',7.2,NULL,0,12.5,'first');
+             INSERT INTO plants VALUES ('p1','t1','anubias-nana','Anubias nana','epiphyte','2026-02-01T00:00:00Z',NULL,NULL);
+             INSERT INTO plant_checks VALUES ('c1','p1','t1','2026-02-10T00:00:00Z','ok','[]',NULL,NULL);",
+        )
+        .unwrap();
+        assert!(!table_exists(&conn, "stock"));
+        let readings = list_readings_by_tank(&conn, "t1").unwrap();
+        let plants = list_plants_by_tank(&conn, "t1").unwrap();
+
+        init_schema(&mut conn).unwrap();
+
+        assert_eq!(user_version(&conn).unwrap(), 4);
+        assert_eq!(list_readings_by_tank(&conn, "t1").unwrap(), readings);
+        assert_eq!(list_plants_by_tank(&conn, "t1").unwrap(), plants);
+        assert_eq!(list_plant_checks_by_tank(&conn, "t1").unwrap().len(), 1);
+        let tanks = list_tanks(&conn).unwrap();
+        assert_eq!(tanks[0].reminder_cadence, Some(3));
+        assert_eq!(tanks[0].volume_l, None);
+
+        add_stock(&conn, &group("g1", Some("neon-tetra"), 6, "2026-09-01T00:00:00Z")).unwrap();
+        init_schema(&mut conn).unwrap();
+        assert_eq!(list_stock_by_tank(&conn, "t1").unwrap().len(), 1);
+    }
+
+    #[test]
+    fn stock_and_events_round_trip() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        init_schema(&mut conn).unwrap();
+        create_tank(&conn, "T".into(), None, "t1".into()).unwrap();
+        let mut custom = group("g2", None, 2, "2026-09-03T00:00:00Z");
+        custom.name = "Mystery pleco".into();
+        custom.note = Some("from a friend".into());
+        let neons = group("g1", Some("neon-tetra"), 6, "2026-09-01T00:00:00Z");
+        add_stock(&conn, &custom).unwrap();
+        add_stock(&conn, &neons).unwrap();
+        // Oldest added first.
+        assert_eq!(
+            list_stock_by_tank(&conn, "t1").unwrap(),
+            vec![neons.clone(), custom.clone()]
+        );
+        assert!(list_stock_by_tank(&conn, "other").unwrap().is_empty());
+
+        let removed = StockGroup {
+            removed_at: Some("2026-09-10T00:00:00Z".into()),
+            ..neons.clone()
+        };
+        update_stock(&conn, &removed).unwrap();
+        assert_eq!(list_stock_by_tank(&conn, "t1").unwrap()[0], removed);
+        update_stock(&conn, &neons).unwrap();
+        assert_eq!(list_stock_by_tank(&conn, "t1").unwrap()[0], neons);
+
+        // A whole-tank event has no stock id.
+        let fed = event("e1", None, "fed", None);
+        let saved = add_stock_event(&conn, &fed).unwrap();
+        assert_eq!(saved, fed);
+        assert_eq!(list_stock_events_by_tank(&conn, "t1").unwrap(), vec![fed]);
+
+        let json = serde_json::to_value(&custom).unwrap();
+        assert_eq!(json["tankId"], "t1");
+        assert!(json["removedAt"].is_null() && json["speciesId"].is_null());
+        let from_web: StockEvent = serde_json::from_str(
+            r#"{"id":"e9","tankId":"t1","stockId":null,"ts":"2026-09-01T00:00:00Z","kind":"fed"}"#,
+        )
+        .unwrap();
+        assert!(from_web.count_delta.is_none() && from_web.health.is_none());
+    }
+
+    #[test]
+    fn count_events_adjust_the_group_in_one_transaction() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        init_schema(&mut conn).unwrap();
+        create_tank(&conn, "T".into(), None, "t1".into()).unwrap();
+        add_stock(&conn, &group("g1", Some("neon-tetra"), 6, "2026-09-01T00:00:00Z")).unwrap();
+        let current = |conn: &Connection| list_stock_by_tank(conn, "t1").unwrap()[0].clone();
+
+        let saved = add_stock_event(&conn, &event("e1", Some("g1"), "lost", Some(2))).unwrap();
+        assert_eq!(saved.count_delta, Some(-2));
+        assert_eq!(current(&conn).count, 4);
+
+        add_stock_event(&conn, &event("e2", Some("g1"), "rehomed", Some(1))).unwrap();
+        assert_eq!(current(&conn).count, 3);
+
+        // Losing more than remain stops at 0, records what was applied, and removes the group.
+        let saved = add_stock_event(&conn, &event("e3", Some("g1"), "lost", Some(5))).unwrap();
+        assert_eq!(saved.count_delta, Some(-3));
+        let g = current(&conn);
+        assert_eq!(g.count, 0);
+        assert_eq!(g.removed_at.as_deref(), Some("2026-09-20T08:00:00Z"));
+
+        // Adding animals back restores it.
+        add_stock_event(&conn, &event("e4", Some("g1"), "added", Some(4))).unwrap();
+        let g = current(&conn);
+        assert_eq!(g.count, 4);
+        assert_eq!(g.removed_at, None);
+
+        // Observations do not touch the count.
+        let mut obs = event("e5", Some("g1"), "health", None);
+        obs.health = Some("concern".into());
+        add_stock_event(&conn, &obs).unwrap();
+        assert_eq!(current(&conn).count, 4);
+        assert_eq!(list_stock_events_by_tank(&conn, "t1").unwrap().len(), 5);
+
+        // A failing event changes nothing: no count, no event row.
+        assert!(add_stock_event(&conn, &event("e6", Some("g1"), "lost", None)).is_err());
+        assert!(add_stock_event(&conn, &event("e7", Some("missing"), "lost", Some(1))).is_err());
+        assert_eq!(current(&conn).count, 4);
+        assert_eq!(list_stock_events_by_tank(&conn, "t1").unwrap().len(), 5);
+    }
+
+    #[test]
+    fn deleting_a_group_deletes_its_events_only() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        init_schema(&mut conn).unwrap();
+        create_tank(&conn, "T".into(), None, "t1".into()).unwrap();
+        add_stock(&conn, &group("g1", Some("neon-tetra"), 6, "2026-09-01T00:00:00Z")).unwrap();
+        add_stock(&conn, &group("g2", Some("guppy"), 3, "2026-09-02T00:00:00Z")).unwrap();
+        add_stock_event(&conn, &event("e1", Some("g1"), "observed", None)).unwrap();
+        add_stock_event(&conn, &event("e2", Some("g2"), "observed", None)).unwrap();
+        add_stock_event(&conn, &event("e3", None, "fed", None)).unwrap();
+
+        delete_stock(&conn, "g1").unwrap();
+
+        assert_eq!(list_stock_by_tank(&conn, "t1").unwrap().len(), 1);
+        let ids: Vec<String> = list_stock_events_by_tank(&conn, "t1")
+            .unwrap()
+            .into_iter()
+            .map(|e| e.id)
+            .collect();
+        assert_eq!(ids, vec!["e2", "e3"]);
+    }
+
+    #[test]
+    fn export_and_import_carry_stock_and_older_dumps_still_import() {
+        let mut source = Connection::open_in_memory().unwrap();
+        init_schema(&mut source).unwrap();
+        create_tank(&source, "T".into(), None, "t1".into()).unwrap();
+        set_tank_volume(&source, "t1", Some(75.5)).unwrap();
+        add_plant(&source, &plant("p1", "2026-02-01T00:00:00Z")).unwrap();
+        add_stock(&source, &group("g1", Some("neon-tetra"), 6, "2026-09-01T00:00:00Z")).unwrap();
+        add_stock_event(&source, &event("e1", Some("g1"), "lost", Some(1))).unwrap();
+        add_stock_event(&source, &event("e2", None, "fed", None)).unwrap();
+        let dump = export_dump(&source).unwrap();
+        assert_eq!(dump.stock.len(), 1);
+        assert_eq!(dump.stock_events.len(), 2);
+        assert_eq!(dump.tanks[0].volume_l, Some(75.5));
+
+        let json = serde_json::to_string(&dump).unwrap();
+        assert!(json.contains("\"stockEvents\""));
+        let parsed: Dump = serde_json::from_str(&json).unwrap();
+        let mut target = Connection::open_in_memory().unwrap();
+        init_schema(&mut target).unwrap();
+        import_dump(&mut target, &parsed).unwrap();
+        import_dump(&mut target, &parsed).unwrap(); // upserts
+        assert_eq!(list_stock_by_tank(&target, "t1").unwrap(), dump.stock);
+        assert_eq!(list_stock_events_by_tank(&target, "t1").unwrap().len(), 2);
+        assert_eq!(list_tanks(&target).unwrap()[0].volume_l, Some(75.5));
+
+        // A backup made before stock existed has neither key, and no tank volume.
+        let old: Dump = serde_json::from_str(
+            r#"{"tanks":[{"id":"t9","name":"Old","createdAt":"2025-01-01T00:00:00Z","archivedAt":null,"reminderCadence":null}],"readings":[],"plants":[],"plantChecks":[]}"#,
+        )
+        .unwrap();
+        assert!(old.stock.is_empty() && old.stock_events.is_empty());
+        import_dump(&mut target, &old).unwrap();
+        assert_eq!(list_stock_by_tank(&target, "t1").unwrap().len(), 1);
     }
 }

@@ -2,7 +2,7 @@
 
 mod db;
 
-use db::{Dump, Plant, PlantCheck, Reading, Settings, Tank};
+use db::{Dump, Plant, PlantCheck, Reading, Settings, StockEvent, StockGroup, Tank};
 use rusqlite::Connection;
 use std::fs;
 use std::path::PathBuf;
@@ -59,6 +59,15 @@ fn sqlite_set_tank_reminder_cadence(
     days: Option<i64>,
 ) -> Result<(), String> {
     db::set_tank_reminder_cadence(&conn(&state)?, &id, days).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn sqlite_set_tank_volume(
+    state: State<AppState>,
+    id: String,
+    volume_l: Option<f64>,
+) -> Result<(), String> {
+    db::set_tank_volume(&conn(&state)?, &id, volume_l).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -135,6 +144,43 @@ fn sqlite_add_plant_check(state: State<AppState>, check: PlantCheck) -> Result<P
 }
 
 #[tauri::command]
+fn sqlite_list_stock_by_tank(
+    state: State<AppState>,
+    tank_id: String,
+) -> Result<Vec<StockGroup>, String> {
+    db::list_stock_by_tank(&conn(&state)?, &tank_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn sqlite_add_stock(state: State<AppState>, group: StockGroup) -> Result<StockGroup, String> {
+    db::add_stock(&conn(&state)?, &group).map_err(|e| e.to_string())?;
+    Ok(group)
+}
+
+#[tauri::command]
+fn sqlite_update_stock(state: State<AppState>, group: StockGroup) -> Result<(), String> {
+    db::update_stock(&conn(&state)?, &group).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn sqlite_delete_stock(state: State<AppState>, id: String) -> Result<(), String> {
+    db::delete_stock(&conn(&state)?, &id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn sqlite_list_stock_events_by_tank(
+    state: State<AppState>,
+    tank_id: String,
+) -> Result<Vec<StockEvent>, String> {
+    db::list_stock_events_by_tank(&conn(&state)?, &tank_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn sqlite_add_stock_event(state: State<AppState>, event: StockEvent) -> Result<StockEvent, String> {
+    db::add_stock_event(&conn(&state)?, &event)
+}
+
+#[tauri::command]
 fn sqlite_get_settings(state: State<AppState>) -> Result<Option<Settings>, String> {
     db::get_settings(&conn(&state)?)
 }
@@ -161,6 +207,7 @@ fn main() {
         .add_item(CustomMenuItem::new("nav_charts", "Charts").accelerator("CmdOrCtrl+2"))
         .add_item(CustomMenuItem::new("nav_report", "Report").accelerator("CmdOrCtrl+3"))
         .add_item(CustomMenuItem::new("nav_plants", "Plants").accelerator("CmdOrCtrl+4"))
+        .add_item(CustomMenuItem::new("nav_stock", "Stock").accelerator("CmdOrCtrl+5"))
         .add_item(CustomMenuItem::new("nav_settings", "Settings").accelerator("CmdOrCtrl+,"));
     let app_menu = Menu::new().add_submenu(Submenu::new("Navigate", nav_menu));
 
@@ -172,6 +219,7 @@ fn main() {
                 "nav_charts" => Some("charts"),
                 "nav_report" => Some("report"),
                 "nav_plants" => Some("plants"),
+                "nav_stock" => Some("stock"),
                 "nav_settings" => Some("settings"),
                 _ => None,
             };
@@ -198,6 +246,7 @@ fn main() {
             sqlite_rename_tank,
             sqlite_archive_tank,
             sqlite_set_tank_reminder_cadence,
+            sqlite_set_tank_volume,
             sqlite_add_reading,
             sqlite_update_reading,
             sqlite_delete_reading,
@@ -209,6 +258,12 @@ fn main() {
             sqlite_delete_plant,
             sqlite_list_plant_checks_by_tank,
             sqlite_add_plant_check,
+            sqlite_list_stock_by_tank,
+            sqlite_add_stock,
+            sqlite_update_stock,
+            sqlite_delete_stock,
+            sqlite_list_stock_events_by_tank,
+            sqlite_add_stock_event,
             sqlite_get_settings,
             sqlite_set_settings,
             sqlite_export_dump,

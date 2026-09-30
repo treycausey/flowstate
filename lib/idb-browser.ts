@@ -4,18 +4,22 @@ import {
   type PlantCheck,
   type Reading,
   type Settings,
+  type StockEvent,
+  type StockGroup,
   type Tank,
 } from './models'
+import { applyStockEvent } from './stock/apply'
 import { storageError } from './errors'
 
 const DB_NAME = 'aquarium'
 /**
  * 1: tanks, readings, settings.
  * 2: plants and plantChecks. Upgrading only adds stores, so existing data is untouched.
+ * 3: stock and stockEvents. Again only adds stores.
  */
-const DB_VERSION = 2
+const DB_VERSION = 3
 
-type Stores = 'tanks' | 'readings' | 'settings' | 'plants' | 'plantChecks'
+type Stores = 'tanks' | 'readings' | 'settings' | 'plants' | 'plantChecks' | 'stock' | 'stockEvents'
 
 function uuid() {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID()
@@ -65,6 +69,15 @@ function openFresh(): Promise<IDBDatabase> {
         const store = db.createObjectStore('plantChecks', { keyPath: 'id' })
         store.createIndex('by_tank', 'tankId', { unique: false })
         store.createIndex('by_plant', 'plantId', { unique: false })
+      }
+      if (!db.objectStoreNames.contains('stock')) {
+        const store = db.createObjectStore('stock', { keyPath: 'id' })
+        store.createIndex('by_tank', 'tankId', { unique: false })
+      }
+      if (!db.objectStoreNames.contains('stockEvents')) {
+        const store = db.createObjectStore('stockEvents', { keyPath: 'id' })
+        store.createIndex('by_tank', 'tankId', { unique: false })
+        store.createIndex('by_stock', 'stockId', { unique: false })
       }
     }
     req.onsuccess = () => {
@@ -176,6 +189,23 @@ export async function setTankReminderCadence(id: string, days: number | null): P
       const tank = getReq.result as Tank | undefined
       if (!tank) return reject(new Error('Tank not found'))
       tank.reminderCadence = days
+      const putReq = s.put(tank)
+      putReq.onsuccess = () => resolve()
+      putReq.onerror = () => reject(storageError(putReq.error))
+    }
+    getReq.onerror = () => reject(storageError(getReq.error))
+  })
+}
+
+export async function setTankVolume(id: string, volumeL: number | null): Promise<void> {
+  const db = await openDB()
+  await new Promise<void>((resolve, reject) => {
+    const s = tx(db, 'tanks', 'readwrite')
+    const getReq = s.get(id)
+    getReq.onsuccess = () => {
+      const tank = getReq.result as Tank | undefined
+      if (!tank) return reject(new Error('Tank not found'))
+      tank.volumeL = volumeL
       const putReq = s.put(tank)
       putReq.onsuccess = () => resolve()
       putReq.onerror = () => reject(storageError(putReq.error))
@@ -347,6 +377,105 @@ export async function addPlantCheck(
   return check
 }
 
+// Stock
+export async function listStockByTank(tankId: string): Promise<StockGroup[]> {
+  const db = await openDB()
+  return new Promise<StockGroup[]>((resolve, reject) => {
+    const req = tx(db, 'stock').index('by_tank').getAll(IDBKeyRange.only(tankId))
+    req.onsuccess = () => resolve(req.result as StockGroup[])
+    req.onerror = () => reject(storageError(req.error))
+  })
+}
+
+export async function addStock(
+  input: Omit<StockGroup, 'id'> & { id?: string },
+): Promise<StockGroup> {
+  const group: StockGroup = { ...input, id: input.id ?? uuid() }
+  const db = await openDB()
+  await new Promise<void>((resolve, reject) => {
+    const req = tx(db, 'stock', 'readwrite').add(group)
+    req.onsuccess = () => resolve()
+    req.onerror = () => reject(storageError(req.error))
+  })
+  return group
+}
+
+export async function updateStock(group: StockGroup): Promise<void> {
+  const db = await openDB()
+  await new Promise<void>((resolve, reject) => {
+    const req = tx(db, 'stock', 'readwrite').put(group)
+    req.onsuccess = () => resolve()
+    req.onerror = () => reject(storageError(req.error))
+  })
+}
+
+/** Deletes the group and its events in one transaction. */
+export async function deleteStock(id: string): Promise<void> {
+  const db = await openDB()
+  await new Promise<void>((resolve, reject) => {
+    const t = db.transaction(['stock', 'stockEvents'], 'readwrite')
+    t.oncomplete = () => resolve()
+    t.onerror = (e) => reject(storageError((e.target as IDBRequest | null)?.error, t.error))
+    t.onabort = () => reject(storageError(t.error, 'Delete aborted'))
+    const events = t.objectStore('stockEvents')
+    const keys = events.index('by_stock').getAllKeys(IDBKeyRange.only(id))
+    keys.onsuccess = () => {
+      for (const key of keys.result) events.delete(key)
+      t.objectStore('stock').delete(id)
+    }
+  })
+}
+
+export async function listStockEventsByTank(tankId: string): Promise<StockEvent[]> {
+  const db = await openDB()
+  return new Promise<StockEvent[]>((resolve, reject) => {
+    const req = tx(db, 'stockEvents').index('by_tank').getAll(IDBKeyRange.only(tankId))
+    req.onsuccess = () => resolve(req.result as StockEvent[])
+    req.onerror = () => reject(storageError(req.error))
+  })
+}
+
+/**
+ * Adds the event. For lost, rehomed and added it also changes the group's count,
+ * in the same transaction: both writes happen or neither does.
+ */
+export async function addStockEvent(
+  input: Omit<StockEvent, 'id'> & { id?: string },
+): Promise<StockEvent> {
+  const event: StockEvent = { ...input, id: input.id ?? uuid() }
+  const db = await openDB()
+  return new Promise<StockEvent>((resolve, reject) => {
+    const t = db.transaction(['stock', 'stockEvents'], 'readwrite')
+    let saved = event
+    let failure: unknown = null
+    t.oncomplete = () => resolve(saved)
+    t.onerror = (e) => reject(storageError((e.target as IDBRequest | null)?.error, t.error))
+    t.onabort = () => reject(failure ?? storageError(t.error, 'Save aborted'))
+    const events = t.objectStore('stockEvents')
+    if (event.stockId === null) {
+      events.add(event)
+      return
+    }
+    const getReq = t.objectStore('stock').get(event.stockId)
+    getReq.onsuccess = () => {
+      const group = getReq.result as StockGroup | undefined
+      if (!group) {
+        failure = new Error('That group no longer exists.')
+        return t.abort()
+      }
+      try {
+        const applied = applyStockEvent(group, event)
+        saved = applied.event
+        if (applied.group !== group) t.objectStore('stock').put(applied.group)
+        events.add(applied.event)
+      } catch (err) {
+        failure = err
+        t.abort() // rolls back everything
+      }
+    }
+  })
+}
+
 // Seed/init: create first tank if none exists
 export async function ensureSeed(): Promise<Tank> {
   const tanks = await listTanks()
@@ -355,21 +484,23 @@ export async function ensureSeed(): Promise<Tank> {
 }
 
 export async function exportDump(): Promise<Dump> {
-  const [tanks, readings, plants, plantChecks, settings] = await Promise.all([
+  const [tanks, readings, plants, plantChecks, stock, stockEvents, settings] = await Promise.all([
     getAll<Tank>('tanks'),
     getAll<Reading>('readings'),
     getAll<Plant>('plants'),
     getAll<PlantCheck>('plantChecks'),
+    getAll<StockGroup>('stock'),
+    getAll<StockEvent>('stockEvents'),
     getSettings(),
   ])
-  return { tanks, readings, plants, plantChecks, settings }
+  return { tanks, readings, plants, plantChecks, stock, stockEvents, settings }
 }
 
 export async function importDump(dump: Dump): Promise<void> {
   const db = await openDB()
   await new Promise<void>((resolve, reject) => {
     const tx = db.transaction(
-      ['tanks', 'readings', 'plants', 'plantChecks', 'settings'],
+      ['tanks', 'readings', 'plants', 'plantChecks', 'stock', 'stockEvents', 'settings'],
       'readwrite',
     )
     tx.oncomplete = () => resolve()
@@ -384,6 +515,10 @@ export async function importDump(dump: Dump): Promise<void> {
     const plantChecks = tx.objectStore('plantChecks')
     for (const p of dump.plants ?? []) plants.put(p)
     for (const c of dump.plantChecks ?? []) plantChecks.put(c)
+    const stock = tx.objectStore('stock')
+    const stockEvents = tx.objectStore('stockEvents')
+    for (const g of dump.stock ?? []) stock.put(g)
+    for (const e of dump.stockEvents ?? []) stockEvents.put(e)
     if (dump.settings) tx.objectStore('settings').put({ key: 'global', value: dump.settings })
   })
 }

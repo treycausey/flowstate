@@ -43,6 +43,7 @@ Local-first app to log freshwater aquarium chemistry and visualize trends with m
   notifications (shown when a test comes due while the app is open)
 - Edit (including date/time) and delete readings, backdating, duplicate guard within 1 hour
 - CSV export (report range or all readings), printable 30/90‑day report with charts, JSON backup/restore
+- **Stock**: record the fish, shrimp and snails in a tank, tap Fed, and get gentle tips (see below)
 - **Plants**: learn about plants, add them to a tank, and keep a health history (see below)
 
 ## Project Structure (selected)
@@ -51,6 +52,7 @@ Local-first app to log freshwater aquarium chemistry and visualize trends with m
   - `page.tsx` — log page: tank switcher, Quick Entry, recent readings, reminders
   - `tanks/page.tsx` — charts + full reading list (optional `tankId` query selects the tank)
   - `tanks/report/page.tsx` — printable report with charts and CSV export (optional `tankId` query)
+  - `stock/page.tsx` — Stock tab: my stock, group pages, Learn (the view lives in the query string)
   - `plants/page.tsx` — Plants tab: my plants, plant pages, Learn (the view lives in the query string)
   - `settings/page.tsx` — storage info and JSON backup/restore
 - `components/`
@@ -58,6 +60,7 @@ Local-first app to log freshwater aquarium chemistry and visualize trends with m
   - `TankSwitcher.tsx`, `TankFromQuery.tsx`, `QuickEntry.tsx`, `ReadingList.tsx`
   - `ReminderControls.tsx`, `NotificationsToggle.tsx`
   - `charts/MetricChart.tsx`, `charts/SmallMultiples.tsx`, `charts/TankSeries.tsx`
+  - `stock/*` — Stock tab (`StockClient.tsx`), picker, group detail, Fed row, guidance flags, report section
   - `plants/*` — Plants tab (`PlantsClient.tsx`), picker, health check dialog, care card, status line
 - `lib/`
   - `models.ts` — types, constants (kit steps, optimal ranges)
@@ -71,6 +74,9 @@ Local-first app to log freshwater aquarium chemistry and visualize trends with m
   - `time.ts`, `format.ts`, `notify.ts`
   - `reminders.ts` — in‑app scheduling (due, snooze, skip)
   - `export.ts` — CSV generation
+  - `stock/catalog.ts` — the built-in 22-species stock catalog; `stock/guidance.ts` — schooling,
+    betta, water-fit and stocking rules; `stock/forTank.ts` — `stockForTank` and `useTankStock`
+    for the living tank
   - `plants/catalog.ts` — the built-in 24-species catalog; `plants/health.ts` — symptoms,
     `diagnose`, `tankPlantHealth`; `plants/vitality.ts` — `plantVitalityForTank` and
     `usePlantVitality` for the living tank
@@ -105,6 +111,22 @@ There are easter eggs. Spoilers below.
 
 </details>
 
+## Stock
+
+The **Stock** tab (between Charts and Plants) records the animals that really live in a tank, so you can feed and tend them and the tank can show them.
+
+- **My stock**: one group per species ("6 × Neon tetra"), with its zone, when it was added, its latest health and any guidance flags. The top row shows "Fed today at 8:10" with a big **Fed** button: one tap records a whole-tank feeding and drops a pellet into the living tank.
+- **Add stock**: search the catalog (filters: betta-safe, fish, shrimp, snails, zone), tap an animal, and save. The count is prefilled with the species' minimum group size. "Add something else" makes a custom animal that needs only a name.
+- **Group page**: care card, guidance for this group, history, and the actions Observe (health and note), Lost, Rehome, Added more, Edit, Remove or Restore. Lost, Rehome and Added more change the count in the same step; a group with no animals left moves to "Left the tank". Deleting a group for good is only in Edit and asks first.
+- **Tank volume**: set it in litres in Settings or under the overview on My stock (US gallons are shown as a helper). With a volume set, the tab shows a rough stocking estimate: light, moderate or heavy. It is a guide, not a rule.
+- **Guidance** (`lib/stock/guidance.ts`): groups below the species' minimum ("Neon tetras are calmer in groups of 6 or more"); tankmates that may not suit a betta; a second betta; species whose temperature or pH ranges do not overlap, or a logged pH outside a species' range; and the temperature and pH range the stocked species share (temperature is not logged, so this compares species with each other).
+- **Learn**: the catalog, a care page per animal and a short "Stocking basics" primer.
+- The Log screen's status shows "Stock: 11 animals · fed today" (or "not fed today") and links to the tab, and the printable report has a Stock section. Medication and treatment tracking are not part of Flowstate.
+- Cut-outs are `public/tank/fish/<id>.webp` (ids are in `lib/stock/catalog.ts`). The page reads that folder at build time, so a missing image shows a small drawing instead of a broken image.
+- For the living tank scene, `lib/stock/forTank.ts` exports `stockForTank(groups)` and the hook `useTankStock(tankId)`, which updates on every `stock-changed` event.
+
+Catalog values are conservative, widely quoted hobby figures (comfortable ranges, not survival limits). They are general guidance, not a rulebook.
+
 ## Plants
 
 The **Plants** tab (between Charts and Report) helps you learn about, plant and look after the plants in a tank.
@@ -120,12 +142,14 @@ The guidance is general hobby knowledge phrased as "often" and "likely". It is n
 
 ## Data Schema (v1)
 
-- Tank: `{ id, name, createdAt, archivedAt?, reminderCadence }`
+- Tank: `{ id, name, createdAt, archivedAt?, reminderCadence, volumeL? }` (`volumeL` is litres)
 - Reading: `{ id, tankId, ts, pH, ammonia, nitrite, nitrate, note? }` (each metric is `number | null`; `null` = not tested, at least one is non-null)
 - Plant: `{ id, tankId, speciesId | null, name, placement, plantedAt, removedAt?, note? }` (`speciesId` is a catalog id, null for a custom plant; `removedAt` set = removed, not deleted)
 - PlantCheck: `{ id, plantId, tankId, ts, health, symptoms[], action?, note? }` (`health` is thriving, ok, struggling, melting or dead)
+- StockGroup: `{ id, tankId, speciesId | null, name, count, addedAt, removedAt?, note? }` (one row per species group; `count` is 0 once every animal is lost or rehomed, and then `removedAt` is set)
+- StockEvent: `{ id, tankId, stockId | null, ts, kind, countDelta?, health?, note? }` (`kind` is fed, observed, health, lost, rehomed or added; `stockId` null is a whole-tank event such as feeding; lost, rehomed and added change the group's count in the same transaction)
 - Settings (global): `{ units?, theme?, chartOptions? }`
-- Storage versions: IndexedDB is version 2 (adds the `plants` and `plantChecks` stores; an upgrade keeps all data). The desktop SQLite schema is `user_version` 3 (adds `plants` and `plant_checks`). JSON backups include `plants` and `plantChecks`; older backups without them still import.
+- Storage versions: IndexedDB is version 3 (version 2 added `plants` and `plantChecks`; version 3 adds `stock` and `stockEvents`; an upgrade keeps all data). The desktop SQLite schema is `user_version` 4 (adds `stock`, `stock_events` and a nullable `tanks.volumeL`). JSON backups include `plants`, `plantChecks`, `stock` and `stockEvents`; older backups without them still import.
 
 Conventions
 
