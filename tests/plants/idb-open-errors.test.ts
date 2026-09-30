@@ -36,8 +36,8 @@ describe('openDB failures', () => {
     old.close()
     await new Promise((r) => setTimeout(r, 20))
     await expect(idb.listTanks()).resolves.toEqual([])
-    const db = await openAt(2)
-    expect(db.version).toBe(2)
+    const db = await openAt(3)
+    expect(db.version).toBe(3)
     db.close()
   })
 

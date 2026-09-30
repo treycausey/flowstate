@@ -7,7 +7,8 @@ import { exportDump, importDump, listTanks } from '@/lib/idb'
 import { BackupFormatError } from '@/lib/backup'
 import { errorText } from '@/lib/errors'
 import { downloadText } from '@/lib/export'
-import { emitPlantsChanged, emitReadingsChanged } from '@/lib/events'
+import { emitPlantsChanged, emitReadingsChanged, emitStockChanged } from '@/lib/events'
+import VolumeField from '@/components/stock/VolumeField'
 import { useTanks } from '@/components/TankProvider'
 import {
   DEFAULT_PREFS,
@@ -25,11 +26,16 @@ function plantsSuffix(plants: unknown) {
   return Array.isArray(plants) && plants.length > 0 ? ` and ${plants.length} plant(s)` : ''
 }
 
+/** " and 3 stock group(s)" when a backup carries stock, else nothing. */
+function stockSuffix(stock: unknown) {
+  return Array.isArray(stock) && stock.length > 0 ? ` and ${stock.length} stock group(s)` : ''
+}
+
 export default function SettingsClient() {
   const [db, setDb] = useState<DbInfo | null>(null)
   const [tauri, setTauri] = useState(false)
   const [message, setMessage] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null)
-  const { refresh } = useTanks()
+  const { refresh, activeTank } = useTanks()
   const [prefs, setPrefs] = useState<TankPrefs>(DEFAULT_PREFS)
 
   useEffect(() => {
@@ -106,7 +112,7 @@ export default function SettingsClient() {
     downloadText(defaultName, content, 'application/json')
     setMessage({
       kind: 'ok',
-      text: `Exported ${dump.tanks.length} tank(s) and ${dump.readings.length} reading(s)${plantsSuffix(dump.plants)}.`,
+      text: `Exported ${dump.tanks.length} tank(s) and ${dump.readings.length} reading(s)${plantsSuffix(dump.plants)}${stockSuffix(dump.stock)}.`,
     })
   }
 
@@ -114,7 +120,7 @@ export default function SettingsClient() {
     try {
       const data = JSON.parse(text)
       const ok = window.confirm(
-        'Import this backup? Tanks, readings and plants with matching IDs will be overwritten; everything else is kept.',
+        'Import this backup? Tanks, readings, plants and stock with matching IDs will be overwritten; everything else is kept.',
       )
       if (!ok) return
       await importDump(data)
@@ -124,6 +130,7 @@ export default function SettingsClient() {
         for (const t of await listTanks()) {
           emitReadingsChanged(t.id)
           emitPlantsChanged(t.id)
+          emitStockChanged(t.id)
         }
       } catch (err) {
         console.error('Refresh after import failed', err)
@@ -135,7 +142,7 @@ export default function SettingsClient() {
       }
       setMessage({
         kind: 'ok',
-        text: `Imported ${data.tanks.length} tank(s) and ${data.readings.length} reading(s)${plantsSuffix(data.plants)}.`,
+        text: `Imported ${data.tanks.length} tank(s) and ${data.readings.length} reading(s)${plantsSuffix(data.plants)}${stockSuffix(data.stock)}.`,
       })
     } catch (e) {
       const reason =
@@ -178,6 +185,16 @@ export default function SettingsClient() {
 
   return (
     <div className="stack" style={{ gap: 16 }}>
+      {activeTank && (
+        <section aria-labelledby="tank-heading">
+          <h2 id="tank-heading" className="section-title">
+            Tank
+          </h2>
+          <p className="muted small">{activeTank.name}</p>
+          <VolumeField key={activeTank.id} tank={activeTank} />
+        </section>
+      )}
+
       <section aria-labelledby="living-tank-heading">
         <h2 id="living-tank-heading" className="section-title">
           Living tank
@@ -268,8 +285,8 @@ export default function SettingsClient() {
       <section>
         <h2 className="section-title">Backup & Migrate</h2>
         <p className="muted small">
-          A JSON backup holds every tank, reading, plant, plant check and setting. Use it to move
-          data between devices or into the desktop app.
+          A JSON backup holds every tank, reading, plant, plant check, stock group, stock event and
+          setting. Use it to move data between devices or into the desktop app.
         </p>
         <div className="cluster">
           <button type="button" className="button" onClick={onExportJson}>

@@ -1,12 +1,12 @@
 /* Flowstate service worker: offline app shell.
- * - Pages: network-first, cached per URL, falling back to the cached page (or "/") offline.
+ * - Pages (/, /tanks, /plants, /stock, /tanks/report, /settings): precached, then network-first, cached per URL, falling back to the cached page (or "/") offline.
  * - /_next/static/*: cache-first (content-hashed, immutable).
  * - /plants/*.webp: cache-first, filled as photos are seen (not precached).
  * - Other same-origin GETs: network-first with cache fallback. This covers the large tank plates and the
  *   lazy /tank/patch-*.webp prop patches: they are cached when first fetched, not precached.
  */
-const CACHE_NAME = 'flowstate-v6'
-const PAGES = ['/', '/tanks', '/plants', '/tanks/report', '/settings']
+const CACHE_NAME = 'flowstate-v7'
+const PAGES = ['/', '/tanks', '/plants', '/stock', '/tanks/report', '/settings']
 const ASSETS = [
   '/manifest.webmanifest',
   '/icons/icon-192.png',

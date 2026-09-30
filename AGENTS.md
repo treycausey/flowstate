@@ -51,6 +51,9 @@ The original plan in `tasks/tasks-prd-aquarium-water-tracker.md` contains a hist
 - Reading: `{ id, tankId, ts, pH, ammonia, nitrite, nitrate, note? }` — each metric is `number | null` (`null` = not tested); at least one must be non-null
 - Plant: `{ id, tankId, speciesId | null, name, placement, plantedAt, removedAt?, note? }` (placement: foreground, midground, background, floating or epiphyte; removing sets `removedAt`, hard delete is explicit)
 - PlantCheck: `{ id, plantId, tankId, ts, health, symptoms[], action?, note? }` (`ts` and `plantedAt` are UTC ISO like readings)
+- Tank also has optional `volumeL` (litres).
+- StockGroup: `{ id, tankId, speciesId | null, name, count, addedAt, removedAt? , note? }` — one row per species group.
+- StockEvent: `{ id, tankId, stockId | null, ts, kind: fed | observed | health | lost | rehomed | added, countDelta?, health?, note? }`; lost, rehomed and added adjust the group's count in the same transaction.
 - Settings: `{ units, theme, chartOptions }`
   Conventions:
 - Store `ts` as UTC ISO 8601 (`…Z`; `lib/idb.ts` normalizes on write). Display in local timezone.
@@ -141,6 +144,7 @@ A change is “done” when:
 
 - 2026‑09‑30: Plants (learn, plant and manage plant health) are in scope by explicit owner request. Built‑in 24‑species catalog in `lib/plants/catalog.ts`, health guidance in `lib/plants/health.ts`. The guidance is general and phrased as "often/likely". Dosing, fertiliser schedules and dose tracking stay a non‑goal, so nothing in the plants feature gives or records amounts.
 - 2026‑09‑30: Plant storage is IndexedDB version 2 (`plants`, `plantChecks`) and SQLite `user_version` 3. Archiving a tank keeps its plants, as it keeps its readings.
+- 2026‑09‑30: Stock is in scope by owner request ("add the real stock inventory of the tank and tend those fish"): Stock tab, `StockGroup`/`StockEvent`, Fed button, guidance, optional tank volume (IndexedDB v3, SQLite `user_version` 4). Medication and treatment tracking remain a non-goal.
 
 ## Agent Workflow Notes
 
