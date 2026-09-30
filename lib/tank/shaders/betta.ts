@@ -175,6 +175,9 @@ void main() {
   vec3 light = fishTint * brightness * u_tint * u_exposure;
   rgb *= light * 0.9;
   rgb *= mix(vec3(1.0), vec3(0.72, 0.92, 1.18), u_darkness);
+  // Night: grade the betta like the plate around it, less saturated and dimmer.
+  rgb = mix(rgb, vec3(dot(rgb, vec3(0.299, 0.587, 0.114))), 0.3 * u_darkness);
+  rgb *= 1.0 - 0.3 * u_darkness;
   // Water in front of the fish: a little of the surrounding colour scatters into it.
   rgb = mix(rgb, v_ambient * u_tint * u_exposure * 1.25, 0.14 + 0.16 * u_far);
 

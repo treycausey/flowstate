@@ -15,6 +15,14 @@ import {
   type Season,
 } from '@/lib/tank/environment'
 import { dropPellet } from '@/lib/tank/events'
+import { SPECIES } from '@/lib/tank/species'
+import {
+  formatStockParam,
+  parseStockParam,
+  stockEntry,
+  STOCK_PRESETS,
+  type StockEntry,
+} from '@/lib/tank/stock'
 import type { Mood, WaterState } from '@/lib/tank/waterState'
 
 type PhaseChoice = 'auto' | 'dawn' | 'day' | 'dusk' | 'night'
@@ -39,6 +47,8 @@ type Controls = {
   bare: boolean
   script: ScriptedEvent[]
   seed: number
+  debug: string
+  stock: StockEntry[]
 }
 
 const DEFAULTS: Controls = {
@@ -61,6 +71,8 @@ const DEFAULTS: Controls = {
   bare: false,
   script: [],
   seed: 1,
+  debug: '',
+  stock: [],
 }
 
 const PHASE_HOUR: Record<Exclude<PhaseChoice, 'auto'>, number> = {
@@ -131,6 +143,8 @@ function parseQuery(search: string): Controls {
     bare: q.get('bare') === '1',
     script: parseScript(q.get('script')),
     seed: num(q.get('seed'), 1) ?? 1,
+    debug: q.get('debug') ?? '',
+    stock: parseStockParam(q.get('stock')),
   }
 }
 
@@ -191,6 +205,7 @@ export default function TankDevClient() {
   const [open, setOpen] = useState(true)
   const [stats, setStats] = useState({ fps: 0, frameMs: 0, level: 'full' as 'full' | 'half' })
   const controls = useRef<TankSceneControls | null>(null)
+  const [pick, setPick] = useState({ id: 'neon-tetra', count: 8 })
 
   useEffect(() => {
     const parsed = parseQuery(window.location.search)
@@ -305,6 +320,8 @@ export default function TankDevClient() {
         freezeScript={c.script}
         reducedMotion={c.reduced || undefined}
         seed={c.seed}
+        stock={c.stock}
+        debugAlpha={c.debug === 'alpha'}
         controlsRef={controls}
         onStats={setStats}
       />
@@ -407,6 +424,53 @@ export default function TankDevClient() {
               />{' '}
               Freeze at t = {c.t}s
             </label>
+            <fieldset style={{ margin: '8px 0', padding: 6, border: '1px solid #456' }}>
+              <legend>Stock</legend>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                {STOCK_PRESETS.map((p) => (
+                  <button key={p.label} type="button" onClick={() => set('stock', p.stock)}>
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+              <div style={{ margin: '4px 0', wordBreak: 'break-all' }}>
+                {c.stock.length === 0 ? 'betta only' : formatStockParam(c.stock)}
+              </div>
+              <div style={{ display: 'flex', gap: 4 }}>
+                <select
+                  aria-label="Species"
+                  value={pick.id}
+                  onChange={(e) => setPick({ ...pick, id: e.target.value })}
+                >
+                  <option value="betta">betta</option>
+                  {Object.keys(SPECIES).map((id) => (
+                    <option key={id} value={id}>
+                      {id}
+                    </option>
+                  ))}
+                </select>
+                <input
+                  aria-label="Count"
+                  type="number"
+                  min={1}
+                  max={40}
+                  value={pick.count}
+                  style={{ width: 44 }}
+                  onChange={(e) => setPick({ ...pick, count: Number(e.target.value) || 1 })}
+                />
+                <button
+                  type="button"
+                  onClick={() =>
+                    set('stock', [
+                      ...c.stock.filter((x) => x.speciesId !== pick.id),
+                      stockEntry(pick.id, pick.count),
+                    ])
+                  }
+                >
+                  Add
+                </button>
+              </div>
+            </fieldset>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
               <button type="button" onClick={() => dropPellet()}>
                 Pellet
