@@ -531,14 +531,25 @@ export class SchoolSim implements Group {
       if (av && Math.abs(f.z - av.z) < 0.1) {
         const { mx, my } = this.margin(f)
         ;[px, py] = pushOut(nx, ny, av, mx, my)
+        const pd = Math.hypot(px - nx, py - ny)
+        if (pd > 1e-9) {
+          // Pushed off the betta: lose only the speed towards it, keep the sideways glide.
+          const nxn = (px - nx) / pd
+          const nyn = (py - ny) / pd
+          const into = f.vx * nxn + f.vy * nyn
+          if (into < 0) {
+            f.vx -= into * nxn
+            f.vy -= into * nyn
+          }
+        }
       }
       const cxp = clamp(px, fb.x0, fb.x1)
       const cyp = clamp(py, fb.y0, fb.y1)
-      if (cxp !== nx || cyp !== ny) {
+      if (cxp !== px || cyp !== py) {
         // Count only real overshoots; grazing the edge of the box is how a fish stops there.
-        if (this.settled && Math.hypot(cxp - nx, cyp - ny) > 0.05 * this.bl) this.clampHits++
-        if (cxp !== nx) f.vx = 0
-        if (cyp !== ny) f.vy = 0
+        if (this.settled && Math.hypot(cxp - px, cyp - py) > 0.05 * this.bl) this.clampHits++
+        if (cxp !== px) f.vx = 0
+        if (cyp !== py) f.vy = 0
       }
       f.x = cxp
       f.y = cyp

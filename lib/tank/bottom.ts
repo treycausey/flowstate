@@ -174,6 +174,9 @@ export class CorySim implements Group {
   /** Small clusters of 1-3 with uneven gaps, instead of an even row. */
   private layout() {
     const n = this.visible
+    // Reshuffle the clusters only when the number drawn changes, not on every configure.
+    if (n === this.laidFor) return
+    this.laidFor = n
     const sizes: number[] = []
     for (let left = n; left > 0;) {
       const s = Math.min(left, this.rng() < 0.45 ? 3 : this.rng() < 0.7 ? 2 : 1)
@@ -194,6 +197,7 @@ export class CorySim implements Group {
     this.offs = out
   }
   private offs: number[] = []
+  private laidFor = -1
 
   private bandY(c: Cory) {
     return lerp(this.band.y0, this.band.y1, c.baseY)

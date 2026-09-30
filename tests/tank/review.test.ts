@@ -316,3 +316,74 @@ describe('corydoras do not stand in a stamped row', () => {
     }
   })
 })
+
+describe('betta push keeps the fish moving sideways', () => {
+  type F = { x: number; y: number; z: number; vx: number; vy: number }
+  it('removes only the speed towards the betta', () => {
+    const world = WORLDS[3][1]
+    const sim = new SchoolSim(SPECIES['neon-tetra'], 6, 2, new PelletField())
+    sim.configure(world)
+    run(20, (dt) => sim.step(dt))
+    const f = (sim as unknown as { fish: F[] }).fish[0]
+    f.vx = 0
+    f.vy = 0.02
+    // A betta just to the right and a hair above: the push is almost purely leftwards.
+    sim.setAvoid({ x: f.x + 0.02, y: f.y + 0.001, rx: 0.05, ry: 0.03, z: f.z })
+    const before = { x: f.x, vy: f.vy }
+    sim.step(DT)
+    expect(f.x).toBeLessThan(before.x + 1e-9)
+    expect(f.vy).toBeGreaterThan(0.012)
+  })
+
+  it('never counts a betta push as hitting the edge of the water', () => {
+    const world = WORLDS[0][1]
+    const l = new Livestock(3, {}, [stockEntry('betta', 1), stockEntry('neon-tetra', 10)])
+    live(l, world)
+    run(240, (dt) => l.step(dt))
+    const hits = l
+      .groupsForTest()
+      .filter((g): g is SchoolSim => g instanceof SchoolSim)
+      .reduce((n, g) => n + g.clampHits, 0)
+    expect(hits).toBe(0)
+  })
+})
+
+describe('corydoras layout', () => {
+  it('keeps its clusters when configured again', () => {
+    const sim = new CorySim(SPECIES['panda-corydoras'], 6, 4, new PelletField())
+    sim.configure(open)
+    const before = JSON.stringify((sim as unknown as { offs: number[] }).offs)
+    sim.configure(open)
+    sim.configure(WORLDS[0][1])
+    expect(JSON.stringify((sim as unknown as { offs: number[] }).offs)).toBe(before)
+    sim.setVisible(4)
+    expect(JSON.stringify((sim as unknown as { offs: number[] }).offs)).not.toBe(before)
+  })
+})
+
+describe('stock changes keep the sims', () => {
+  it('keeps every group and the betta when the same species come back with other counts', () => {
+    const l = new Livestock(1, {}, [
+      stockEntry('betta', 1),
+      stockEntry('neon-tetra', 8),
+      stockEntry('panda-corydoras', 4),
+    ])
+    live(l)
+    const before = [...l.groupsForTest()]
+    const betta = l.betta
+    l.setStock([
+      stockEntry('betta', 1),
+      stockEntry('neon-tetra', 8),
+      stockEntry('panda-corydoras', 4),
+    ])
+    expect(l.groupsForTest()).toEqual(before)
+    l.setStock([
+      stockEntry('betta', 1),
+      stockEntry('neon-tetra', 6),
+      stockEntry('panda-corydoras', 5),
+    ])
+    expect(l.groupsForTest().map((g) => g.profile.id)).toEqual(before.map((g) => g.profile.id))
+    l.groupsForTest().forEach((g, i) => expect(g).toBe(before[i]))
+    expect(l.betta).toBe(betta)
+  })
+})

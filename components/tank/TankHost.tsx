@@ -172,7 +172,12 @@ export default function TankHost() {
   // `useTankStock` builds a new array every render; the scene re-plans only when the content changes.
   const stockKey = liveStock ? JSON.stringify(liveStock) : null
   // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the content, not the identity
-  const stock = useMemo(() => liveStock, [stockKey])
+  const fresh = useMemo(() => liveStock, [stockKey])
+  // While another tank's stock loads the hook reports null: keep showing the last known stock
+  // rather than flashing a lone betta and rebuilding every group.
+  const [held, setHeld] = useState<typeof fresh>(null)
+  if (fresh !== null && fresh !== held) setHeld(fresh)
+  const stock = fresh ?? held
   const vitality = usePlantVitality(activeTankId)
   // Wait briefly for the stock so the tank does not flash the betta first; if it never loads,
   // show the betta rather than nothing.
