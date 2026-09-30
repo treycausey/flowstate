@@ -56,14 +56,36 @@ export type BettaFrame = {
   pellets: readonly Pellet[]
 }
 
-export const TURN_SECONDS = 0.45
-export const CRUISE_SPEED = 0.06
+export const TURN_SECONDS = 1.0
+export const CRUISE_SPEED = 0.03
 export const IDLE_INSPECT_SECONDS = 120
 export const LOOP_SECONDS = 1.1
 const GULP_SECONDS = 0.4
 
+/** Vertical band kept clear of the fish, as fractions of the viewport height. */
+const SURFACE_BAND = 0.09
+const SUBSTRATE_BAND = 0.12
+/** Largest perspective scale a wandering fish reaches (z 0.65). */
+const SCALE_WANDER_MAX = 1.12
+const MIN_FIT = 0.6
+/** Smallest swim range worth having, in viewport widths, before the fish shrinks. */
+const MIN_RANGE_X = 0.06
+const MIN_RANGE_Y = 0.04
+/** Wander turns are events: at least this long after the last one finishes. */
+const WANDER_TURN_GAP = 9.5
+const SPEED_APPROACH = 0.042
+const SPEED_CHASE = 0.065
+const SPEED_INSPECT = 0.03
+const SPEED_REST = 0.02
+const SPEED_SULK = 0.02
+
 const TAU = Math.PI * 2
 const MAX_SUBSTEP = 1 / 60
+
+/** Perspective scale for depth z: 0.75 far, 1 at the focal plane, 1.12 at z 0.65, ~1.29 at the glass. */
+export function scaleForZ(z: number): number {
+  return 1 + (z - 0.5) * (z < 0.5 ? 1 : 0.8)
+}
 
 export function mulberry32(seed: number) {
   let a = seed >>> 0
@@ -85,19 +107,81 @@ const sign = (v: number): 1 | -1 => (v < 0 ? -1 : 1)
 
 const DEFAULT_CONFIG: BettaConfig = {
   aspect: 1.6,
-  fishWidth: 0.3,
+  fishWidth: 0.19,
   exclusion: null,
   restSpot: { x: 0.74, y: 0.3 },
 }
 
 type Vec = { x: number; y: number }
 
+/** Swim volume derived from the config. */
+type Geometry = {
+  /** Largest free rectangle (viewport minus panel, surface band and substrate), normalised. */
+  free: Rect
+  /** Range for the sprite centre at the largest wander scale, normalised. */
+  bounds: Rect
+  /** Shrink factor (MIN_FIT..1) applied when the free rectangle is too small. */
+  fit: number
+}
+
+/** A wander relocation: a quintic ease from the start with zero velocity and acceleration at the end. */
+type Move = {
+  sx: number
+  sy: number
+  /** Displacement in viewport widths. */
+  dx: number
+  dy: number
+  dir: 1 | -1
+  duration: number
+  t: number
+  v0x: number
+  v0y: number
+}
+
+type WanderState = 'settle' | 'hover' | 'turn' | 'move'
+
+const fallbackGeometry = (cfg: BettaConfig): Geometry => {
+  const { aspect, fishWidth: fw, exclusion: e } = cfg
+  const top = SURFACE_BAND
+  const bottom = 1 - SUBSTRATE_BAND
+  let free: Rect = { x0: 0, y0: top, x1: 1, y1: bottom }
+  if (e) {
+    const c01 = (v: number) => clamp(v, 0, 1)
+    const cy = (v: number) => clamp(v, top, bottom)
+    const candidates: Rect[] = [
+      { x0: c01(e.x1), y0: top, x1: 1, y1: bottom },
+      { x0: 0, y0: top, x1: c01(e.x0), y1: bottom },
+      { x0: 0, y0: top, x1: 1, y1: cy(e.y0) },
+      { x0: 0, y0: cy(e.y1), x1: 1, y1: bottom },
+    ]
+    const area = (r: Rect) => Math.max(0, r.x1 - r.x0) * Math.max(0, r.y1 - r.y0)
+    free = candidates.reduce((best, r) => (area(r) > area(best) ? r : best))
+  }
+  const freeW = free.x1 - free.x0
+  const freeH = (free.y1 - free.y0) / aspect
+  const margin = Math.max(0.06 * freeW, 0.03)
+  // Shrink the fish until it fits with room to move, but never below MIN_FIT.
+  const fitX = (freeW - 2 * margin - MIN_RANGE_X) / (fw * SCALE_WANDER_MAX)
+  const fitY = (freeH - 2 * margin - MIN_RANGE_Y) / (fw * 0.6 * SCALE_WANDER_MAX)
+  const fit = clamp(Math.min(fitX, fitY), MIN_FIT, 1)
+  const halfW = 0.5 * fw * SCALE_WANDER_MAX * fit
+  const halfH = 0.3 * fw * SCALE_WANDER_MAX * fit
+  const span = (lo: number, hi: number) => (hi < lo ? [(lo + hi) / 2, (lo + hi) / 2] : [lo, hi])
+  const [x0, x1] = span(free.x0 + margin + halfW, free.x1 - margin - halfW)
+  const [y0, y1] = span(free.y0 + (margin + halfH) * aspect, free.y1 - (margin + halfH) * aspect)
+  return { free, bounds: { x0, y0, x1, y1 }, fit }
+}
+
 export class BettaSim {
   private cfg: BettaConfig
+  private geo: Geometry
   private rng: () => number
   private ctx: BettaContext = { night: false, mood: 'healthy' }
 
-  // Kinematics. Position is normalised; velocity is in viewport widths per second.
+  /** Times the hard clamp had to move the fish (should stay 0 in wander). */
+  clampHits = 0
+
+  // Kinematics. Position (px, py) is the swim anchor; velocity is in viewport widths per second.
   private px = 0.6
   private py = 0.42
   private vx = 0
@@ -107,17 +191,28 @@ export class BettaSim {
   private facing: 1 | -1 = 1
   private turnT = -1 // seconds into the current turn, -1 when not turning
   private sinceTurn = 99
-  private prevAx = 0
-  private prevAy = 0
   private accelF = 0
   private accelU = 0
   private pitch = 0
+  /** Hover sway on top of the anchor, viewport widths. */
+  private bobX = 0
+  private bobY = 0
+  private bobW = 1
+  private outX = 0
+  private outY = 0
+  private outSpeed = 0
 
   private mode: BettaMode = 'wander'
   private time = 0
   private target: Vec = { x: 0.6, y: 0.42 }
   private targetTimer = 0
-  private pauseTimer = 0
+  private wander: {
+    state: WanderState
+    pauseLeft: number
+    pauseTotal: number
+    move: Move | null
+    next: Move | null
+  } = { state: 'settle', pauseLeft: 0, pauseTotal: 1, move: null, next: null }
   private flareTimer = 0
   private lookTimer = 0
   private lookDir: 1 | -1 = 1
@@ -143,20 +238,37 @@ export class BettaSim {
 
   constructor(seed = 1, config: Partial<BettaConfig> = {}) {
     this.cfg = { ...DEFAULT_CONFIG, ...config }
+    this.geo = fallbackGeometry(this.cfg)
     this.rng = mulberry32(seed)
     this.noiseSeed = [this.rng() * TAU, this.rng() * TAU, this.rng() * TAU, this.rng() * TAU]
     const start = this.project(0.62, 0.42)
     this.px = start.x
     this.py = start.y
     this.target = { ...start }
-    this.pickWanderTarget()
+    this.z = this.wanderDepth(0)
+    this.zTarget = this.z
+    this.updateBob(0, 0)
+    this.outX = this.px + this.bobX
+    this.outY = this.py + this.bobY * this.cfg.aspect
   }
 
   configure(partial: Partial<BettaConfig>) {
     this.cfg = { ...this.cfg, ...partial }
+    const before = this.geo
+    this.geo = fallbackGeometry(this.cfg)
+    const same =
+      Math.abs(before.fit - this.geo.fit) < 1e-6 &&
+      ['x0', 'y0', 'x1', 'y1'].every(
+        (k) =>
+          Math.abs(before.bounds[k as keyof Rect] - this.geo.bounds[k as keyof Rect]) < 1e-6 &&
+          Math.abs(before.free[k as keyof Rect] - this.geo.free[k as keyof Rect]) < 1e-6,
+      )
+    if (same) return
     const p = this.project(this.px, this.py)
     this.px = p.x
     this.py = p.y
+    this.target = this.project(this.target.x, this.target.y)
+    this.wander = { ...this.wander, state: 'settle', move: null, next: null }
   }
 
   setContext(ctx: BettaContext) {
@@ -178,15 +290,14 @@ export class BettaSim {
   dropPellet(at?: Vec) {
     this.activity()
     const reach = this.mouthOffset()
-    const b = this.bounds()
     // Just ahead of the fish, so the drop reads as "for the betta".
     const fallback = { x: this.px + this.heading * (reach + 0.05 + this.rng() * 0.05), y: 0.08 }
     const raw = at ?? fallback
-    const x = clamp(raw.x, b.x0 + reach, Math.max(b.x0 + reach, b.x1 - reach))
-    const safeX = this.pushOutOfExclusionX(x, reach)
+    const f = this.geo.free
+    const x = clamp(raw.x, f.x0 + 0.02, Math.max(f.x0 + 0.02, f.x1 - 0.02))
     this.pellets.push({
       id: this.nextPelletId++,
-      x: safeX,
+      x,
       y: clamp(raw.y, 0.03, 0.2),
       age: 0,
       alpha: 1,
@@ -229,68 +340,35 @@ export class BettaSim {
 
   // ---- geometry ----
 
-  private halfWidth() {
-    return this.cfg.fishWidth * 0.5
-  }
-
-  private halfHeightN() {
-    return this.cfg.fishWidth * 0.3 * this.cfg.aspect
+  /** Drawn scale now: perspective from depth times the fit-to-space shrink. */
+  private drawnScale() {
+    return scaleForZ(this.z) * this.geo.fit
   }
 
   /** Mouth distance ahead of the sprite centre, viewport widths. */
   mouthOffset() {
-    return this.cfg.fishWidth * 0.46
+    return this.cfg.fishWidth * 0.46 * this.drawnScale()
   }
 
   /** Allowed range for the sprite centre, normalised. */
   bounds(): Rect {
-    const hw = this.halfWidth()
-    return { x0: hw + 0.02, x1: Math.max(hw + 0.03, 1 - hw - 0.02), y0: 0.2, y1: 0.7 }
+    return { ...this.geo.bounds }
   }
 
-  private inflatedExclusion(): Rect | null {
-    const e = this.cfg.exclusion
-    if (!e) return null
-    const hw = this.halfWidth()
-    const hh = this.halfHeightN()
-    return { x0: e.x0 - hw, x1: e.x1 + hw, y0: e.y0 - hh, y1: e.y1 + hh }
+  /** Free rectangle the fish swims in (before insetting for its own size), normalised. */
+  freeRect(): Rect {
+    return { ...this.geo.free }
   }
 
-  private pushOutOfExclusionX(x: number, margin = 0): number {
-    const e = this.cfg.exclusion
-    if (!e) return x
-    const hw = this.halfWidth()
-    const lo = e.x0 - hw + margin * 0
-    const hi = e.x1 + hw
-    if (x > lo && x < hi) {
-      const b = this.bounds()
-      const right = hi + margin
-      const left = lo - margin
-      if (right <= b.x1) return right
-      if (left >= b.x0) return left
-    }
-    return x
+  /** Shrink factor currently applied so the fish fits its space. */
+  fit() {
+    return this.geo.fit
   }
 
-  /** Clamp a centre position into the bounds and out of the exclusion zone. */
+  /** Clamp a centre position into the swim bounds. */
   project(x: number, y: number): Vec {
-    const b = this.bounds()
-    let nx = clamp(x, b.x0, b.x1)
-    let ny = clamp(y, b.y0, b.y1)
-    const e = this.inflatedExclusion()
-    if (e && nx > e.x0 && nx < e.x1 && ny > e.y0 && ny < e.y1) {
-      const options: Array<{ x: number; y: number; d: number }> = []
-      if (e.x1 <= b.x1) options.push({ x: e.x1, y: ny, d: e.x1 - nx })
-      if (e.x0 >= b.x0) options.push({ x: e.x0, y: ny, d: nx - e.x0 })
-      if (e.y0 >= b.y0) options.push({ x: nx, y: e.y0, d: ny - e.y0 })
-      if (e.y1 <= b.y1) options.push({ x: nx, y: e.y1, d: e.y1 - ny })
-      if (options.length > 0) {
-        options.sort((a, c) => a.d - c.d)
-        nx = options[0].x
-        ny = options[0].y
-      }
-    }
-    return { x: nx, y: ny }
+    const b = this.geo.bounds
+    return { x: clamp(x, b.x0, b.x1), y: clamp(y, b.y0, b.y1) }
   }
 
   private worldDx(x0: number, x1: number) {
@@ -313,22 +391,85 @@ export class BettaSim {
     )
   }
 
+  /** Slow depth drift: mostly 0.45-0.55, now and then out to 0.25 (far) or 0.65 (near). */
+  private wanderDepth(t: number) {
+    const s = this.noiseSeed
+    const g = 0.6 * Math.sin(t * 0.05 + s[0]) + 0.4 * Math.sin(t * 0.031 + s[1])
+    const c = g * g * g
+    return c >= 0 ? 0.5 + 0.15 * c : 0.5 + 0.25 * c
+  }
+
+  private updateBob(t: number, dt: number) {
+    const s = this.noiseSeed
+    const w = this.mode === 'rest' || this.mode === 'sulk' ? 0.3 : 1
+    this.bobW = dt > 0 ? approach(this.bobW, w, 1, dt) : w
+    this.bobY =
+      0.008 * this.bobW * (0.7 * Math.sin(t * 0.41 + s[2]) + 0.3 * Math.sin(t * 0.23 + s[3]))
+    this.bobX = 0.003 * this.bobW * Math.sin(t * 0.29 + s[3])
+  }
+
   // ---- modes ----
 
-  private pickWanderTarget() {
-    const b = this.bounds()
-    for (let attempt = 0; attempt < 12; attempt++) {
-      const x = lerp(b.x0, b.x1, this.rng())
-      const y = lerp(b.y0, b.y1, (this.rng() + this.rng()) / 2)
-      const p = this.project(x, y)
-      const d = Math.hypot(this.worldDx(this.px, p.x), this.worldDy(this.py, p.y))
-      if (d > 0.14 || attempt === 11) {
-        this.target = p
-        break
+  /** Pick the next relocation, or null when nothing fits right now (hover a little longer). */
+  private pickMove(): Move | null {
+    const { bounds: b } = this.geo
+    const aspect = this.cfg.aspect
+    const rangeX = b.x1 - b.x0
+    const rangeY = (b.y1 - b.y0) / aspect
+    const inset = 0.004
+    const canTurn = this.sinceTurn >= WANDER_TURN_GAP && this.turnT < 0
+    const rare = this.rng() < 0.1
+    const cx = (b.x0 + b.x1) / 2
+    const cy = (b.y0 + b.y1) / 2
+    const inCentre = (x: number, y: number) =>
+      Math.abs(x - cx) <= 0.3 * (b.x1 - b.x0) + 1e-9 &&
+      Math.abs(y - cy) <= 0.3 * (b.y1 - b.y0) + 1e-9
+    const towardCentre = (x: number, y: number) =>
+      Math.hypot(this.worldDx(x, cx), this.worldDy(y, cy)) <
+      Math.hypot(this.worldDx(this.px, cx), this.worldDy(this.py, cy))
+    for (let attempt = 0; attempt < 14; attempt++) {
+      // Keep the heading most of the time; the turn is the exception.
+      const wantOpposite = attempt >= 8 || this.rng() < 0.25
+      if (wantOpposite && !canTurn) continue
+      const dir: 1 | -1 = wantOpposite ? (-this.heading as 1 | -1) : this.heading
+      const roomX = dir === 1 ? b.x1 - inset - this.px : this.px - (b.x0 + inset)
+      let dist = rare ? lerp(0.14, 0.18, this.rng()) : lerp(0.06, 0.18, this.rng() ** 1.4)
+      dist = Math.min(dist, roomX * 0.98, rangeX)
+      if (dist < 0.05) continue
+      const dyw = (this.rng() * 2 - 1) * 0.35 * dist
+      const ty = this.py + dyw * aspect
+      if (ty < b.y0 + inset * aspect || ty > b.y1 - inset * aspect) continue
+      const dxw = dir * Math.sqrt(Math.max(0, dist * dist - dyw * dyw))
+      const tx = this.px + dxw
+      if (!inCentre(tx, ty) && !towardCentre(tx, ty) && this.rng() > 0.15) continue
+      const length = Math.hypot(dxw, dyw)
+      // Cap peak speed so the ease-in never exceeds a gentle acceleration, even on short hops.
+      const aCap = rare ? 0.02 : 0.012
+      const peak = Math.min(
+        rare ? lerp(0.033, 0.04, this.rng()) : lerp(0.012, 0.026, this.rng()),
+        Math.sqrt((aCap * length) / 1.64),
+      )
+      return {
+        sx: this.px,
+        sy: this.py,
+        dx: dxw,
+        dy: dyw,
+        dir,
+        duration: (1.875 * length) / peak,
+        t: 0,
+        v0x: this.vx,
+        v0y: this.vy,
       }
     }
-    this.targetTimer = 6 + this.rng() * 5
-    this.pauseTimer = 0
+    void rangeY
+    return null
+  }
+
+  private startPause(min: number, max: number) {
+    const pause = lerp(min, max, this.rng())
+    this.wander.pauseLeft = pause
+    this.wander.pauseTotal = pause
+    this.wander.state = 'hover'
   }
 
   private startInspect() {
@@ -336,10 +477,8 @@ export class BettaSim {
     this.inspectStage = 'in'
     this.inspectTimer = 0
     this.sinceInspect = 0
-    const b = this.bounds()
-    const e = this.inflatedExclusion()
-    const cx = e ? (Math.max(b.x0, e.x1) + b.x1) / 2 : (b.x0 + b.x1) / 2
-    this.target = this.project(cx, 0.46)
+    const f = this.geo.free
+    this.target = this.project((f.x0 + f.x1) / 2, 0.46)
   }
 
   private resolveMode(): BettaMode {
@@ -353,13 +492,15 @@ export class BettaSim {
   }
 
   private enter(mode: BettaMode) {
-    if (mode === 'wander') this.pickWanderTarget()
+    if (mode === 'wander') {
+      this.wander = { ...this.wander, state: 'settle', move: null, next: null }
+    }
     if (mode === 'sulk') this.pickSulkTarget()
     if (mode === 'rest') this.target = this.project(this.cfg.restSpot.x, this.cfg.restSpot.y)
   }
 
   private pickSulkTarget() {
-    const b = this.bounds()
+    const b = this.geo.bounds
     const p = this.project(lerp(b.x0, b.x1, 0.2 + this.rng() * 0.7), b.y1 - 0.02)
     this.target = p
     this.targetTimer = 12 + this.rng() * 8
@@ -419,7 +560,7 @@ export class BettaSim {
   }
 
   private stepPellets(dt: number) {
-    const b = this.bounds()
+    const b = this.geo.bounds
     for (const p of this.pellets) {
       p.age += dt
       const floor = b.y1 + 0.02
@@ -434,33 +575,60 @@ export class BettaSim {
 
   /** Per-mode plan: where to go, how fast, and how it should look. */
   private plan(dt: number) {
-    const cruise = CRUISE_SPEED
     const t = this.time
     let goal: Vec | null = this.target
-    let maxSpeed = cruise
+    let maxSpeed = CRUISE_SPEED
+    let accelMax = 0.03
     let faceDir: 1 | -1 | null = null
+    let follow = false
+    let hoverV: Vec = { x: 0, y: 0 }
     let poseTarget = { cruise: 1, flare: 0, clamped: 0 }
     let fin = 0.75 + 0.1 * this.noise(t, 2)
     let tailScale = 1
-    let zTarget = 0.5 + 0.05 * this.noise(t, 3)
+    let zTarget = this.wanderDepth(t)
+    let zRate = 0.3
 
     switch (this.mode) {
       case 'wander': {
-        this.targetTimer -= dt
-        const dist = Math.hypot(
-          this.worldDx(this.px, this.target.x),
-          this.worldDy(this.py, this.target.y),
-        )
-        if (this.pauseTimer > 0) {
-          this.pauseTimer -= dt
-          goal = null
-          fin = 0.85
-          if (this.pauseTimer <= 0) this.pickWanderTarget()
-        } else if (dist < 0.02 || this.targetTimer <= 0) {
-          if (this.rng() < 0.3) this.pauseTimer = 2 + this.rng() * 2.5
-          else this.pickWanderTarget()
+        goal = null
+        const w = this.wander
+        fin = 0.8 + 0.12 * this.noise(t * 0.5, 2)
+        if (this.lookTimer > 0) {
+          // A tap elsewhere: stop drifting, turn to look.
+          if (w.state === 'move' || w.state === 'turn') {
+            w.state = 'settle'
+            w.move = null
+            w.next = null
+          }
+          break
         }
-        maxSpeed = cruise * (0.55 + 0.45 * (0.5 + 0.5 * this.noise(t * 0.6, 1)))
+        if (w.state === 'settle') {
+          if (Math.hypot(this.vx, this.vy) < 0.004) this.startPause(1, 4)
+        } else if (w.state === 'hover') {
+          w.pauseLeft -= dt
+          const phase = clamp(1 - w.pauseLeft / w.pauseTotal, 0, 1)
+          // Barely-there drift along the heading, easing in and out of the pause.
+          // It fades out before the bound, so a hover never pushes the fish into the clamp.
+          const b = this.geo.bounds
+          const room = this.heading === 1 ? b.x1 - this.px : this.px - b.x0
+          const near = clamp((room - 0.006) / 0.03, 0, 1)
+          hoverV = { x: this.heading * 0.0015 * Math.sin(Math.PI * phase) ** 2 * near, y: 0 }
+          if (w.pauseLeft <= 0) {
+            const move = this.pickMove()
+            if (!move) {
+              this.startPause(1, 2)
+            } else {
+              w.next = move
+              if (move.dir !== this.heading) w.state = 'turn'
+              else this.beginMove()
+            }
+          }
+        }
+        if (w.state === 'turn' && w.next) {
+          faceDir = w.next.dir
+          if (this.turnT < 0 && this.heading === w.next.dir) this.beginMove()
+        }
+        if (w.state === 'move') follow = true
         break
       }
       case 'approach': {
@@ -470,27 +638,26 @@ export class BettaSim {
         const side = sign(this.px - fp.x)
         goal = this.project(fp.x + side * stop, fp.y)
         faceDir = -side as 1 | -1
-        maxSpeed = cruise * 1.1
+        maxSpeed = SPEED_APPROACH
         fin = 0.9
         break
       }
       case 'chase': {
         const pellet = this.nearestPellet()
         if (!pellet) break
+        const mouth = this.mouthOffset()
         const face =
-          Math.abs(pellet.x - this.px) > this.mouthOffset() * 0.4
-            ? sign(pellet.x - this.px)
-            : this.heading
-        goal = this.project(pellet.x - face * this.mouthOffset(), pellet.y)
+          Math.abs(pellet.x - this.px) > mouth * 0.4 ? sign(pellet.x - this.px) : this.heading
+        goal = this.project(pellet.x - face * mouth, pellet.y)
         faceDir = face
-        maxSpeed = cruise * 1.5
+        maxSpeed = SPEED_CHASE
+        accelMax = 0.06
         fin = 0.65
-        const mouth = { x: this.px + this.heading * this.mouthOffset(), y: this.py }
-        if (Math.hypot(this.worldDx(mouth.x, pellet.x), this.worldDy(mouth.y, pellet.y)) < 0.032) {
+        const tip = { x: this.px + this.heading * mouth, y: this.py }
+        if (Math.hypot(this.worldDx(tip.x, pellet.x), this.worldDy(tip.y, pellet.y)) < 0.024) {
           this.pellets = this.pellets.filter((p) => p !== pellet)
           this.satisfiedTimer = 1.8
           this.gulpT = 0
-          this.pauseTimer = 0
         }
         break
       }
@@ -505,7 +672,7 @@ export class BettaSim {
       case 'rest': {
         this.target = this.project(this.cfg.restSpot.x, this.cfg.restSpot.y)
         goal = this.target
-        maxSpeed = cruise * 0.35
+        maxSpeed = SPEED_REST
         fin = 0.45
         tailScale = 0.25
         zTarget = 0.5
@@ -525,7 +692,7 @@ export class BettaSim {
           this.worldDy(this.py, this.target.y),
         )
         if (dist < 0.02 || this.targetTimer <= 0) this.pickSulkTarget()
-        maxSpeed = cruise * 0.3
+        maxSpeed = SPEED_SULK
         poseTarget = { cruise: 0, flare: 0, clamped: 1 }
         fin = 0.12
         tailScale = 0.4
@@ -535,8 +702,9 @@ export class BettaSim {
       case 'inspect': {
         this.inspectTimer += dt
         zTarget = this.inspectStage === 'out' ? 0.5 : 0.86
+        zRate = 1.1
         if (this.inspectStage === 'in') {
-          maxSpeed = cruise * 0.8
+          maxSpeed = SPEED_INSPECT
           const d = Math.hypot(
             this.worldDx(this.px, this.target.x),
             this.worldDy(this.py, this.target.y),
@@ -566,13 +734,40 @@ export class BettaSim {
 
     if (this.lookTimer > 0 && this.mode !== 'flare' && this.mode !== 'chase') {
       goal = null
+      follow = false
       faceDir = this.lookDir
     }
     if (this.satisfiedTimer > 0 && this.mode !== 'chase') {
       goal = null
     }
 
-    return { goal, maxSpeed, faceDir, poseTarget, fin, tailScale, zTarget }
+    return {
+      goal,
+      maxSpeed,
+      accelMax,
+      faceDir,
+      follow,
+      hoverV,
+      poseTarget,
+      fin,
+      tailScale,
+      zTarget,
+      zRate,
+    }
+  }
+
+  private beginMove() {
+    const w = this.wander
+    if (!w.next) return
+    const m = w.next
+    m.sx = this.px
+    m.sy = this.py
+    m.v0x = this.vx
+    m.v0y = this.vy
+    m.t = 0
+    w.move = m
+    w.next = null
+    w.state = 'move'
   }
 
   private nearestPellet(): Pellet | null {
@@ -590,8 +785,10 @@ export class BettaSim {
   }
 
   private integrate(dt: number, plan: ReturnType<BettaSim['plan']>) {
-    const { goal, maxSpeed, faceDir } = plan
-    const speed = Math.hypot(this.vx, this.vy)
+    const { goal, maxSpeed, accelMax, faceDir } = plan
+    const aspect = this.cfg.aspect
+    const vpx = this.vx
+    const vpy = this.vy
 
     // Decide which way the fish wants to face.
     let wantFace: 1 | -1 = this.heading
@@ -602,8 +799,8 @@ export class BettaSim {
       if (Math.abs(dx) > 0.05) wantFace = sign(dx)
     }
 
-    const turning = this.turnT >= 0
-    if (!turning && wantFace !== this.heading && this.sinceTurn > 1.2) {
+    const turnGap = this.mode === 'wander' && this.lookTimer <= 0 ? WANDER_TURN_GAP - 0.5 : 1.2
+    if (this.turnT < 0 && wantFace !== this.heading && this.sinceTurn > turnGap) {
       this.turnT = 0
       this.heading = wantFace
     }
@@ -617,56 +814,74 @@ export class BettaSim {
     const nowTurning = this.turnT >= 0
     if (this.turnT >= 0 && this.turnT / TURN_SECONDS >= 0.5) this.facing = this.heading
 
-    // Desired velocity: head for the goal, arriving slowly, never backwards.
-    let dvx = 0
-    let dvy = 0
-    if (goal && !nowTurning) {
-      const dx = this.worldDx(this.px, goal.x)
-      const dy = this.worldDy(this.py, goal.y)
-      const dist = Math.hypot(dx, dy)
-      const desired = Math.min(maxSpeed, dist * 0.55)
-      if (dist > 1e-4) {
-        dvx = (dx / dist) * desired
-        dvy = (dy / dist) * desired
+    const move = plan.follow ? this.wander.move : null
+    if (move) {
+      move.t += dt
+      const tau = clamp(move.t / move.duration, 0, 1)
+      const tau2 = tau * tau
+      const tau3 = tau2 * tau
+      const h10 = tau - 6 * tau3 + 8 * tau3 * tau - 3 * tau3 * tau2
+      const h01 = 10 * tau3 - 15 * tau3 * tau + 6 * tau3 * tau2
+      const d10 = 1 - 18 * tau2 + 32 * tau3 - 15 * tau3 * tau
+      const d01 = 30 * tau2 - 60 * tau3 + 30 * tau3 * tau
+      const px = move.sx + move.v0x * move.duration * h10 + move.dx * h01
+      const py = move.sy + (move.v0y * move.duration * h10 + move.dy * h01) * aspect
+      this.vx = move.v0x * d10 + (move.dx * d01) / move.duration
+      this.vy = move.v0y * d10 + (move.dy * d01) / move.duration
+      this.applyPosition(px, py)
+      if (move.t >= move.duration) {
+        this.vx = 0
+        this.vy = 0
+        this.wander.move = null
+        this.startPause(4, 14)
       }
-      // Forward-only: cancel motion against the heading unless we are turning around.
-      if (dvx * this.heading < 0) dvx = 0
-      dvy = clamp(dvy, -0.03, 0.03)
-    }
-    // The old heading keeps drifting (and decays) through a turn.
-    const accelMax = nowTurning ? 0.16 : 0.07
-    const ax = clamp((dvx - this.vx) / Math.max(dt, 1e-4), -accelMax, accelMax)
-    const ay = clamp((dvy - this.vy) / Math.max(dt, 1e-4), -accelMax, accelMax)
-    this.vx += ax * dt
-    this.vy += ay * dt
-    if (!goal || nowTurning) {
-      // Coast down gently (water drag).
-      const drag = Math.exp(-(nowTurning ? 3.5 : 1.6) * dt)
-      if (!goal) {
-        this.vx *= drag
-        this.vy *= drag
+    } else {
+      if (goal) {
+        // Desired velocity: head for the goal, arriving slowly, never backwards.
+        let dvx = 0
+        let dvy = 0
+        if (!nowTurning) {
+          const dx = this.worldDx(this.px, goal.x)
+          const dy = this.worldDy(this.py, goal.y)
+          const dist = Math.hypot(dx, dy)
+          const desired = Math.min(maxSpeed, dist * 0.55)
+          if (dist > 1e-4) {
+            dvx = (dx / dist) * desired
+            dvy = (dy / dist) * desired
+          }
+          if (dvx * this.heading < 0) dvx = 0
+          dvy = clamp(dvy, -0.02, 0.02)
+        }
+        const ax = clamp((dvx - this.vx) / Math.max(dt, 1e-4), -accelMax, accelMax)
+        const ay = clamp((dvy - this.vy) / Math.max(dt, 1e-4), -accelMax, accelMax)
+        this.vx += ax * dt
+        this.vy += ay * dt
+        const vmax = Math.max(maxSpeed * 1.05, 0.02)
+        const vmag = Math.hypot(this.vx, this.vy)
+        if (vmag > vmax) {
+          this.vx *= vmax / vmag
+          this.vy *= vmax / vmag
+        }
+      } else {
+        // No goal: water drag brings the fish to a soft stop (or to the hover drift).
+        this.vx = approach(this.vx, plan.hoverV.x, 1.6, dt)
+        this.vy = approach(this.vy, plan.hoverV.y, 1.6, dt)
       }
-    }
-    const vmax = maxSpeed > 0 ? maxSpeed * 1.05 : speed
-    const vmag = Math.hypot(this.vx, this.vy)
-    if (vmag > Math.max(vmax, 0.02) && vmag > 0) {
-      const k = Math.max(vmax, 0.02) / vmag
-      this.vx *= k
-      this.vy *= k
+      this.applyPosition(this.px + this.vx * dt, this.py + this.vy * dt * aspect)
     }
 
-    // Local acceleration for fin drag; smooth it so fins don't jitter.
-    const localF = ax * this.heading
+    // Fin drag follows the acceleration; smooth it so fins don't jitter.
+    const localF = ((this.vx - vpx) / Math.max(dt, 1e-4)) * this.heading
+    const localU = -((this.vy - vpy) / Math.max(dt, 1e-4))
     this.accelF = approach(this.accelF, localF, 6, dt)
-    this.accelU = approach(this.accelU, -ay, 6, dt)
+    this.accelU = approach(this.accelU, localU, 6, dt)
 
-    const nx = this.px + this.vx * dt
-    const ny = this.py + this.vy * dt * this.cfg.aspect
-    const p = this.project(nx, ny)
-    if (p.x !== nx) this.vx = 0
-    if (p.y !== ny) this.vy = 0
-    this.px = p.x
-    this.py = p.y
+    this.updateBob(this.time, dt)
+    const ox = this.px + this.bobX
+    const oy = this.py + this.bobY * aspect
+    this.outSpeed = Math.hypot(ox - this.outX, (oy - this.outY) / aspect) / Math.max(dt, 1e-4)
+    this.outX = ox
+    this.outY = oy
 
     // Bettas bob very slightly even when hovering.
     this.pitch = approach(
@@ -675,16 +890,23 @@ export class BettaSim {
       3,
       dt,
     )
+  }
 
-    this.prevAx = ax
-    this.prevAy = ay
+  /** Move the anchor; the hard clamp is a safety net and is counted when it fires. */
+  private applyPosition(nx: number, ny: number) {
+    const p = this.project(nx, ny)
+    if (Math.abs(p.x - nx) > 1e-9 || Math.abs(p.y - ny) > 1e-9) this.clampHits++
+    if (p.x !== nx) this.vx = 0
+    if (p.y !== ny) this.vy = 0
+    this.px = p.x
+    this.py = p.y
   }
 
   private animate(dt: number, plan: ReturnType<BettaSim['plan']>) {
-    const speed = Math.hypot(this.vx, this.vy)
+    const speed = this.outSpeed
     const restful = this.mode === 'rest' || this.mode === 'sulk'
     const idle = Math.min(1, speed / CRUISE_SPEED)
-    const tailHz = this.mode === 'flare' ? 2.1 : restful ? 0.45 + 0.5 * idle : 0.75 + 0.75 * idle
+    const tailHz = this.mode === 'flare' ? 2.1 : restful ? 0.45 + 0.5 * idle : 0.7 + 0.8 * idle
     this.tailPhase = (this.tailPhase + TAU * tailHz * dt * plan.tailScale ** 0.5) % (TAU * 64)
     const hovering = speed < 0.02 && this.mode !== 'rest'
     const pecHz = hovering ? 6.2 : this.mode === 'rest' ? 3.2 : 4.5 + 2 * idle
@@ -697,7 +919,7 @@ export class BettaSim {
     this.pose.clamped = approach(this.pose.clamped, plan.poseTarget.clamped, rate, dt)
     this.finSpread = approach(this.finSpread, plan.fin, 1.6, dt)
     this.zTarget = plan.zTarget
-    this.z = approach(this.z, this.zTarget, 1.1, dt)
+    this.z = approach(this.z, this.zTarget, plan.zRate, dt)
     const staring = this.mode === 'inspect' && this.inspectStage === 'stare' ? 1 : 0
     this.viewerFacing = approach(this.viewerFacing, staring, 1.8, dt)
   }
@@ -723,13 +945,13 @@ export class BettaSim {
     const fold = 1 - 0.8 * Math.sin(Math.PI * clamp(clampedW, 0, 1)) ** 2
     return {
       mode: this.mode,
-      x: this.px + loopX,
-      y: this.py + loopY,
+      x: this.outX + loopX,
+      y: this.outY + loopY,
       z: this.z,
-      scale: 1 + (this.z - 0.5) * 0.9,
+      scale: this.drawnScale(),
       heading: this.heading,
       facing: this.facing,
-      speed: Math.hypot(this.vx, this.vy),
+      speed: this.outSpeed,
       turnProgress,
       pitch: this.pitch + loopPitch + gulp * 0.12,
       pose: {

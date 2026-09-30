@@ -123,11 +123,14 @@ const smoothstep = (a: number, b: number, x: number) => {
   return t * t * (3 - 2 * t)
 }
 
-/** Betta sprite width in view widths for a given viewport width in CSS px. */
+/**
+ * Betta sprite width in view widths at the focal plane. Real macro feel comes from depth, so the base
+ * is small: about 0.19 of the width on desktop, and about a third of the hero band on phones.
+ */
 export function fishWidthFor(viewWidth: number): number {
-  if (viewWidth < 520) return 0.66
-  if (viewWidth < 900) return lerp(0.6, 0.42, (viewWidth - 520) / 380)
-  return 0.34
+  if (viewWidth < 520) return 0.34
+  if (viewWidth < 900) return lerp(0.34, 0.19, (viewWidth - 520) / 380)
+  return 0.19
 }
 
 export function mulberry(seed: number) {
@@ -990,7 +993,8 @@ export class TankRenderer {
     const l = this.lightVec(g)
     for (const pellet of input.betta.pellets) {
       const wob = 0.004 * Math.sin(pellet.age * 3.1 + pellet.id * 2.0)
-      const r = 8.5 / this.width
+      // A pellet is a few percent of the body length, so it scales with the fish.
+      const r = Math.max(input.fishWidth * 0.0165 * this.width, 3) / this.width
       p.f2('u_center', pellet.x + wob, pellet.y)
       p.f2('u_radius', r, r * this.aspect)
       const k = 0.75 + 0.3 * (1 - g.darkness)
@@ -1033,13 +1037,13 @@ export class TankRenderer {
     // Soft shadow on the substrate when the fish is low.
     const floorY = 0.9
     const gap = floorY - b.y
-    const shadowA = 0.32 * (1 - smoothstep(0.06, 0.34, gap)) * (1 - g.darkness * 0.5)
+    const shadowA = 0.2 * (1 - smoothstep(0.05, 0.26, gap)) * (1 - g.darkness * 0.5)
     if (shadowA > 0.01) {
       const d = this.progs.disc
       d.use()
       gl.bindVertexArray(this.vao.disc)
       d.f2('u_center', b.x + par[0] * 0.6 + 0.01, floorY)
-      d.f2('u_radius', fw * 0.36 * b.scale, fw * 0.06 * this.aspect)
+      d.f2('u_radius', fw * 0.34 * b.scale, fw * 0.05 * b.scale * this.aspect)
       d.f3('u_color', 0.01, 0.02, 0.01)
       d.f1('u_alpha', shadowA)
       d.f1('u_mode', 1)
@@ -1075,7 +1079,7 @@ export class TankRenderer {
     p.f1('u_tailPhase', b.tailBeatPhase)
     p.f1('u_pecPhase', b.pectoralPhase)
     p.f1('u_breathPhase', b.breathPhase)
-    p.f1('u_speedN', clamp(b.speed / 0.06, 0, 1.4))
+    p.f1('u_speedN', clamp(0.2 + b.speed / 0.04, 0, 1.4))
     p.f2('u_accel', b.accel.forward, b.accel.up)
     p.f1('u_fin', b.finSpread)
     p.f1('u_amp', b.mode === 'flare' ? 1.5 : 1)
@@ -1083,12 +1087,16 @@ export class TankRenderer {
     p.f2('u_plateSpan', plateSpan[0], plateSpan[1])
     p.f2('u_parallax', parallaxUV[0], parallaxUV[1])
 
-    const coc = Math.abs(b.z - 0.5) * 2
+    // Focus: sharper at the focal plane, softer both ways; further away also reads hazier and flatter.
+    const far = smoothstep(0.5, 0.25, b.z)
+    const coc = b.z < 0.5 ? (0.5 - b.z) * 2 * 1.3 : (b.z - 0.5) * 2
     p.f1('u_bias', coc * 3.2)
-    p.f1('u_exposure', g.exposure)
+    p.f1('u_far', far)
+    p.f2('u_pxLocal', 1 / (fw * b.scale * this.width), 1 / (fw * b.scale * this.width))
+    p.f1('u_exposure', g.exposure * (1 - 0.08 * far))
     p.v3('u_tint', g.tint)
     p.f1('u_darkness', g.darkness)
-    p.f1('u_saturation', 0.88)
+    p.f1('u_saturation', 0.88 * (1 - 0.18 * far))
     p.f1('u_causticGain', g.causticGain)
     p.v3('u_causticTint', g.causticTint)
     p.v3('u_shaftTint', g.shaftTint)
@@ -1097,7 +1105,7 @@ export class TankRenderer {
     p.f1('u_rimGain', 0.34 * (0.4 + g.shaftGain * 1.4))
     const stress = water.mood === 'stressed' ? 1 : 0
     p.f1('u_stress', stress)
-    p.f1('u_fishHaze', water.haze * 0.42)
+    p.f1('u_fishHaze', water.haze * 0.42 + 0.14 * far)
     p.v3('u_hazeColor', g.hazeColor)
     p.f1('u_opacity', 1)
     gl.bindVertexArray(this.vao.betta)
