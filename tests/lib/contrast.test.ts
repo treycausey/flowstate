@@ -102,6 +102,19 @@ describe.each(['day', 'night'] as const)('%s tokens', (mode) => {
     }
   })
 
+  it('plant health chips: ok, caution and danger text reach 4.5:1 on the chip fill', () => {
+    // .health-chip fills with color-mix(panel-solid 70%, transparent) over the panel
+    for (const [panelName, panel] of Object.entries(panels)) {
+      const solid = over(tokens['panel-solid'], worst)
+      const fill = solid.map((c, i) => c * 0.7 + panel[i] * 0.3) as RGB
+      for (const name of ['ok', 'caution', 'danger']) {
+        const ratio = contrast(over(tokens[name], worst), fill)
+        rows.push([`${name} on chip fill over ${panelName}`, ratio])
+        expect([panelName, name, ratio >= 4.5]).toEqual([panelName, name, true])
+      }
+    }
+  })
+
   it('input borders, accent and chart ink reach 3:1 on the panel', () => {
     const panel = panels['panel (translucent, worst backdrop)']
     for (const name of ['field-border', 'accent', 'chart-ink']) {

@@ -16,6 +16,8 @@ export default function NavBar() {
   const links = [
     { href: '/', label: 'Log', match: (p: string) => p === '/' },
     { href: `/tanks${q}`, label: 'Charts', match: (p: string) => p === '/tanks' },
+    { href: '/stock', label: 'Stock', match: (p: string) => p.startsWith('/stock') },
+    { href: '/plants', label: 'Plants', match: (p: string) => p.startsWith('/plants') },
     {
       href: `/tanks/report${q}`,
       label: 'Report',

@@ -16,3 +16,35 @@ export function onReadingsChanged(cb: (tankId: string) => void) {
   events.addEventListener('readings-changed', handler)
   return () => events.removeEventListener('readings-changed', handler)
 }
+
+/** Plants or plant checks changed for a tank (add, edit, remove, check, import). */
+export function emitPlantsChanged(tankId: string) {
+  events.dispatchEvent(
+    new CustomEvent<ReadingsChangedDetail>('plants-changed', { detail: { tankId } }),
+  )
+}
+
+export function onPlantsChanged(cb: (tankId: string) => void) {
+  const handler = (e: Event) => {
+    const ce = e as CustomEvent<ReadingsChangedDetail>
+    cb(ce.detail.tankId)
+  }
+  events.addEventListener('plants-changed', handler)
+  return () => events.removeEventListener('plants-changed', handler)
+}
+
+/** Stock groups, stock events or the tank volume changed (add, edit, fed, remove, import). */
+export function emitStockChanged(tankId: string) {
+  events.dispatchEvent(
+    new CustomEvent<ReadingsChangedDetail>('stock-changed', { detail: { tankId } }),
+  )
+}
+
+export function onStockChanged(cb: (tankId: string) => void) {
+  const handler = (e: Event) => {
+    const ce = e as CustomEvent<ReadingsChangedDetail>
+    cb(ce.detail.tankId)
+  }
+  events.addEventListener('stock-changed', handler)
+  return () => events.removeEventListener('stock-changed', handler)
+}

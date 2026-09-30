@@ -1,9 +1,13 @@
+import type { Health, Placement, PlantAction, SymptomId } from './plants/types'
+
 export type Tank = {
   id: string
   name: string
   createdAt: string
   archivedAt?: string | null
   reminderCadence?: number | null // days; null means disabled
+  /** Water volume in litres. Optional; the stocking estimate needs it. */
+  volumeL?: number | null
 }
 
 /** A metric's value, or null when that test wasn't run for this reading. */
@@ -35,9 +39,69 @@ export type Settings = {
   shimmerSeen?: string[]
 }
 
+/** A plant in a tank. `speciesId` links the built-in catalog; null is a custom plant. */
+export type Plant = {
+  id: string
+  tankId: string
+  speciesId: string | null
+  name: string
+  placement: Placement
+  plantedAt: string // UTC ISO 8601 (normalized on write)
+  /** Set when the plant is taken out. It stays in history and can be restored. */
+  removedAt?: string | null
+  note?: string | null
+}
+
+/** One health check of one plant. */
+export type PlantCheck = {
+  id: string
+  plantId: string
+  tankId: string
+  ts: string // UTC ISO 8601 (normalized on write)
+  health: Health
+  symptoms: SymptomId[]
+  action?: PlantAction | null
+  note?: string | null
+}
+
+export type StockHealth = 'ok' | 'concern' | 'sick'
+export type StockEventKind = 'fed' | 'observed' | 'health' | 'lost' | 'rehomed' | 'added'
+
+/** One group of one species in a tank ("6 neon tetras"). `speciesId` null is a custom species. */
+export type StockGroup = {
+  id: string
+  tankId: string
+  speciesId: string | null
+  name: string
+  count: number // >= 1 when added; 0 once every animal is lost or rehomed
+  addedAt: string // UTC ISO 8601 (normalized on write)
+  /** Set when the group is taken out or its count reaches 0. It stays in history. */
+  removedAt?: string | null
+  note?: string | null
+}
+
+/** Something that happened to a group, or to the whole tank (stockId null, e.g. feeding). */
+export type StockEvent = {
+  id: string
+  tankId: string
+  stockId: string | null
+  ts: string // UTC ISO 8601 (normalized on write)
+  kind: StockEventKind
+  /** Signed change applied to the group's count for lost, rehomed and added. */
+  countDelta?: number | null
+  health?: StockHealth | null
+  note?: string | null
+}
+
 export type Dump = {
   tanks: Tank[]
   readings: Reading[]
+  /** Absent in backups made before plants existed. */
+  plants?: Plant[]
+  plantChecks?: PlantCheck[]
+  /** Absent in backups made before stock existed. */
+  stock?: StockGroup[]
+  stockEvents?: StockEvent[]
   settings?: Settings
 }
 
