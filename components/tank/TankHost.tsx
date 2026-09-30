@@ -22,7 +22,28 @@ type IdleWindow = Window & {
 
 const SCROLL_SETTLE_MS = 150
 
-/** Measure the panel. On phones it is a bottom sheet, so the fish keeps to the hero band above it. */
+type Box = { left: number; top: number; right: number; bottom: number }
+
+/**
+ * The region the betta must keep out of. On phones the panel is a bottom sheet, so the fish keeps to the
+ * hero band above it. On desktop the panel counts as a full-height column: a wide panel (Charts) that
+ * stops short of the bottom would otherwise leave a strip below it as the "largest" free rectangle, and
+ * the fish would swim there instead of in the open water beside the panel.
+ */
+export function exclusionFor(r: Box, viewportWidth: number, viewportHeight: number): PanelRect {
+  if (viewportWidth < 900) {
+    // Never let the band collapse to nothing when the sheet is scrolled up.
+    return {
+      left: 0,
+      right: viewportWidth,
+      top: Math.max(r.top, viewportHeight * 0.3),
+      bottom: viewportHeight * 2,
+    }
+  }
+  return { left: r.left, right: r.right, top: 0, bottom: viewportHeight }
+}
+
+/** Measure the panel. */
 export function usePanelRect(enabled: boolean): PanelRect | null {
   const [rect, setRect] = useState<PanelRect | null>(null)
   useEffect(() => {
@@ -30,17 +51,11 @@ export function usePanelRect(enabled: boolean): PanelRect | null {
     const panel = document.querySelector<HTMLElement>('.app-panel')
     if (!panel) return
     const measure = () => {
-      const r = panel.getBoundingClientRect()
-      const sheet = window.innerWidth < 900
-      const next: PanelRect = sheet
-        ? // Never let the band collapse to nothing when the sheet is scrolled up.
-          {
-            left: 0,
-            right: window.innerWidth,
-            top: Math.max(r.top, window.innerHeight * 0.3),
-            bottom: window.innerHeight * 2,
-          }
-        : { left: r.left, right: r.right, top: r.top, bottom: r.bottom }
+      const next = exclusionFor(
+        panel.getBoundingClientRect(),
+        window.innerWidth,
+        window.innerHeight,
+      )
       setRect((prev) =>
         prev &&
         Math.abs(prev.left - next.left) < 1 &&

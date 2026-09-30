@@ -1,10 +1,11 @@
 // WebGL2 renderer for the living tank. One canvas, premultiplied alpha, no dependencies.
-// Layers back to front: plate + grade + caustics + shafts, far motes, bubbles, props, betta,
-// pellets, near motes, algae, glass dust, foreground stems.
+// Layers back to front: plate (with the baked prop patches composited into it) + grade + caustics + shafts,
+// far motes, bubbles, betta, pellets, near motes, glass dust, foreground stems.
 
 import type { BettaFrame } from './betta'
 import type { Environment, Phase } from './environment'
 import { computeGrade, type Grade } from './grade'
+import { PATCH_PROPS, patchLayers, patchMeta, patchTargets, type PatchLayer } from './patches'
 import { BACKGROUND_FRAG, FULLSCREEN_VERT } from './shaders/background'
 import { AXIS_Y, BETTA_FRAG, BETTA_VERT } from './shaders/betta'
 import {
@@ -16,8 +17,6 @@ import {
   DUST_FRAG,
   PARTICLE_FRAG,
   PARTICLE_VERT,
-  SPRITE_FRAG,
-  SPRITE_VERT,
 } from './shaders/sprites'
 import type { WaterState } from './waterState'
 
@@ -29,6 +28,13 @@ const BUBBLE_SLOTS = 18
 const BURST_SLOTS = 64
 const BURST_SECONDS = 13
 const SHIMMER_SECONDS = 4.5
+/** Seconds for the nest and leaf patches to fade in or out. */
+const PATCH_FADE_SECONDS = 2.5
+/** Seconds for a patch that just finished loading to fade in, so it never pops. */
+const PATCH_LOAD_FADE_SECONDS = 1.5
+/** Surface bob of the floating props: at most this many CSS pixels up and down, and a wobble across. */
+const BOB_PX = 1.5
+const WOBBLE_PX = 0.8
 /** The plates are cropped by this factor so parallax never shows an edge. */
 const PLATE_CROP = 0.975
 
@@ -47,6 +53,7 @@ export type RenderInput = {
 }
 
 type Tex = { tex: WebGLTexture; w: number; h: number }
+type PatchSlot = { layer: PatchLayer; tex: Tex; alpha: number; shift: [number, number] }
 
 class Prog {
   readonly program: WebGLProgram
@@ -114,6 +121,12 @@ class Prog {
   v4(name: string, v: Float32Array) {
     this.gl.uniform4fv(this.loc(name), v)
   }
+  v1array(name: string, v: Float32Array) {
+    this.gl.uniform1fv(this.loc(name), v)
+  }
+  v2array(name: string, v: Float32Array) {
+    this.gl.uniform2fv(this.loc(name), v)
+  }
 }
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v))
@@ -158,7 +171,6 @@ export class TankRenderer {
   private progs!: {
     bg: Prog
     betta: Prog
-    sprite: Prog
     cover: Prog
     disc: Prog
     particle: Prog
@@ -167,8 +179,6 @@ export class TankRenderer {
   }
   private vao!: {
     fullscreen: WebGLVertexArrayObject
-    grid: WebGLVertexArrayObject
-    gridCount: number
     betta: WebGLVertexArrayObject
     bettaCount: number
     disc: WebGLVertexArrayObject
@@ -185,7 +195,13 @@ export class TankRenderer {
   private fade: { to: Phase; t0: number | null } | null = null
   private onAsset: () => void = () => {}
 
-  private nestAlpha = 0
+  // Smoothed opacity of the floating props, and when each patch texture first became usable.
+  private patchAlpha: Record<'nest' | 'leaf', number> = { nest: 0, leaf: 0 }
+  private patchReadyAt = new Map<string, number>()
+  private blankTex: WebGLTexture | null = null
+  private rectBuf = new Float32Array(32)
+  private alphaBuf = new Float32Array(8)
+  private shiftBuf = new Float32Array(16)
   private burstT0: number | null = null
   private shimmerT0: number | null = null
   private lastTime = 0
@@ -228,6 +244,7 @@ export class TankRenderer {
   private handleRestored = () => {
     this.plates.clear()
     this.images.clear()
+    this.patchReadyAt.clear()
     this.buffers = []
     if (this.initGL()) {
       this.lost = false
@@ -263,7 +280,6 @@ export class TankRenderer {
       this.progs = {
         bg: new Prog(gl, FULLSCREEN_VERT, BACKGROUND_FRAG, 'background'),
         betta: new Prog(gl, BETTA_VERT, BETTA_FRAG, 'betta'),
-        sprite: new Prog(gl, SPRITE_VERT, SPRITE_FRAG, 'sprite'),
         cover: new Prog(gl, FULLSCREEN_VERT, COVER_FRAG, 'cover'),
         disc: new Prog(gl, DISC_VERT, DISC_FRAG, 'disc'),
         particle: new Prog(gl, PARTICLE_VERT, PARTICLE_FRAG, 'particle'),
@@ -331,14 +347,6 @@ export class TankRenderer {
     gl.enableVertexAttribArray(0)
     gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0)
 
-    const grid = make()
-    gl.bindVertexArray(grid)
-    const g = this.gridMesh(12, 6, 0, 0, 1, 1)
-    this.buffer(g.verts)
-    gl.enableVertexAttribArray(0)
-    gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0)
-    this.buffer(g.idx, gl.ELEMENT_ARRAY_BUFFER)
-
     const betta = make()
     gl.bindVertexArray(betta)
     const bm = this.gridMesh(64, 32, -0.56, -0.46, 0.56, 0.46)
@@ -392,11 +400,18 @@ export class TankRenderer {
     gl.vertexAttribPointer(1, 1, gl.FLOAT, false, 0, 0)
     gl.vertexAttribDivisor(1, 1)
 
+    // Stand-in for patch slots that are not in use (every sampler needs a texture bound).
+    const blank = gl.createTexture()
+    if (!blank) throw new Error('tank: cannot create texture')
+    gl.bindTexture(gl.TEXTURE_2D, blank)
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4))
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
+    this.blankTex = blank
+
     gl.bindVertexArray(null)
     this.vao = {
       fullscreen,
-      grid,
-      gridCount: g.idx.length,
       betta,
       bettaCount: bm.idx.length,
       disc,
@@ -499,6 +514,14 @@ export class TankRenderer {
       this.images.set(name, t)
       this.onAsset()
     }
+  }
+
+  private freeImage(name: string) {
+    const t = this.images.get(name)
+    if (t) this.gl.deleteTexture(t.tex)
+    this.images.delete(name)
+    this.requested.delete(name)
+    this.patchReadyAt.delete(name)
   }
 
   private plateEntry(phase: Phase) {
@@ -622,16 +645,14 @@ export class TankRenderer {
     const par = this.parallaxView(1)
     const parallaxUV: [number, number] = [par[0] * span[0], par[1] * span[1]]
     const sunDir = env.light.sunDir
-    const nestTarget = water.bubbleNest ? 1 : 0
-    this.nestAlpha = input.instant
-      ? nestTarget
-      : this.nestAlpha + (nestTarget - this.nestAlpha) * (1 - Math.exp(-dtRender / 2.5))
-
-    // Leaf position (autumn), also feeds the caustic shadow.
-    const leafOn = env.season === 'autumn' ? 1 : 0
-    const leafPos = this.leafPose(time)
-    const leafView = this.plateToView(leafPos.x, leafPos.y)
-    const plateW = this.plateWidthInView()
+    const patches = this.updatePatches(
+      time,
+      dtRender,
+      input,
+      nextTex ? this.fade!.to : null,
+      mix,
+      span,
+    )
 
     // 1. Background.
     const bg = this.progs.bg
@@ -652,12 +673,7 @@ export class TankRenderer {
     bg.f1('u_time', time)
     this.gradeUniforms(bg, grade, water)
     bg.f2('u_sunDir', sunDir[0], sunDir[1])
-    bg.f1('u_leafShadow', leafOn)
-    this.floatBuf[0] = leafView[0]
-    this.floatBuf[1] = leafView[1]
-    this.floatBuf[2] = leafPos.w * plateW * 0.55
-    this.floatBuf[3] = leafPos.w * plateW * 0.4 * this.aspect * 0.55
-    bg.v4('u_leaf', this.floatBuf.subarray(0, 4))
+    this.bindPatches(bg, patches)
     bg.f1('u_vignette', 0.22)
     if (this.shimmerT0 !== null && time - this.shimmerT0 > SHIMMER_SECONDS) this.shimmerT0 = null
     bg.f1('u_shimmer', this.shimmerT0 === null ? -1 : (time - this.shimmerT0) / SHIMMER_SECONDS)
@@ -666,23 +682,106 @@ export class TankRenderer {
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4)
     gl.enable(gl.BLEND)
 
-    // 2. Far motes, bubbles, props.
+    // 2. Far motes and bubbles (the props are already part of the plate).
     this.drawParticles(input, grade, water, 0, 0.5, par)
     this.drawBubbles(input, grade, par)
     this.drawBurst(input, grade, par)
-    if (this.nestAlpha > 0.01) this.drawNest(time, grade, par)
-    if (leafOn) this.drawLeaf(time, grade, leafPos, par)
-    this.drawShrimp(time, grade, par)
 
     // 3. Betta and pellets.
     this.drawBetta(input, grade, water, activeTex, center, span, parallaxUV)
     this.drawPellets(input, grade)
 
-    // 4. Near motes, overlays, foreground.
+    // 4. Near motes, glass dust, foreground.
     this.drawParticles(input, grade, water, 0.5, 1.01, par)
-    if (water.algae > 0.01) this.drawAlgae(grade, water, center, span, parallaxUV)
     if (water.dust > 0.01) this.drawDust(time, grade, water)
     this.drawStems(grade, water)
+  }
+
+  /**
+   * Work out which prop patches to draw this frame: smooth the nest and leaf, start loading what is
+   * needed (never before), and fade a patch in once its texture arrives.
+   */
+  private updatePatches(
+    time: number,
+    dt: number,
+    input: RenderInput,
+    fadeTo: Phase | null,
+    mix: number,
+    span: [number, number],
+  ): { slots: PatchSlot[]; cover: number } {
+    const targets = patchTargets(input.env.season, input.water.bubbleNest, input.water.algae)
+    const k = input.instant ? 1 : 1 - Math.exp(-dt / PATCH_FADE_SECONDS)
+    this.patchAlpha.nest += (targets.nest - this.patchAlpha.nest) * k
+    this.patchAlpha.leaf += (targets.leaf - this.patchAlpha.leaf) * k
+    const layers = patchLayers({
+      phase: this.phaseCur as Phase,
+      fadeTo,
+      mix,
+      opacities: { nest: this.patchAlpha.nest, leaf: this.patchAlpha.leaf, algae: targets.algae },
+    })
+
+    // Large algae plates for phases that are no longer involved can go.
+    for (const phase of ['dawn', 'day', 'dusk'] as const) {
+      if (phase !== this.phaseCur && phase !== fadeTo) this.freeImage(`patch-algae-${phase}`)
+    }
+
+    const slots: PatchSlot[] = []
+    let cover = 0
+    const pxX = span[0] / this.width
+    const pxY = span[1] / this.height
+    for (const layer of layers) {
+      const tex = this.images.get(layer.key)
+      if (!tex) {
+        void this.loadImage(layer.key)
+        continue
+      }
+      let readyAt = this.patchReadyAt.get(layer.key)
+      if (readyAt === undefined) {
+        readyAt = time
+        this.patchReadyAt.set(layer.key, readyAt)
+      }
+      const loaded = input.instant ? 1 : smoothstep(0, PATCH_LOAD_FADE_SECONDS, time - readyAt)
+      let sx = 0
+      let sy = 0
+      if (layer.prop === 'nest') {
+        sy = Math.sin(time * 0.6) * BOB_PX * pxY
+        sx = Math.sin(time * 0.37 + 1) * WOBBLE_PX * pxX
+      } else if (layer.prop === 'leaf') {
+        sy = Math.sin(time * 0.45 + 2) * BOB_PX * pxY
+        sx = Math.sin(time * 0.29) * WOBBLE_PX * pxX
+      }
+      const alpha = layer.opacity * loaded
+      if (layer.prop === 'algae') cover += layer.weight * loaded
+      slots.push({ layer, tex, alpha, shift: [sx, sy] })
+    }
+    return { slots, cover: clamp(cover, 0, 1) }
+  }
+
+  private bindPatches(p: Prog, patches: { slots: PatchSlot[]; cover: number }) {
+    const gl = this.gl
+    this.alphaBuf.fill(0)
+    this.shiftBuf.fill(0)
+    for (let i = 0; i < 8; i++) this.rectBuf.set([0, 0, 1, 1], i * 4)
+    const texs: (WebGLTexture | null)[] = new Array(8).fill(this.blankTex)
+    for (const { layer, tex, alpha, shift } of patches.slots) {
+      const meta = patchMeta(layer.prop, layer.phase)
+      if (!meta) continue
+      const slot = (layer.side === 'A' ? 0 : 4) + PATCH_PROPS.indexOf(layer.prop)
+      texs[slot] = tex.tex
+      this.rectBuf.set(meta.uv, slot * 4)
+      this.alphaBuf[slot] = alpha
+      this.shiftBuf[slot * 2] = shift[0]
+      this.shiftBuf[slot * 2 + 1] = shift[1]
+    }
+    for (let i = 0; i < 8; i++) {
+      gl.activeTexture(gl.TEXTURE2 + i)
+      gl.bindTexture(gl.TEXTURE_2D, texs[i])
+      p.i1(`u_pt${i}`, 2 + i)
+    }
+    p.v4('u_prect', this.rectBuf)
+    p.v1array('u_pa', this.alphaBuf)
+    p.v2array('u_pshift', this.shiftBuf)
+    p.f1('u_algaeCover', patches.cover)
   }
 
   private gradeUniforms(p: Prog, g: Grade, water: WaterState) {
@@ -790,123 +889,6 @@ export class TankRenderer {
     gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, BURST_SLOTS)
   }
 
-  private spriteDraw(
-    tex: Tex,
-    center: [number, number],
-    widthView: number,
-    heightScale: number,
-    rot: number,
-    flip: number,
-    light: readonly number[],
-    alpha: number,
-    time: number,
-    warp: number,
-    par: [number, number],
-  ) {
-    const gl = this.gl
-    const p = this.progs.sprite
-    p.use()
-    this.bindTex(0, tex)
-    p.i1('u_tex', 0)
-    p.f2('u_center', center[0], center[1])
-    p.f2('u_size', widthView, widthView * (tex.h / tex.w) * heightScale)
-    p.f1('u_aspect', this.aspect)
-    p.f1('u_rot', rot)
-    p.f1('u_flip', flip)
-    p.f1('u_time', time)
-    p.f1('u_warp', warp)
-    p.f2('u_shift', par[0], par[1])
-    p.v3('u_light', light)
-    p.f1('u_alpha', alpha)
-    p.f1('u_bias', 0)
-    gl.bindVertexArray(this.vao.grid)
-    gl.drawElements(gl.TRIANGLES, this.vao.gridCount, gl.UNSIGNED_SHORT, 0)
-  }
-
-  private leafPose(t: number) {
-    return {
-      x: 0.5 + 0.09 * Math.sin(t * 0.022) + 0.02 * Math.sin(t * 0.09),
-      y: 0.085 + 0.004 * Math.sin(t * 0.45) + 0.0015 * Math.sin(t * 1.3),
-      rot: 0.35 + 0.08 * Math.sin(t * 0.05),
-      w: 0.085,
-    }
-  }
-
-  private drawLeaf(
-    time: number,
-    g: Grade,
-    pose: ReturnType<TankRenderer['leafPose']>,
-    par: [number, number],
-  ) {
-    const tex = this.images.get('leaf')
-    if (!tex) return
-    const v = this.plateToView(pose.x, pose.y)
-    const day = 1 - g.darkness
-    const l = this.lightVec(g)
-    const k = 0.45 + 0.5 * day
-    this.spriteDraw(
-      tex,
-      v,
-      pose.w * this.plateWidthInView(),
-      0.55,
-      pose.rot,
-      1,
-      [l[0] * k, l[1] * k * 0.96, l[2] * k * 0.85],
-      0.82,
-      time,
-      0,
-      [par[0] * 1.1, par[1] * 1.1],
-    )
-  }
-
-  private drawNest(time: number, g: Grade, par: [number, number]) {
-    const tex = this.images.get('nest')
-    if (!tex) return
-    const v = this.plateToView(0.79, 0.09 + 0.002 * Math.sin(time * 0.6))
-    const l = this.lightVec(g)
-    const k = 0.7 + 0.5 * (1 - g.darkness)
-    this.spriteDraw(
-      tex,
-      v,
-      0.13 * this.plateWidthInView(),
-      0.7,
-      0.05 * Math.sin(time * 0.2),
-      1,
-      [l[0] * k, l[1] * k, l[2] * k],
-      0.8 * this.nestAlpha,
-      time,
-      0,
-      [par[0] * 1.1, par[1] * 1.1],
-    )
-  }
-
-  private drawShrimp(time: number, g: Grade, par: [number, number]) {
-    const tex = this.images.get('shrimp')
-    if (!tex) return
-    const vis = smoothstep(0.55, 0.85, g.darkness)
-    if (vis < 0.01) return
-    const v = this.plateToView(0.87, 0.815)
-    const twitch = Math.pow(Math.max(0, Math.sin(time * 0.53 + 1.1)), 24)
-    const twitch2 = Math.pow(Math.max(0, Math.sin(time * 0.29 + 4.0)), 30)
-    v[0] += (twitch * -0.0035 + twitch2 * 0.002) * this.plateWidthInView()
-    const rot = -0.05 + 0.02 * Math.sin(time * 0.31) + twitch * 0.05
-    const l = [g.tint[0] * g.exposure, g.tint[1] * g.exposure, g.tint[2] * g.exposure]
-    const k = 0.7
-    this.spriteDraw(
-      tex,
-      v,
-      0.065 * this.plateWidthInView(),
-      1,
-      rot,
-      1,
-      [l[0] * k * 0.9, l[1] * k * 0.95, l[2] * k * 1.1],
-      vis,
-      time,
-      1 + twitch2 * 3,
-      par,
-    )
-  }
-
   private drawStems(g: Grade, water: WaterState) {
     const tex = this.images.get('fg-stems')
     if (!tex) return
@@ -936,37 +918,6 @@ export class TankRenderer {
       g.hazeColor[2] * g.exposure,
     ])
     p.f1('u_bias', 0)
-    gl.bindVertexArray(this.vao.fullscreen)
-    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4)
-  }
-
-  private drawAlgae(
-    g: Grade,
-    water: WaterState,
-    center: [number, number],
-    span: [number, number],
-    parallaxUV: [number, number],
-  ) {
-    const tex = this.images.get('algae')
-    if (!tex) return
-    const gl = this.gl
-    const p = this.progs.cover
-    p.use()
-    this.bindTex(0, tex)
-    p.i1('u_tex', 0)
-    p.f2('u_span', span[0], span[1])
-    p.f2('u_center', center[0], center[1])
-    p.f2('u_shift', parallaxUV[0] * 1.3, parallaxUV[1] * 1.3)
-    const l = this.lightVec(g)
-    p.f3('u_light', l[0] * 0.55, l[1] * 0.62, l[2] * 0.42)
-    p.f1('u_alpha', clamp(water.algae * 0.62, 0, 1))
-    p.f1('u_haze', water.haze * 0.5)
-    p.v3('u_hazeColor', [
-      g.hazeColor[0] * g.exposure,
-      g.hazeColor[1] * g.exposure,
-      g.hazeColor[2] * g.exposure,
-    ])
-    p.f1('u_bias', 0.5)
     gl.bindVertexArray(this.vao.fullscreen)
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4)
   }
@@ -1125,11 +1076,11 @@ export class TankRenderer {
     for (const t of this.images.values()) gl.deleteTexture(t.tex)
     for (const b of this.buffers) gl.deleteBuffer(b)
     const v = this.vao
-    for (const a of [v.fullscreen, v.grid, v.betta, v.disc, v.particles, v.bubbles])
-      gl.deleteVertexArray(a)
+    for (const a of [v.fullscreen, v.betta, v.disc, v.particles, v.bubbles]) gl.deleteVertexArray(a)
     for (const prog of Object.values(this.progs)) gl.deleteProgram(prog.program)
     this.plates.clear()
     this.images.clear()
+    if (this.blankTex) gl.deleteTexture(this.blankTex)
     // Release the context now instead of waiting for GC (browsers cap live contexts).
     gl.getExtension('WEBGL_lose_context')?.loseContext()
     // Late image/plate decodes check this flag and skip their upload.

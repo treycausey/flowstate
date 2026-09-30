@@ -1,49 +1,6 @@
 import { GLSL_HEADER, GLSL_NOISE, GLSL_SHAFTS } from './common'
 
-// Textured quad on a small grid, placed in view space, with optional gentle warp (shrimp antennae).
-export const SPRITE_VERT = `${GLSL_HEADER}
-layout(location = 0) in vec2 a_pos; // 0..1 grid
-uniform vec2 u_center;
-uniform vec2 u_size;   // width, height in view widths
-uniform float u_aspect;
-uniform float u_rot;
-uniform float u_flip;
-uniform float u_time;
-uniform float u_warp;
-uniform vec2 u_shift;
-out vec2 v_uv;
-void main() {
-  v_uv = a_pos;
-  vec2 p = a_pos - 0.5;
-  // Antennae sway in the left third when warp > 0 (sprites face left).
-  float aw = u_warp * smoothstep(0.32, 0.0, a_pos.x) * (1.0 - smoothstep(0.0, 0.75, a_pos.y));
-  p.y += aw * 0.05 * sin(u_time * 2.3 + a_pos.x * 9.0);
-  p.x *= u_flip;
-  p *= u_size;
-  float cs = cos(u_rot); float sn = sin(u_rot);
-  p = vec2(cs * p.x - sn * p.y, sn * p.x + cs * p.y);
-  vec2 pos = u_center + u_shift + vec2(p.x, p.y * u_aspect);
-  gl_Position = vec4(pos.x * 2.0 - 1.0, 1.0 - pos.y * 2.0, 0.0, 1.0);
-}
-`
-
-export const SPRITE_FRAG = `${GLSL_HEADER}
-in vec2 v_uv;
-out vec4 o_color;
-uniform sampler2D u_tex;
-uniform vec3 u_light;
-uniform float u_alpha;
-uniform float u_bias;
-void main() {
-  vec4 s = texture(u_tex, v_uv, u_bias);
-  vec3 rgb = s.a > 0.001 ? s.rgb / s.a : vec3(0.0);
-  rgb *= u_light;
-  float a = s.a * u_alpha;
-  o_color = vec4(rgb * a, a);
-}
-`
-
-// Full-screen layer that samples a cover-fitted texture (fg stems, algae).
+// Full-screen layer that samples a cover-fitted texture (the foreground stems).
 export const COVER_FRAG = `${GLSL_HEADER}
 ${GLSL_NOISE}
 in vec2 v_uv;

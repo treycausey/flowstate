@@ -1,7 +1,8 @@
 /* Flowstate service worker: offline app shell.
  * - Pages: network-first, cached per URL, falling back to the cached page (or "/") offline.
  * - /_next/static/*: cache-first (content-hashed, immutable).
- * - Other same-origin GETs: network-first with cache fallback.
+ * - Other same-origin GETs: network-first with cache fallback. This covers the large tank plates and the
+ *   lazy /tank/patch-*.webp prop patches: they are cached when first fetched, not precached.
  */
 const CACHE_NAME = 'flowstate-v3'
 const PAGES = ['/', '/tanks', '/tanks/report', '/settings']

@@ -12,7 +12,7 @@ import type { WaterState } from '@/lib/tank/waterState'
 /** Where the betta beds down at night, in plate uv: settled against the moss on top of the big rock. */
 const REST_PLATE: [number, number] = [0.655, 0.4]
 /** Focal point of the plate. On phones the right side (where the fish lives) stays visible. */
-const FOCAL_WIDE: [number, number] = [0.5, 0.5]
+const FOCAL_WIDE: [number, number] = [0.5, 0.46]
 const FOCAL_NARROW: [number, number] = [0.72, 0.5]
 
 export type PanelRect = { left: number; top: number; right: number; bottom: number }
@@ -372,10 +372,6 @@ export default function TankScene({
           r.loadImage('betta-flare'),
           r.loadImage('betta-clamped'),
           r.loadImage('fg-stems'),
-          r.loadImage('shrimp'),
-          r.loadImage('leaf'),
-          r.loadImage('nest'),
-          r.loadImage('algae'),
         ]),
       )
     resize()
