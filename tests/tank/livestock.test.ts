@@ -1,5 +1,5 @@
 import { CorySim, CORY_TURN_GAP, KuhliSim } from '@/lib/tank/bottom'
-import { CrawlerSim, EDGES } from '@/lib/tank/crawlers'
+import { CrawlerSim, EDGES, NODES } from '@/lib/tank/crawlers'
 import type { CreatureFrame, World } from '@/lib/tank/creature'
 import { Livestock } from '@/lib/tank/livestock'
 import { PelletField } from '@/lib/tank/pellets'
@@ -58,6 +58,7 @@ describe.each(WORLDS)('school (%s)', (_name, world) => {
       let speed = 0
       let speedN = 0
       let outside = 0
+      let steep = 0
       let t = 0
       run(
         SECONDS,
@@ -65,6 +66,8 @@ describe.each(WORLDS)('school (%s)', (_name, world) => {
           t += DT
           const frames = sim.frames()
           for (const f of frames) if (!inside(f, world, world.free)) outside++
+          // Level fish: no steep pitch outside a turn.
+          for (const f of frames) if (f.turnProgress === 0 && Math.abs(f.pitch) > 0.27) steep++
           if (Math.round(t / DT) % 30 === 0) {
             nn += meanNearest(frames, world.aspect) / bl
             nnN++
@@ -78,6 +81,7 @@ describe.each(WORLDS)('school (%s)', (_name, world) => {
       )
       expect(outside).toBe(0)
       expect(sim.clampHits).toBe(0)
+      expect(steep).toBe(0)
       // Cohesion: mean nearest-neighbour distance stays within a few body lengths.
       expect(nn / nnN).toBeLessThan(2.5)
       // Calm: a fraction of a body length per second on average.
@@ -180,6 +184,8 @@ describe.each(WORLDS)('corydoras (%s)', (name, world) => {
           // On screen, off the panel (x inside the open stretch of the band).
           if (!inside(f, world, { x0: 0, x1: 1, y0: 0, y1: 1 })) outside++
           if (f.x < sim.band.x0 - 1e-6 || f.x > sim.band.x1 + 1e-6) outside++
+          // Level on the substrate (a surface dart is the only steep move).
+          if (sim.darts === 0 && Math.abs(f.pitch) > 0.18) outside++
           if (sim.darts === 0 && (f.y < sim.band.y0 - 1e-6 || f.y > sim.band.y1 + 1e-6)) outside++
         }
       },
@@ -469,5 +475,11 @@ describe('feeding', () => {
       },
     )
     expect(gulped).toBe(true)
+  })
+})
+
+describe('anchor graph', () => {
+  it('keeps every anchor at or above the substrate line, clear of the foreground blur', () => {
+    for (const n of NODES) expect(n.v).toBeLessThanOrEqual(0.8)
   })
 })

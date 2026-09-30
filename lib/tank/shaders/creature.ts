@@ -141,7 +141,7 @@ void main() {
   // Studio-lit photo into water: tone down, shift toward the scene's own light.
   float lum = dot(rgb, vec3(0.299, 0.587, 0.114));
   rgb = mix(vec3(lum), rgb, u_saturation * (1.0 - 0.4 * u_stress));
-  rgb = pow(rgb, vec3(u_gamma));
+  rgb = pow(rgb, vec3(mix(u_gamma, 1.12, u_darkness)));
   float al = dot(v_ambient, vec3(0.299, 0.587, 0.114));
   vec3 ambDir = v_ambient / max(al, 0.03);
   vec3 fishTint = mix(vec3(1.0), ambDir, 0.3);

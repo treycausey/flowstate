@@ -29,6 +29,8 @@ export const SCHOOL_REVERSE_GAP = 22
 /** Largest perspective scale a school fish reaches (z 0.6). */
 const SCALE_MAX = scaleForZ(0.6) * 1.1
 const GULP_SECONDS = 0.4
+/** Steepest pitch of a school fish, radians (about 15 degrees). */
+export const SCHOOL_MAX_PITCH = 0.26
 
 type Fish = {
   key: string
@@ -536,11 +538,15 @@ export class SchoolSim implements Group {
         heading: f.heading,
         facing: f.facing,
         turnProgress: f.turnT >= 0 ? clamp(f.turnT / SCHOOL_TURN_SECONDS, 0, 1) : 0,
-        pitch:
+        // Never steeper than about 15 degrees: fish hang level, they do not point at the ceiling.
+        pitch: clamp(
           f.pitch +
-          f.tiltBias +
-          0.12 * Math.sin(this.time * 0.13 + f.ph) +
-          (f.gulpT >= 0 ? Math.sin((Math.PI * f.gulpT) / GULP_SECONDS) * 0.12 : 0),
+            f.tiltBias +
+            0.12 * Math.sin(this.time * 0.13 + f.ph) +
+            (f.gulpT >= 0 ? Math.sin((Math.PI * f.gulpT) / GULP_SECONDS) * 0.12 : 0),
+          -SCHOOL_MAX_PITCH,
+          SCHOOL_MAX_PITCH,
+        ),
         speed,
         tailPhase: f.tailPhase,
         pecPhase: f.pecPhase,

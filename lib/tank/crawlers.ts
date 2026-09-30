@@ -25,17 +25,17 @@ export type AnchorNode = { u: number; v: number; kind: AnchorKind }
 
 /** Anchor points on the plate (plate uv), read off the aquascape: carpet, moss-covered rocks, driftwood. */
 export const NODES: readonly AnchorNode[] = [
-  // 0-9: the carpet along the front.
-  { u: 0.06, v: 0.9, kind: 'ground' },
-  { u: 0.17, v: 0.87, kind: 'ground' },
-  { u: 0.27, v: 0.85, kind: 'ground' },
-  { u: 0.37, v: 0.88, kind: 'ground' },
-  { u: 0.46, v: 0.89, kind: 'ground' },
-  { u: 0.55, v: 0.9, kind: 'ground' },
-  { u: 0.64, v: 0.87, kind: 'ground' },
-  { u: 0.73, v: 0.87, kind: 'ground' },
-  { u: 0.82, v: 0.86, kind: 'ground' },
-  { u: 0.92, v: 0.87, kind: 'ground' },
+  // 0-9: the carpet along the front, at the substrate line (plate v 0.8 at most, clear of the blurred foreground).
+  { u: 0.06, v: 0.79, kind: 'ground' },
+  { u: 0.17, v: 0.78, kind: 'ground' },
+  { u: 0.27, v: 0.77, kind: 'ground' },
+  { u: 0.37, v: 0.79, kind: 'ground' },
+  { u: 0.46, v: 0.8, kind: 'ground' },
+  { u: 0.55, v: 0.8, kind: 'ground' },
+  { u: 0.64, v: 0.8, kind: 'ground' },
+  { u: 0.73, v: 0.8, kind: 'ground' },
+  { u: 0.82, v: 0.79, kind: 'ground' },
+  { u: 0.92, v: 0.8, kind: 'ground' },
   // 10-19: moss and rock.
   { u: 0.17, v: 0.6, kind: 'moss' },
   { u: 0.25, v: 0.57, kind: 'moss' },
@@ -412,7 +412,7 @@ export class CrawlerSim implements Group {
     const dx = Math.abs(B[0] - A[0])
     const dyUp = -(B[1] - A[1]) / this.world.aspect
     // Snails keep their shell upright; shrimp and otos follow the slope.
-    const lim = this.profile.kind === 'snail' ? 0.3 : 1.2
+    const lim = this.profile.kind === 'snail' ? 0.3 : w.hop ? 0.5 : 1.2
     return clamp(Math.atan2(dyUp, Math.max(dx, 1e-3)), -lim, lim)
   }
 

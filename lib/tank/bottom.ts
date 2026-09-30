@@ -424,7 +424,11 @@ export class CorySim implements Group {
         heading: c.heading,
         facing: c.facing,
         turnProgress: c.turnT >= 0 ? clamp(c.turnT / CORY_TURN_SECONDS, 0, 1) : 0,
-        pitch: c.pitch + Math.sin(c.tailPhase * 0.9) * 0.03 * c.wiggle,
+        // Level on the substrate; only the surface dart pitches steeply.
+        pitch:
+          c.mode === 'up' || c.mode === 'hold' || c.mode === 'down'
+            ? c.pitch
+            : clamp(c.pitch + Math.sin(c.tailPhase * 0.9) * 0.03 * c.wiggle, -0.17, 0.17),
         speed: c.speed,
         tailPhase: c.tailPhase,
         pecPhase: c.pecPhase,
