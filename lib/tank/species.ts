@@ -119,21 +119,21 @@ export const SPECIES: Record<string, SpeciesProfile> = {
     tailHz: 1.6,
     maxRender: 1,
   }),
-  'panda-corydoras': fish('panda-corydoras', 'bottom', 4.0, 365 / 720, {
+  'panda-corydoras': fish('panda-corydoras', 'bottom', 3.5, 365 / 720, {
     cruiseBl: 0.3,
     wave: 0.02,
     grounded: true,
     maxRender: 6,
     spacing: 2.4,
   }),
-  'bronze-corydoras': fish('bronze-corydoras', 'bottom', 5.0, 334 / 720, {
+  'bronze-corydoras': fish('bronze-corydoras', 'bottom', 4.2, 334 / 720, {
     cruiseBl: 0.3,
     wave: 0.02,
     grounded: true,
     maxRender: 6,
     spacing: 2.4,
   }),
-  'pygmy-corydoras': fish('pygmy-corydoras', 'bottom', 2.4, 319 / 720, {
+  'pygmy-corydoras': fish('pygmy-corydoras', 'bottom', 2.0, 319 / 720, {
     cruiseBl: 0.36,
     wave: 0.025,
     grounded: true,

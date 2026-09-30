@@ -134,6 +134,9 @@ void main() {
   vec4 s = softFish(v_uv);
   if (s.a < 0.003) discard;
   vec3 rgb = s.rgb / s.a;
+  // The body is opaque: only the rim (about a pixel) feathers. Defocus blurs colour, not coverage.
+  float cover = smoothstep(0.03, 0.55, s.a);
+  float sat0 = max(rgb.r, max(rgb.g, rgb.b)) - min(rgb.r, min(rgb.g, rgb.b));
 
   // Studio-lit photo into water: tone down, shift toward the scene's own light.
   float lum = dot(rgb, vec3(0.299, 0.587, 0.114));
@@ -146,7 +149,11 @@ void main() {
   vec3 light = fishTint * brightness * u_tint * u_exposure;
   rgb *= light * 0.9 * u_bright;
   rgb *= mix(vec3(1.0), vec3(0.72, 0.92, 1.18), u_darkness);
-  rgb *= 1.0 - 0.36 * u_darkness;
+  // Night: pale bodies go dim blue-grey; saturated stripes keep a faint glint, nothing glows.
+  float nlum = dot(rgb, vec3(0.299, 0.587, 0.114));
+  rgb = mix(rgb, vec3(nlum), 0.35 * u_darkness);
+  rgb *= 1.0 - 0.5 * u_darkness;
+  rgb *= 1.0 + 0.45 * u_darkness * smoothstep(0.3, 0.65, sat0);
   // Water in front: some of the surrounding colour scatters into the animal.
   rgb = mix(rgb, v_ambient * u_tint * u_exposure * 1.25, u_scatter + 0.16 * u_far);
 
@@ -165,7 +172,7 @@ void main() {
   vec3 veil = u_hazeColor * u_exposure;
   rgb = mix(rgb, veil, u_fishHaze);
 
-  float a = s.a * u_opacity;
+  float a = cover * u_opacity;
   o_color = vec4(rgb * a, a);
 }
 `

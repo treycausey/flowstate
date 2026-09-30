@@ -1031,7 +1031,7 @@ export class TankRenderer {
       d.f2('u_center', c.x + par[0] * 0.6 + 0.004, foot)
       d.f2('u_radius', w * 0.4, w * 0.07 * this.aspect)
       d.f3('u_color', 0.01, 0.02, 0.01)
-      d.f1('u_alpha', 0.26 * c.alpha * (1 - g.darkness * 0.4))
+      d.f1('u_alpha', 0.4 * c.alpha * (1 - g.darkness * 0.3))
       d.f1('u_mode', 1)
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4)
     }
@@ -1075,8 +1075,8 @@ export class TankRenderer {
     // Pale bodies (corys, otos) and everything on the plate sit deeper in the scene's light.
     const grounded = c.shadow || c.soft
     p.f1('u_gamma', grounded ? 1.35 : 1.1)
-    p.f1('u_scatter', grounded ? 0.3 : 0.16)
-    p.f1('u_bright', grounded ? 0.76 : 1)
+    p.f1('u_scatter', grounded ? 0.34 : 0.16)
+    p.f1('u_bright', grounded ? 0.6 : 1)
     const px = 1 / (w * this.width)
     p.f2('u_pxLocal', px, px / profile.ratio)
     p.f1('u_exposure', g.exposure * (1 - 0.08 * far))

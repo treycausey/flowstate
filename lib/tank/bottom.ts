@@ -28,7 +28,7 @@ const GULP_SECONDS = 0.4
 const DART_MIN = 120
 const DART_MAX = 300
 /** Height of the walking band above the substrate line, normalised. */
-const BAND = 0.06
+const BAND = 0.045
 
 type CoryMode = 'pause' | 'hop' | 'food' | 'up' | 'hold' | 'down'
 
@@ -99,7 +99,7 @@ export class CorySim implements Group {
         key: `${profile.id}-${i}`,
         offset: (i / Math.max(1, count - 1) - 0.5) * 2,
         ph: this.rng() * TAU,
-        z: 0.46 + this.rng() * 0.08,
+        z: 0.49 + this.rng() * 0.04,
         speedK: 0.85 + this.rng() * 0.3,
         x: 0.5,
         y: 0.88,

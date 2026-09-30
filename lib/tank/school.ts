@@ -27,7 +27,7 @@ export const SCHOOL_TURN_SECONDS = 0.9
 /** The whole school reverses at most this often. */
 export const SCHOOL_REVERSE_GAP = 22
 /** Largest perspective scale a school fish reaches (z 0.6). */
-const SCALE_MAX = scaleForZ(0.6)
+const SCALE_MAX = scaleForZ(0.6) * 1.1
 const GULP_SECONDS = 0.4
 
 type Fish = {
@@ -39,6 +39,12 @@ type Fish = {
   ph2: number
   zBase: number
   speedK: number
+  /** Own size (0.9..1.1), loose jitter of the slot, slow tilt of the heading, tail-beat rate. */
+  fit: number
+  rj: number
+  aj: number
+  tiltBias: number
+  tailK: number
   x: number
   y: number
   vx: number
@@ -107,6 +113,7 @@ export class SchoolSim implements Group {
     this.lane = lane
     this.rng = mulberry(seed)
     this.dir = this.rng() < 0.5 ? 1 : -1
+    this.breath = this.rng() * TAU
     this.visible = count
     this.wanted = count
     const n = count
@@ -121,6 +128,11 @@ export class SchoolSim implements Group {
         ph2: this.rng() * TAU,
         zBase: this.rng() * 2 - 1,
         speedK: 0.92 + this.rng() * 0.16,
+        fit: 0.9 + this.rng() * 0.2,
+        rj: 0.55 + this.rng() * 0.6,
+        aj: (this.rng() - 0.5) * 1.2,
+        tiltBias: (this.rng() - 0.5) * 0.3,
+        tailK: 0.85 + this.rng() * 0.3,
         x: 0,
         y: 0,
         vx: 0,
@@ -190,7 +202,7 @@ export class SchoolSim implements Group {
     this.ry = Math.min(0.55 * rx0, ryMax)
     this.rx = Math.min((0.55 * rx0 * rx0) / this.ry, rxMax)
     // Slots wobble and neighbours push: keep the centre a little further in.
-    const rx = this.rx + this.wobbleX()
+    const rx = this.rx * 1.2 + this.wobbleX()
     const ry = this.ry + this.wobbleY()
     this.centreBox = {
       x0: Math.min(fx0 + rx, (fx0 + fx1) / 2),
@@ -213,11 +225,12 @@ export class SchoolSim implements Group {
 
   /** How far a slot drifts about its place, view widths. */
   private wobbleX() {
-    return 0.3 * this.bl
+    return 0.45 * this.bl
   }
   private wobbleY() {
     return Math.min(0.18 * this.bl, 0.3 * this.ry)
   }
+  private breath = 0
   private rx = 0.1
   private ry = 0.05
 
@@ -244,15 +257,21 @@ export class SchoolSim implements Group {
     // Re-pack for the visible count: rank by index on the spiral.
     const i = this.fish.indexOf(f)
     const n = this.visible
-    const a = i * 2.39996 + (f.ph % 0.5)
-    const r = Math.sqrt((i + 0.5) / n)
-    void f.sx
+    const a = i * 2.39996 + f.aj
+    // Loose, uneven packing that stretches and bunches slowly.
+    const r = Math.min(1.05, Math.sqrt((i + 0.5) / n) * f.rj)
+    const stretch = 1 + 0.2 * Math.sin(0.043 * t + this.breath)
+    const squeeze = 1 - 0.12 * Math.sin(0.043 * t + this.breath + 1)
+    const wx = this.wobbleX() * (this.tight > 0.8 ? 1 : 0.5)
     return {
       x:
         this.cx +
-        r * Math.cos(a) * rx +
-        this.wobbleX() * Math.sin(t * 0.21 + f.ph) * (this.tight > 0.8 ? 1 : 0.5),
-      y: this.cy + r * Math.sin(a) * ry + this.wobbleY() * Math.sin(t * 0.17 + f.ph2),
+        r * Math.cos(a) * rx * stretch +
+        wx * (0.7 * Math.sin(t * 0.21 + f.ph) + 0.3 * Math.sin(t * 0.47 + f.ph2)),
+      y:
+        this.cy +
+        r * Math.sin(a) * ry * squeeze +
+        this.wobbleY() * (0.7 * Math.sin(t * 0.17 + f.ph2) + 0.3 * Math.sin(t * 0.39 + f.ph)),
     }
   }
 
@@ -446,7 +465,7 @@ export class SchoolSim implements Group {
       const speed = Math.hypot(f.vx, f.vy)
       const idle = clamp(speed / Math.max(vC, 1e-4), 0, 1.6)
       f.tailPhase =
-        (f.tailPhase + TAU * this.profile.tailHz * (0.3 + 0.7 * Math.min(1, idle)) * dt) %
+        (f.tailPhase + TAU * this.profile.tailHz * f.tailK * (0.3 + 0.7 * Math.min(1, idle)) * dt) %
         (TAU * 64)
       f.pecPhase = (f.pecPhase + TAU * 5.2 * dt) % (TAU * 64)
       f.pitch = approach(
@@ -510,12 +529,16 @@ export class SchoolSim implements Group {
         x: f.x,
         y: f.y * a,
         z: f.z,
-        scale: scaleForZ(f.z),
+        scale: scaleForZ(f.z) * f.fit,
         fit: 1,
         heading: f.heading,
         facing: f.facing,
         turnProgress: f.turnT >= 0 ? clamp(f.turnT / SCHOOL_TURN_SECONDS, 0, 1) : 0,
-        pitch: f.pitch + (f.gulpT >= 0 ? Math.sin((Math.PI * f.gulpT) / GULP_SECONDS) * 0.12 : 0),
+        pitch:
+          f.pitch +
+          f.tiltBias +
+          0.12 * Math.sin(this.time * 0.13 + f.ph) +
+          (f.gulpT >= 0 ? Math.sin((Math.PI * f.gulpT) / GULP_SECONDS) * 0.12 : 0),
         speed,
         tailPhase: f.tailPhase,
         pecPhase: f.pecPhase,

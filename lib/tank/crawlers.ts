@@ -81,7 +81,6 @@ export const EDGES: ReadonlyArray<readonly [number, number]> = [
   [14, 19],
   [16, 17],
   [17, 18],
-  [18, 20],
   [20, 21],
   [21, 22],
   [22, 23],
@@ -389,7 +388,7 @@ export class CrawlerSim implements Group {
       }
       if (this.blocked[w.node] && w.mode !== 'fade') w.mode = 'fade'
       this.setPos(w)
-      const arc = w.hop && w.to >= 0 ? Math.sin(Math.PI * w.s) * 0.014 * a : 0
+      const arc = w.hop && w.to >= 0 ? Math.sin(Math.PI * w.s) * 0.008 * a : 0
       w.y -= arc
       w.leg = (w.leg + TAU * (7 + 6 * legT) * dt * (legT > 0 ? 1 : 0.2)) % (TAU * 64)
       const target = this.edgePitch(w)
@@ -406,7 +405,9 @@ export class CrawlerSim implements Group {
     const B = this.view[w.to]
     const dx = Math.abs(B[0] - A[0])
     const dyUp = -(B[1] - A[1]) / this.world.aspect
-    return clamp(Math.atan2(dyUp, Math.max(dx, 1e-3)), -0.9, 0.9)
+    // Snails keep their shell upright; shrimp and otos follow the slope.
+    const lim = this.profile.kind === 'snail' ? 0.3 : 1.2
+    return clamp(Math.atan2(dyUp, Math.max(dx, 1e-3)), -lim, lim)
   }
 
   private eat(w: Walker) {
@@ -497,7 +498,8 @@ export class CrawlerSim implements Group {
         key: w.key,
         species: this.profile.id,
         x: w.x,
-        y: w.y,
+        // The feet touch the surface: the body sits above the anchor point.
+        y: w.y - 0.2 * this.profile.ratio * this.bl * scale * this.world.aspect,
         z: 0.5,
         scale,
         fit: 1,
