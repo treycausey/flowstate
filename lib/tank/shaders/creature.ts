@@ -108,6 +108,7 @@ uniform vec3 u_hazeColor;
 uniform float u_stress;
 uniform float u_opacity;
 uniform float u_far;
+uniform float u_debugAlpha; // dev: output coverage as white
 uniform float u_soft;      // plate-space creatures: fine detail softened to the plate
 uniform float u_gamma;     // tone curve: higher darkens pale bodies
 uniform float u_scatter;   // how much of the surrounding colour veils the body
@@ -154,8 +155,11 @@ void main() {
   rgb = mix(rgb, vec3(nlum), 0.35 * u_darkness);
   rgb *= 1.0 - 0.4 * u_darkness;
   rgb *= 1.0 + 0.45 * u_darkness * smoothstep(0.3, 0.65, sat0);
+  // Moonlight: a cool silver cast and a lighter belly keep the pattern readable.
+  rgb *= mix(vec3(1.0), vec3(0.9, 1.0, 1.12), u_darkness);
+  rgb *= 1.0 + 0.3 * u_darkness * smoothstep(0.5, 0.9, v_uv.y);
   // Water in front: some of the surrounding colour scatters into the animal.
-  rgb = mix(rgb, v_ambient * u_tint * u_exposure * 1.25, u_scatter + 0.16 * u_far);
+  rgb = mix(rgb, v_ambient * u_tint * u_exposure * 1.25, mix(u_scatter, 0.06, u_darkness) + 0.16 * u_far);
 
   // Caustics play across the body.
   float vFall = 1.0 - smoothstep(0.5, 1.0, v_scene.y);
@@ -173,6 +177,7 @@ void main() {
   rgb = mix(rgb, veil, u_fishHaze);
 
   float a = cover * u_opacity;
+  if (u_debugAlpha > 0.5) { o_color = vec4(a, a, a, a); return; }
   o_color = vec4(rgb * a, a);
 }
 `

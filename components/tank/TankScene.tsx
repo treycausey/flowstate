@@ -55,6 +55,8 @@ export type TankSceneProps = {
   seed?: number
   /** Recorded livestock. Empty (or missing) shows the betta alone. */
   stock?: readonly StockEntry[]
+  /** Dev only: show creature coverage as white on black. */
+  debugAlpha?: boolean
   controlsRef?: RefObject<TankSceneControls | null>
   onStats?: (stats: { fps: number; frameMs: number; level: 'full' | 'half' }) => void
 }
@@ -87,6 +89,7 @@ export default function TankScene({
   reducedMotion,
   seed = 1,
   stock,
+  debugAlpha,
   controlsRef,
   onStats,
 }: TankSceneProps) {
@@ -110,6 +113,7 @@ export default function TankScene({
     reducedMotion,
     onStats,
     stock,
+    debugAlpha,
   })
   useEffect(() => {
     live.current = {
@@ -123,6 +127,7 @@ export default function TankScene({
       reducedMotion,
       onStats,
       stock,
+      debugAlpha,
     }
   })
   const api = useRef<{ dirty: () => void; configure: () => void } | null>(null)
@@ -263,6 +268,7 @@ export default function TankScene({
         fishWidth: fishWidthFor(width),
         ripple,
         instant: isStatic(),
+        debugAlpha: l.debugAlpha,
       })
       // Fade the canvas in only once the plate and the fish are both on screen (no pop-in).
       if (!marked && renderer.ready && (!sim.hasBetta || renderer.hasImage('betta-cruise'))) {

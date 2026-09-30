@@ -47,6 +47,7 @@ type Controls = {
   bare: boolean
   script: ScriptedEvent[]
   seed: number
+  debug: string
   stock: StockEntry[]
 }
 
@@ -70,6 +71,7 @@ const DEFAULTS: Controls = {
   bare: false,
   script: [],
   seed: 1,
+  debug: '',
   stock: [],
 }
 
@@ -141,6 +143,7 @@ function parseQuery(search: string): Controls {
     bare: q.get('bare') === '1',
     script: parseScript(q.get('script')),
     seed: num(q.get('seed'), 1) ?? 1,
+    debug: q.get('debug') ?? '',
     stock: parseStockParam(q.get('stock')),
   }
 }
@@ -318,6 +321,7 @@ export default function TankDevClient() {
         reducedMotion={c.reduced || undefined}
         seed={c.seed}
         stock={c.stock}
+        debugAlpha={c.debug === 'alpha'}
         controlsRef={controls}
         onStats={setStats}
       />

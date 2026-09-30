@@ -59,6 +59,8 @@ export type RenderInput = {
   ripple: { x: number; y: number; t0: number } | null
   /** Snap slow fades (bubble nest) to their target; used for single deterministic frames. */
   instant?: boolean
+  /** Dev only: draw each creature's final coverage as white on black (the plate is black). */
+  debugAlpha?: boolean
 }
 
 type Tex = { tex: WebGLTexture; w: number; h: number }
@@ -708,6 +710,18 @@ export class TankRenderer {
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4)
     gl.enable(gl.BLEND)
 
+    if (input.debugAlpha) {
+      // Coverage view: black plate, creatures as their final alpha in white, nothing else.
+      gl.clearColor(0, 0, 0, 1)
+      gl.clear(gl.COLOR_BUFFER_BIT)
+      const dview = [grade, water, activeTex, center, span, parallaxUV] as const
+      const all = [...(input.creatures ?? [])].sort(
+        (a, b) => Number(b.plateSpace) - Number(a.plateSpace) || a.z - b.z,
+      )
+      for (const c of all) this.drawCreature(c, input, ...dview)
+      return
+    }
+
     // 2. Far motes and bubbles (the props are already part of the plate).
     this.drawParticles(input, grade, water, 0, 0.5, par)
     this.drawBubbles(input, grade, par)
@@ -1023,7 +1037,7 @@ export class TankRenderer {
     const w = spriteW * scale
 
     // Contact shadow on the substrate, always for the grounded species.
-    if (c.shadow) {
+    if (c.shadow && !input.debugAlpha) {
       const d = this.progs.disc
       d.use()
       gl.bindVertexArray(this.vao.disc)
@@ -1076,7 +1090,7 @@ export class TankRenderer {
     const grounded = c.shadow || c.soft
     p.f1('u_gamma', grounded ? 1.35 : 1.1)
     p.f1('u_scatter', grounded ? 0.34 : 0.16)
-    p.f1('u_bright', grounded ? (c.soft ? 0.6 : 0.5) + 0.3 * g.darkness : 1)
+    p.f1('u_bright', grounded ? (c.soft ? 0.6 : 0.5) + 0.4 * g.darkness : 1)
     const px = 1 / (w * this.width)
     p.f2('u_pxLocal', px, px / profile.ratio)
     p.f1('u_exposure', g.exposure * (1 - 0.08 * far))
@@ -1093,6 +1107,7 @@ export class TankRenderer {
     p.f1('u_fishHaze', water.haze * 0.42 + 0.14 * far)
     p.v3('u_hazeColor', g.hazeColor)
     p.f1('u_opacity', c.alpha)
+    p.f1('u_debugAlpha', input.debugAlpha ? 1 : 0)
     gl.bindVertexArray(this.vao.creature)
     gl.drawElements(gl.TRIANGLES, this.vao.creatureCount, gl.UNSIGNED_SHORT, 0)
   }
