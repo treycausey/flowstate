@@ -12,6 +12,7 @@ import {
   DEFAULT_PREFS,
   loadTankPrefs,
   onTankPrefsChanged,
+  refreshTankPrefs,
   saveTankPrefs,
   type TankPrefs,
 } from '@/lib/tank/prefs'
@@ -33,11 +34,20 @@ export default function SettingsClient() {
   }, [])
 
   const updatePrefs = async (patch: Partial<TankPrefs>) => {
+    const previous = prefs
     setPrefs((current) => ({ ...current, ...patch }))
     try {
       await saveTankPrefs(patch)
     } catch (err) {
       console.error('Failed to save tank settings', err)
+      // Roll back only the keys this change touched.
+      setPrefs((current) => {
+        const next = { ...current }
+        for (const key of Object.keys(patch) as (keyof TankPrefs)[]) {
+          ;(next as Record<string, unknown>)[key] = previous[key]
+        }
+        return next
+      })
       setMessage({ kind: 'error', text: 'Couldn’t save that setting.' })
     }
   }
@@ -96,6 +106,7 @@ export default function SettingsClient() {
       if (!ok) return
       await importDump(data)
       await refresh()
+      await refreshTankPrefs()
       for (const t of tanks) emitReadingsChanged(t.id)
       setMessage({
         kind: 'ok',

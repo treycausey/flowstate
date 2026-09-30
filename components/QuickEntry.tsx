@@ -60,7 +60,10 @@ function announceFocus(e: React.FocusEvent<HTMLFormElement>) {
 async function celebrateSave(tankId: string) {
   dropPellet()
   try {
-    const [all, prefs] = await Promise.all([listReadingsByTank(tankId), loadTankPrefs()])
+    const prefs = await loadTankPrefs()
+    // Already celebrated: skip loading the whole reading list.
+    if (prefs.shimmerSeen.includes(tankId)) return
+    const all = await listReadingsByTank(tankId)
     if (!shouldShimmer(tankId, all.length, prefs.shimmerSeen)) return
     await saveTankPrefs({ shimmerSeen: [...prefs.shimmerSeen, tankId] })
     shimmerTank()

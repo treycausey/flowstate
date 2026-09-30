@@ -3,9 +3,19 @@
  * - /_next/static/*: cache-first (content-hashed, immutable).
  * - Other same-origin GETs: network-first with cache fallback.
  */
-const CACHE_NAME = 'flowstate-v2'
+const CACHE_NAME = 'flowstate-v3'
 const PAGES = ['/', '/tanks', '/tanks/report', '/settings']
-const ASSETS = ['/manifest.webmanifest', '/icons/icon-192.png', '/icons/icon-512.png']
+const ASSETS = [
+  '/manifest.webmanifest',
+  '/icons/icon-192.png',
+  '/icons/icon-512.png',
+  // Living tank first paint: the CSS plate for each phase and the fish sprite.
+  '/tank/plate-dawn-sm.webp',
+  '/tank/plate-day-sm.webp',
+  '/tank/plate-dusk-sm.webp',
+  '/tank/plate-night-sm.webp',
+  '/tank/betta-cruise.webp',
+]
 
 self.addEventListener('install', (event) => {
   event.waitUntil(

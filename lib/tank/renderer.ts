@@ -231,6 +231,11 @@ export class TankRenderer {
       const again = [...this.requested]
       this.requested.clear()
       if (this.phaseCur) void this.loadPlate(this.phaseCur)
+      if (this.fade) {
+        // A crossfade was running: reload the incoming plate and restart the fade timer.
+        this.fade.t0 = null
+        void this.loadPlate(this.fade.to)
+      }
       for (const key of again) if (!key.startsWith('plate')) void this.loadImage(key)
       this.onAsset()
     }
@@ -1117,5 +1122,7 @@ export class TankRenderer {
     for (const prog of Object.values(this.progs)) gl.deleteProgram(prog.program)
     this.plates.clear()
     this.images.clear()
+    // Release the context now instead of waiting for GC (browsers cap live contexts).
+    gl.getExtension('WEBGL_lose_context')?.loseContext()
   }
 }

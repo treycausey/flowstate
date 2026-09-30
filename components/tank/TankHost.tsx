@@ -1,6 +1,7 @@
 'use client'
 
 import dynamic from 'next/dynamic'
+import { usePathname } from 'next/navigation'
 import { useEffect, useMemo, useState } from 'react'
 import { useTanks } from '@/components/TankProvider'
 import { useTankReadings } from '@/lib/useTankReadings'
@@ -18,6 +19,8 @@ type IdleWindow = Window & {
   requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number
   cancelIdleCallback?: (id: number) => void
 }
+
+const SCROLL_SETTLE_MS = 150
 
 /** Measure the panel. On phones it is a bottom sheet, so the fish keeps to the hero band above it. */
 export function usePanelRect(enabled: boolean): PanelRect | null {
@@ -52,11 +55,19 @@ export function usePanelRect(enabled: boolean): PanelRect | null {
     const ro = new ResizeObserver(measure)
     ro.observe(panel)
     window.addEventListener('resize', measure)
-    window.addEventListener('scroll', measure, { passive: true })
+    // Scrolling moves the sheet top on every event; re-measure once it settles, so the
+    // reduced-motion static frame (a 270-step sim) is not re-run per scroll event.
+    let scrollTimer = 0
+    const onScroll = () => {
+      window.clearTimeout(scrollTimer)
+      scrollTimer = window.setTimeout(measure, SCROLL_SETTLE_MS)
+    }
+    window.addEventListener('scroll', onScroll, { passive: true })
     return () => {
       ro.disconnect()
+      window.clearTimeout(scrollTimer)
       window.removeEventListener('resize', measure)
-      window.removeEventListener('scroll', measure)
+      window.removeEventListener('scroll', onScroll)
     }
   }, [enabled])
   return rect
@@ -64,6 +75,8 @@ export function usePanelRect(enabled: boolean): PanelRect | null {
 
 export default function TankHost() {
   const { activeTankId } = useTanks()
+  // /dev/* pages mount their own scene; a second one would fight over the canvas slot.
+  const onDevRoute = usePathname()?.startsWith('/dev/') ?? false
   const { readings } = useTankReadings(activeTankId)
   const [prefs, setPrefs] = useState<TankPrefs>(DEFAULT_PREFS)
   const [prefsLoaded, setPrefsLoaded] = useState(false)
@@ -87,7 +100,7 @@ export default function TankHost() {
   }, [])
 
   // Load the engine after first paint.
-  const enabled = prefsLoaded && prefs.livingTank
+  const enabled = prefsLoaded && prefs.livingTank && !onDevRoute
   useEffect(() => {
     if (!enabled) return
     const w = window as IdleWindow
@@ -115,8 +128,8 @@ export default function TankHost() {
     set()
     const id = window.setInterval(set, 60_000)
     return () => {
+      // Leave data-tank-phase in place: deleting it on re-run would blink the theme.
       window.clearInterval(id)
-      delete document.documentElement.dataset.tankPhase
     }
   }, [enabled, prefs.hemisphere, clock])
 

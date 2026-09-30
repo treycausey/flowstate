@@ -37,4 +37,12 @@ describe('TankHost', () => {
     await new Promise((r) => setTimeout(r, 600))
     expect(screen.queryByTestId('tank-scene')).not.toBeInTheDocument()
   })
+
+  it('keeps data-tank-phase on unmount so the theme cannot blink', async () => {
+    mockLoad.mockResolvedValue({ ...DEFAULT_PREFS, livingTank: false })
+    const { unmount } = render(<TankHost />)
+    await waitFor(() => expect(document.documentElement.dataset.tankPhase).toBeDefined())
+    unmount()
+    expect(document.documentElement.dataset.tankPhase).toBeDefined()
+  })
 })

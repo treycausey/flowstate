@@ -1,7 +1,6 @@
 'use client'
 
 import { useEffect, useRef, useState, type RefObject } from 'react'
-import { createPortal } from 'react-dom'
 import { BettaSim, type BettaFrame, type Rect } from '@/lib/tank/betta'
 import { getEnvironment, type Environment, type Hemisphere } from '@/lib/tank/environment'
 import { FramePacer } from '@/lib/tank/pacing'
@@ -74,16 +73,11 @@ export default function TankScene({
   controlsRef,
   onStats,
 }: TankSceneProps) {
-  const canvasRef = useRef<HTMLCanvasElement>(null)
-  const [supported, setSupported] = useState(true)
   // The canvas mounts in the layout's #tank-canvas-slot when there is one, else fixed on <body>.
   const [host, setHost] = useState<HTMLElement | null>(null)
   useEffect(() => {
-    if (!webgl2Available()) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- capability is only known on the client
-      setSupported(false)
-      return
-    }
+    if (!webgl2Available()) return
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- the slot only exists on the client
     setHost(document.getElementById('tank-canvas-slot') ?? document.body)
   }, [])
 
@@ -123,8 +117,8 @@ export default function TankScene({
     set()
     const id = window.setInterval(set, 60_000)
     return () => {
+      // Leave data-tank-phase in place: deleting it on re-run would blink the theme.
       window.clearInterval(id)
-      delete document.documentElement.dataset.tankPhase
     }
   }, [environment, hemisphere, clock])
 
@@ -134,8 +128,23 @@ export default function TankScene({
   }, [water, exclusion, environment, hemisphere, freezeAt, freezeScript, reducedMotion])
 
   useEffect(() => {
-    const canvas = canvasRef.current
-    if (!canvas || !host) return
+    if (!host) return
+    // A fresh canvas per mount: destroy() releases the GL context, and a canvas whose context
+    // was lost cannot hand out a new one when React strict mode re-runs this effect.
+    const inSlotHost = host !== document.body
+    const canvas = document.createElement('canvas')
+    canvas.setAttribute('aria-hidden', 'true')
+    canvas.className = 'tank-scene'
+    Object.assign(canvas.style, {
+      position: inSlotHost ? 'absolute' : 'fixed',
+      inset: '0',
+      width: '100%',
+      height: '100%',
+      zIndex: inSlotHost ? '' : '-1',
+      pointerEvents: 'none',
+      display: 'block',
+    })
+    host.appendChild(canvas)
 
     let renderer: TankRenderer | null = null
     let rafId = 0
@@ -349,7 +358,7 @@ export default function TankScene({
       if (isStatic()) requestStatic()
     })
     if (!renderer) {
-      setSupported(false)
+      canvas.remove()
       return
     }
     const r = renderer
@@ -494,28 +503,12 @@ export default function TankScene({
       mq?.removeEventListener?.('change', onMotionChange)
       renderer?.destroy()
       renderer = null
+      canvas.remove()
     }
     // Props are read through `live`; the loop is created once per mount (and per seed).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [seed, host])
 
-  if (!supported || !host) return null
-  const inSlot = host !== document.body
-  return createPortal(
-    <canvas
-      ref={canvasRef}
-      aria-hidden="true"
-      className="tank-scene"
-      style={{
-        position: inSlot ? 'absolute' : 'fixed',
-        inset: 0,
-        width: '100%',
-        height: '100%',
-        zIndex: inSlot ? undefined : -1,
-        pointerEvents: 'none',
-        display: 'block',
-      }}
-    />,
-    host,
-  )
+  // The canvas is created in the effect above and lives in the host element.
+  return null
 }

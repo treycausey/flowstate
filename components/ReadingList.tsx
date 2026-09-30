@@ -53,6 +53,9 @@ export default function ReadingList({ limit = 10 }: { limit?: number }) {
   const [draft, setDraft] = useState<DraftReading | null>(null)
   const [error, setError] = useState<string | null>(null)
   const firstFieldRef = useRef<HTMLInputElement>(null)
+  const dialogRef = useRef<HTMLDivElement>(null)
+  // The Edit button that opened the dialog; focus returns to it on close.
+  const triggerRef = useRef<HTMLElement | null>(null)
 
   const cancelEditing = () => {
     setEditingReading(null)
@@ -66,10 +69,36 @@ export default function ReadingList({ limit = 10 }: { limit?: number }) {
       if (event.key === 'Escape') {
         event.preventDefault()
         cancelEditing()
+        return
+      }
+      if (event.key === 'Tab' && dialogRef.current) {
+        // Focus trap: cycle within the dialog
+        const focusables = dialogRef.current.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), [href], input:not([disabled]), select, textarea, [tabindex]:not([tabindex="-1"])',
+        )
+        const first = focusables[0]
+        const last = focusables[focusables.length - 1]
+        const activeEl = document.activeElement as HTMLElement | null
+        if (!first || !last) return
+        if (!activeEl || !dialogRef.current.contains(activeEl)) {
+          event.preventDefault()
+          first.focus()
+        } else if (event.shiftKey && activeEl === first) {
+          event.preventDefault()
+          last.focus()
+        } else if (!event.shiftKey && activeEl === last) {
+          event.preventDefault()
+          first.focus()
+        }
       }
     }
     window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
+    return () => {
+      window.removeEventListener('keydown', handler)
+      const trigger = triggerRef.current
+      triggerRef.current = null
+      if (trigger?.isConnected) trigger.focus()
+    }
   }, [editingReading])
 
   useEffect(() => {
@@ -92,7 +121,8 @@ export default function ReadingList({ limit = 10 }: { limit?: number }) {
     emitReadingsChanged(reading.tankId)
   }
 
-  const startEditing = (reading: Reading) => {
+  const startEditing = (reading: Reading, trigger: HTMLElement) => {
+    triggerRef.current = trigger
     setError(null)
     setDraft({
       ts: toDatetimeLocalValue(new Date(reading.ts)),
@@ -211,7 +241,7 @@ export default function ReadingList({ limit = 10 }: { limit?: number }) {
                     <button
                       className="button button--ghost button--small"
                       type="button"
-                      onClick={() => startEditing(r)}
+                      onClick={(e) => startEditing(r, e.currentTarget)}
                       aria-label={`Edit reading from ${formatLocal(new Date(r.ts))}`}
                     >
                       Edit
@@ -236,8 +266,9 @@ export default function ReadingList({ limit = 10 }: { limit?: number }) {
       {editingReading && draft
         ? // Portal: the frosted panel's backdrop-filter would otherwise trap position: fixed
           createPortal(
-            <div className="modal-overlay" role="presentation">
+            <div className="modal-overlay" role="presentation" data-tank-ignore>
               <div
+                ref={dialogRef}
                 className="modal"
                 role="dialog"
                 aria-modal="true"

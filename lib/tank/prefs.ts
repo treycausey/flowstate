@@ -35,6 +35,13 @@ export async function saveTankPrefs(patch: Partial<TankPrefs>): Promise<TankPref
   return next
 }
 
+/** Re-read the stored settings and notify listeners (after a backup import replaced them). */
+export async function refreshTankPrefs(): Promise<TankPrefs> {
+  const next = await loadTankPrefs()
+  bus.dispatchEvent(new CustomEvent('change', { detail: next }))
+  return next
+}
+
 export function onTankPrefsChanged(cb: (prefs: TankPrefs) => void): () => void {
   const handler = (e: Event) => cb((e as CustomEvent<TankPrefs>).detail)
   bus.addEventListener('change', handler)

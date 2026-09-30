@@ -185,3 +185,45 @@ describe('ReadingList delete failure', () => {
     confirmSpy.mockRestore()
   })
 })
+
+describe('ReadingList edit dialog focus', () => {
+  it('traps Tab inside the dialog, ignores taps for the fish, and returns focus on close', async () => {
+    const tank = await ensureSeed()
+    localStorage.setItem('activeTankId', tank.id)
+    await addReading({
+      tankId: tank.id,
+      ts: '2021-03-01T00:00:00.000Z',
+      pH: 7,
+      ammonia: 0,
+      nitrite: 0,
+      nitrate: 5,
+      note: 'focus-case',
+    })
+    render(
+      <TankProvider>
+        <ReadingList />
+      </TankProvider>,
+    )
+    await screen.findByText('focus-case')
+    const editButton = screen.getAllByRole('button', { name: /edit reading/i })[0]
+    editButton.focus()
+    fireEvent.click(editButton)
+    const dialog = await screen.findByRole('dialog', { name: /edit reading/i })
+    expect(dialog.parentElement).toHaveAttribute('data-tank-ignore')
+
+    // Tab from the last control wraps to the first; Shift+Tab from the first wraps to the last.
+    const focusables = dialog.querySelectorAll<HTMLElement>('button, input')
+    const first = focusables[0]
+    const last = focusables[focusables.length - 1]
+    last.focus()
+    fireEvent.keyDown(window, { key: 'Tab' })
+    expect(first).toHaveFocus()
+    first.focus()
+    fireEvent.keyDown(window, { key: 'Tab', shiftKey: true })
+    expect(last).toHaveFocus()
+
+    fireEvent.keyDown(window, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(editButton).toHaveFocus()
+  })
+})

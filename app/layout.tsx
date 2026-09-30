@@ -7,6 +7,7 @@ import TankHost from '@/components/tank/TankHost'
 import NavBar from '@/components/NavBar'
 import PanelShell from '@/components/PanelShell'
 import TauriNavigationBridge from '@/components/TauriNavigationBridge'
+import { PHASE_SCRIPT } from '@/lib/tank/phaseScript'
 
 // Self-hosted at build time (works offline and inside Tauri)
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter', display: 'swap' })
@@ -40,8 +41,8 @@ export const viewport: Viewport = {
   ],
 }
 
-// Apply the saved theme before first paint to avoid a light/dark flash
-const themeScript = `try{var t=localStorage.getItem('theme');document.documentElement.setAttribute('data-theme',t==='light'||t==='dark'?t:'system')}catch(e){}`
+// Apply the saved theme and the time-of-day phase before first paint to avoid a light/dark flash
+const themeScript = `try{var t=localStorage.getItem('theme');document.documentElement.setAttribute('data-theme',t==='light'||t==='dark'?t:'system')}catch(e){}${PHASE_SCRIPT}`
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (

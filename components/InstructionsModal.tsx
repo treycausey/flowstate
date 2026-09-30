@@ -56,6 +56,7 @@ export default function InstructionsModal({ open, onClose, onStartTimer }: Props
   return createPortal(
     <div
       className="modal-overlay"
+      data-tank-ignore
       onClick={(e) => {
         // Click outside dialog closes
         if (e.target === e.currentTarget) onClose()
