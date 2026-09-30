@@ -1,12 +1,17 @@
 import 'fake-indexeddb/auto'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { TankProvider } from '@/components/TankProvider'
 import ReportClient from '@/components/ReportClient'
-import { addReading, ensureSeed } from '@/lib/idb'
+import { addReading, createTank, ensureSeed, listReadingsByTank } from '@/lib/idb'
 
 jest.mock('next/navigation', () => ({
   useSearchParams: () => new URLSearchParams(),
 }))
+
+jest.mock('@/lib/idb', () => {
+  const actual = jest.requireActual('@/lib/idb')
+  return { ...actual, listReadingsByTank: jest.fn(actual.listReadingsByTank) }
+})
 
 describe('ReportClient summary', () => {
   it('shows out-of-range and tested counts per metric', async () => {
@@ -33,5 +38,46 @@ describe('ReportClient summary', () => {
     expect(cells(/nitrite/i)).toEqual(['1', '2'])
     expect(cells(/nitrate/i)).toEqual(['1', '1'])
     expect(cells(/^pH/)).toEqual(['0', '0'])
+  })
+
+  it('does not show the previous tank readings when the next tank fails to load', async () => {
+    const tankA = await createTank('First tank')
+    const tankB = await createTank('Second tank')
+    localStorage.setItem('activeTankId', tankA.id)
+    await addReading({
+      tankId: tankA.id,
+      ts: new Date(Date.now() - 86_400_000).toISOString(),
+      pH: 7,
+      ammonia: null,
+      nitrite: null,
+      nitrate: null,
+    })
+    const head = () => document.querySelector('.report-head') as HTMLElement
+    const real = jest.requireActual('@/lib/idb').listReadingsByTank
+    jest
+      .mocked(listReadingsByTank)
+      .mockImplementation((id: string) =>
+        id === tankB.id ? Promise.reject(new Error('boom')) : real(id),
+      )
+    const errSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
+    render(
+      <TankProvider>
+        <ReportClient />
+      </TankProvider>,
+    )
+    await waitFor(() => expect(head()).toHaveTextContent(/· 1 reading ·/))
+    fireEvent.change(await screen.findByRole('combobox', { name: /tank/i }), {
+      target: { value: tankB.id },
+    })
+    expect(await screen.findByRole('alert')).toHaveTextContent(/Couldn.t load readings/)
+    expect(head()).toHaveTextContent(/· 0 readings ·/)
+    // A later successful load clears the failure
+    jest.mocked(listReadingsByTank).mockImplementation(real)
+    fireEvent.change(screen.getByRole('combobox', { name: /tank/i }), {
+      target: { value: tankA.id },
+    })
+    await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument())
+    await waitFor(() => expect(head()).toHaveTextContent(/· 1 reading ·/))
+    errSpy.mockRestore()
   })
 })

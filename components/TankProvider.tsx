@@ -3,6 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import { ensureSeed, listTanks } from '@/lib/idb'
 import type { Tank } from '@/lib/models'
+import { errorText } from '@/lib/errors'
 
 type Ctx = {
   /** All tanks, including archived ones */
@@ -12,6 +13,8 @@ type Ctx = {
   activeTankId: string | null
   activeTank: Tank | null
   loaded: boolean
+  /** Readable reason the tanks could not load (for example another tab blocks an upgrade) */
+  loadError: string | null
   setActiveTankId: (id: string) => void
   refresh: () => Promise<void>
 }
@@ -48,9 +51,11 @@ export function TankProvider({ children }: { children: React.ReactNode }) {
   // Lazy init is hydration-safe: nothing tank-specific renders until tanks load on the client
   const [selectedId, setSelectedId] = useState<string | null>(readSaved)
   const [loaded, setLoaded] = useState(false)
+  const [loadError, setLoadError] = useState<string | null>(null)
 
   const refresh = useCallback(async () => {
     setTanks(await loadTanks())
+    setLoadError(null)
     setLoaded(true)
   }, [])
 
@@ -58,8 +63,11 @@ export function TankProvider({ children }: { children: React.ReactNode }) {
     let cancelled = false
     loadTanks()
       .then((all) => !cancelled && setTanks(all))
-      .catch(() => {
-        // storage unavailable: render the empty state rather than spinning forever
+      .catch((err) => {
+        // Storage unavailable, blocked by another tab or newer than this code: say why rather
+        // than spinning forever or showing a misleading empty state
+        console.error('Failed to load tanks', err)
+        if (!cancelled) setLoadError(errorText(err))
       })
       .finally(() => !cancelled && setLoaded(true))
     return () => {
@@ -88,10 +96,11 @@ export function TankProvider({ children }: { children: React.ReactNode }) {
       activeTankId,
       activeTank,
       loaded,
+      loadError,
       setActiveTankId,
       refresh,
     }),
-    [tanks, activeTanks, activeTankId, activeTank, loaded, setActiveTankId, refresh],
+    [tanks, activeTanks, activeTankId, activeTank, loaded, loadError, setActiveTankId, refresh],
   )
 
   return <TankContext.Provider value={value}>{children}</TankContext.Provider>

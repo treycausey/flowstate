@@ -1,4 +1,4 @@
-import type { Dump, Reading, Settings, Tank } from './models'
+import type { Dump, Plant, PlantCheck, Reading, Settings, Tank } from './models'
 import * as idb from './idb-browser'
 import * as sqlite from './sqlite'
 import { isTauri } from './tauri'
@@ -78,6 +78,49 @@ export async function listReadingsWithinHour(
   const end = new Date(center + 30 * 60 * 1000).toISOString()
   const rows = await listReadingsByTankInRange(tankId, start, end)
   return excludeId ? rows.filter((r) => r.id !== excludeId) : rows
+}
+
+// Plants. Timestamps are normalized to UTC like readings. Archiving a tank keeps its plants,
+// exactly as it keeps its readings.
+export function addPlant(input: Omit<Plant, 'id'> & { id?: string }): Promise<Plant> {
+  return api().addPlant({
+    ...input,
+    name: input.name.trim(),
+    plantedAt: toStorageTs(input.plantedAt),
+    removedAt: input.removedAt ? toStorageTs(input.removedAt) : null,
+  })
+}
+
+export function updatePlant(plant: Plant): Promise<void> {
+  return api().updatePlant({
+    ...plant,
+    name: plant.name.trim(),
+    plantedAt: toStorageTs(plant.plantedAt),
+    removedAt: plant.removedAt ? toStorageTs(plant.removedAt) : null,
+  })
+}
+
+/** Permanently deletes the plant and its health checks. */
+export function deletePlant(id: string): Promise<void> {
+  return api().deletePlant(id)
+}
+
+/** Every plant of a tank, removed ones included, oldest planted first. */
+export async function listPlantsByTank(tankId: string): Promise<Plant[]> {
+  return (await api().listPlantsByTank(tankId))
+    .slice()
+    .sort((a, b) => a.plantedAt.localeCompare(b.plantedAt))
+}
+
+export function addPlantCheck(
+  input: Omit<PlantCheck, 'id'> & { id?: string },
+): Promise<PlantCheck> {
+  return api().addPlantCheck({ ...input, ts: toStorageTs(input.ts) })
+}
+
+/** All plant checks of a tank, oldest first. */
+export async function listPlantChecksByTank(tankId: string): Promise<PlantCheck[]> {
+  return (await api().listPlantChecksByTank(tankId)).slice().sort(compareTs)
 }
 
 // Settings

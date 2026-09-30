@@ -43,6 +43,7 @@ Local-first app to log freshwater aquarium chemistry and visualize trends with m
   notifications (shown when a test comes due while the app is open)
 - Edit (including date/time) and delete readings, backdating, duplicate guard within 1 hour
 - CSV export (report range or all readings), printable 30/90‑day report with charts, JSON backup/restore
+- **Plants**: learn about plants, add them to a tank, and keep a health history (see below)
 
 ## Project Structure (selected)
 
@@ -50,12 +51,14 @@ Local-first app to log freshwater aquarium chemistry and visualize trends with m
   - `page.tsx` — log page: tank switcher, Quick Entry, recent readings, reminders
   - `tanks/page.tsx` — charts + full reading list (optional `tankId` query selects the tank)
   - `tanks/report/page.tsx` — printable report with charts and CSV export (optional `tankId` query)
+  - `plants/page.tsx` — Plants tab: my plants, plant pages, Learn (the view lives in the query string)
   - `settings/page.tsx` — storage info and JSON backup/restore
 - `components/`
   - `TankProvider.tsx` (loads tanks, seeds the first tank, tracks the active one), `NavBar.tsx`
   - `TankSwitcher.tsx`, `TankFromQuery.tsx`, `QuickEntry.tsx`, `ReadingList.tsx`
   - `ReminderControls.tsx`, `NotificationsToggle.tsx`
   - `charts/MetricChart.tsx`, `charts/SmallMultiples.tsx`, `charts/TankSeries.tsx`
+  - `plants/*` — Plants tab (`PlantsClient.tsx`), picker, health check dialog, care card, status line
 - `lib/`
   - `models.ts` — types, constants (kit steps, optimal ranges)
   - `idb.ts` — unified storage entrypoint; routes to SQLite when running under Tauri, otherwise
@@ -68,6 +71,9 @@ Local-first app to log freshwater aquarium chemistry and visualize trends with m
   - `time.ts`, `format.ts`, `notify.ts`
   - `reminders.ts` — in‑app scheduling (due, snooze, skip)
   - `export.ts` — CSV generation
+  - `plants/catalog.ts` — the built-in 24-species catalog; `plants/health.ts` — symptoms,
+    `diagnose`, `tankPlantHealth`; `plants/vitality.ts` — `plantVitalityForTank` and
+    `usePlantVitality` for the living tank
 - `public/manifest.webmanifest`, `public/service-worker.js`, `public/icons/*`
 - `styles/print.css`, `app/globals.css`
 
@@ -99,11 +105,27 @@ There are easter eggs. Spoilers below.
 
 </details>
 
+## Plants
+
+The **Plants** tab (between Charts and Report) helps you learn about, plant and look after the plants in a tank.
+
+- **My plants**: the tank's plants grouped by placement (foreground, midground, background, floating, epiphyte), each with its latest health and "Check due" after 14 days without a check. Removing a plant keeps it in history under "Removed" and can be undone. Deleting one for good is only in Edit and asks first.
+- **Add plant**: search the catalog (filters: easy only, low light, betta-friendly, placement), tap a plant, and save. Placement and planting date are prefilled. A custom plant needs only a name and a placement.
+- **Check health**: pick how the plant looks, optionally add symptoms, what you did and a note. If you picked symptoms, a short list of likely causes appears with a gentle suggestion, and links the water-related ones to your latest test ("Nitrate tested 0 ppm on Sep 29").
+- **Learn**: the whole catalog, a care page per plant (light, CO₂, growth, pH, temperature, height, planting, care, propagation, betta-tank fit, common problems) and a short "Plant basics" primer.
+- The Log screen's status shows a one-line plants summary that links to the tab, and the printable report lists the plants with their latest health.
+- Plant photos, if present, are `public/plants/<id>.webp` (ids are in `lib/plants/catalog.ts`). The page reads that folder at build time, so a missing photo shows a small drawing instead of a broken image.
+
+The guidance is general hobby knowledge phrased as "often" and "likely". It is not a diagnosis and **not a dosing tool**: Flowstate never gives or tracks fertiliser amounts.
+
 ## Data Schema (v1)
 
 - Tank: `{ id, name, createdAt, archivedAt?, reminderCadence }`
 - Reading: `{ id, tankId, ts, pH, ammonia, nitrite, nitrate, note? }` (each metric is `number | null`; `null` = not tested, at least one is non-null)
+- Plant: `{ id, tankId, speciesId | null, name, placement, plantedAt, removedAt?, note? }` (`speciesId` is a catalog id, null for a custom plant; `removedAt` set = removed, not deleted)
+- PlantCheck: `{ id, plantId, tankId, ts, health, symptoms[], action?, note? }` (`health` is thriving, ok, struggling, melting or dead)
 - Settings (global): `{ units?, theme?, chartOptions? }`
+- Storage versions: IndexedDB is version 2 (adds the `plants` and `plantChecks` stores; an upgrade keeps all data). The desktop SQLite schema is `user_version` 3 (adds `plants` and `plant_checks`). JSON backups include `plants` and `plantChecks`; older backups without them still import.
 
 Conventions
 
@@ -165,7 +187,8 @@ Schema migration
 
 - The desktop database tracks its schema in `PRAGMA user_version`. On launch, a database from
   before partial readings (version 0) is rebuilt in one transaction so the metric columns accept
-  `NULL`; every existing row is kept unchanged. New databases start at the current version. DB code
+  `NULL`; every existing row is kept unchanged. Version 3 adds the plant tables and touches no
+  existing rows. New databases start at the current version. DB code
   lives in `src-tauri/src/db.rs` (with unit tests: `cargo test` in `src-tauri`).
 
 Migration from PWA

@@ -1,9 +1,21 @@
-import { type Reading, type Settings, type Tank, type Dump } from './models'
+import {
+  type Dump,
+  type Plant,
+  type PlantCheck,
+  type Reading,
+  type Settings,
+  type Tank,
+} from './models'
+import { storageError } from './errors'
 
 const DB_NAME = 'aquarium'
-const DB_VERSION = 1
+/**
+ * 1: tanks, readings, settings.
+ * 2: plants and plantChecks. Upgrading only adds stores, so existing data is untouched.
+ */
+const DB_VERSION = 2
 
-type Stores = 'tanks' | 'readings' | 'settings'
+type Stores = 'tanks' | 'readings' | 'settings' | 'plants' | 'plantChecks'
 
 function uuid() {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID()
@@ -26,6 +38,11 @@ function openDB(): Promise<IDBDatabase> {
 
 function openFresh(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
+    let failed = false
+    const fail = (err: Error) => {
+      failed = true
+      reject(err)
+    }
     const req = indexedDB.open(DB_NAME, DB_VERSION)
     req.onupgradeneeded = () => {
       const db = req.result
@@ -40,9 +57,20 @@ function openFresh(): Promise<IDBDatabase> {
       if (!db.objectStoreNames.contains('settings')) {
         db.createObjectStore('settings', { keyPath: 'key' })
       }
+      if (!db.objectStoreNames.contains('plants')) {
+        const store = db.createObjectStore('plants', { keyPath: 'id' })
+        store.createIndex('by_tank', 'tankId', { unique: false })
+      }
+      if (!db.objectStoreNames.contains('plantChecks')) {
+        const store = db.createObjectStore('plantChecks', { keyPath: 'id' })
+        store.createIndex('by_tank', 'tankId', { unique: false })
+        store.createIndex('by_plant', 'plantId', { unique: false })
+      }
     }
     req.onsuccess = () => {
       const db = req.result
+      // The open was reported as blocked; drop this late connection so the next call retries cleanly
+      if (failed) return db.close()
       const reset = () => {
         if (dbPromise) dbPromise = null
       }
@@ -53,7 +81,15 @@ function openFresh(): Promise<IDBDatabase> {
       db.onclose = reset
       resolve(db)
     }
-    req.onerror = () => reject(req.error)
+    req.onblocked = () => fail(new Error('Flowstate is open in another tab. Close it and reload.'))
+    req.onerror = () => {
+      const err = req.error
+      if (err?.name === 'VersionError') {
+        fail(new Error('Flowstate was updated. Reload this tab.'))
+      } else {
+        fail(storageError(err))
+      }
+    }
   })
 }
 
@@ -67,7 +103,7 @@ export async function getAll<T>(store: Stores): Promise<T[]> {
     const s = tx(db, store)
     const req = s.getAll()
     req.onsuccess = () => resolve(req.result as T[])
-    req.onerror = () => reject(req.error)
+    req.onerror = () => reject(storageError(req.error))
   })
 }
 
@@ -92,7 +128,7 @@ export async function createTank(
     const s = tx(db, 'tanks', 'readwrite')
     const req = s.add(tank)
     req.onsuccess = () => resolve()
-    req.onerror = () => reject(req.error)
+    req.onerror = () => reject(storageError(req.error))
   })
   return tank
 }
@@ -108,9 +144,9 @@ export async function renameTank(id: string, name: string): Promise<void> {
       tank.name = name
       const putReq = s.put(tank)
       putReq.onsuccess = () => resolve()
-      putReq.onerror = () => reject(putReq.error)
+      putReq.onerror = () => reject(storageError(putReq.error))
     }
-    getReq.onerror = () => reject(getReq.error)
+    getReq.onerror = () => reject(storageError(getReq.error))
   })
 }
 
@@ -125,9 +161,9 @@ export async function archiveTank(id: string): Promise<void> {
       tank.archivedAt = new Date().toISOString()
       const putReq = s.put(tank)
       putReq.onsuccess = () => resolve()
-      putReq.onerror = () => reject(putReq.error)
+      putReq.onerror = () => reject(storageError(putReq.error))
     }
-    getReq.onerror = () => reject(getReq.error)
+    getReq.onerror = () => reject(storageError(getReq.error))
   })
 }
 
@@ -142,9 +178,9 @@ export async function setTankReminderCadence(id: string, days: number | null): P
       tank.reminderCadence = days
       const putReq = s.put(tank)
       putReq.onsuccess = () => resolve()
-      putReq.onerror = () => reject(putReq.error)
+      putReq.onerror = () => reject(storageError(putReq.error))
     }
-    getReq.onerror = () => reject(getReq.error)
+    getReq.onerror = () => reject(storageError(getReq.error))
   })
 }
 
@@ -156,7 +192,7 @@ export async function addReading(input: Omit<Reading, 'id'> & { id?: string }): 
     const s = tx(db, 'readings', 'readwrite')
     const req = s.add(reading)
     req.onsuccess = () => resolve()
-    req.onerror = () => reject(req.error)
+    req.onerror = () => reject(storageError(req.error))
   })
   return reading
 }
@@ -167,7 +203,7 @@ export async function updateReading(reading: Reading): Promise<void> {
     const s = tx(db, 'readings', 'readwrite')
     const req = s.put(reading)
     req.onsuccess = () => resolve()
-    req.onerror = () => reject(req.error)
+    req.onerror = () => reject(storageError(req.error))
   })
 }
 
@@ -177,7 +213,7 @@ export async function deleteReading(id: string): Promise<void> {
     const s = tx(db, 'readings', 'readwrite')
     const req = s.delete(id)
     req.onsuccess = () => resolve()
-    req.onerror = () => reject(req.error)
+    req.onerror = () => reject(storageError(req.error))
   })
 }
 
@@ -189,7 +225,7 @@ export async function listReadingsByTank(tankId: string): Promise<Reading[]> {
     const req = idx.getAll(IDBKeyRange.only(tankId))
     req.onsuccess = () =>
       resolve((req.result as Reading[]).sort((a, b) => a.ts.localeCompare(b.ts)))
-    req.onerror = () => reject(req.error)
+    req.onerror = () => reject(storageError(req.error))
   })
 }
 
@@ -205,7 +241,7 @@ export async function listReadingsByTankInRange(
     const range = IDBKeyRange.bound([tankId, fromISO], [tankId, toISO])
     const req = idx.getAll(range)
     req.onsuccess = () => resolve(req.result as Reading[])
-    req.onerror = () => reject(req.error)
+    req.onerror = () => reject(storageError(req.error))
   })
 }
 
@@ -228,7 +264,7 @@ export async function getSettings(): Promise<Settings | undefined> {
     const s = tx(db, 'settings')
     const req = s.get('global')
     req.onsuccess = () => resolve(req.result?.value as Settings | undefined)
-    req.onerror = () => reject(req.error)
+    req.onerror = () => reject(storageError(req.error))
   })
 }
 
@@ -238,8 +274,77 @@ export async function setSettings(value: Settings): Promise<void> {
     const s = tx(db, 'settings', 'readwrite')
     const req = s.put({ key: 'global', value })
     req.onsuccess = () => resolve()
-    req.onerror = () => reject(req.error)
+    req.onerror = () => reject(storageError(req.error))
   })
+}
+
+// Plants
+export async function listPlantsByTank(tankId: string): Promise<Plant[]> {
+  const db = await openDB()
+  return new Promise<Plant[]>((resolve, reject) => {
+    const req = tx(db, 'plants').index('by_tank').getAll(IDBKeyRange.only(tankId))
+    req.onsuccess = () => resolve(req.result as Plant[])
+    req.onerror = () => reject(storageError(req.error))
+  })
+}
+
+export async function addPlant(input: Omit<Plant, 'id'> & { id?: string }): Promise<Plant> {
+  const plant: Plant = { ...input, id: input.id ?? uuid() }
+  const db = await openDB()
+  await new Promise<void>((resolve, reject) => {
+    const req = tx(db, 'plants', 'readwrite').add(plant)
+    req.onsuccess = () => resolve()
+    req.onerror = () => reject(storageError(req.error))
+  })
+  return plant
+}
+
+export async function updatePlant(plant: Plant): Promise<void> {
+  const db = await openDB()
+  await new Promise<void>((resolve, reject) => {
+    const req = tx(db, 'plants', 'readwrite').put(plant)
+    req.onsuccess = () => resolve()
+    req.onerror = () => reject(storageError(req.error))
+  })
+}
+
+/** Deletes the plant and its checks in one transaction. */
+export async function deletePlant(id: string): Promise<void> {
+  const db = await openDB()
+  await new Promise<void>((resolve, reject) => {
+    const t = db.transaction(['plants', 'plantChecks'], 'readwrite')
+    t.oncomplete = () => resolve()
+    t.onerror = (e) => reject(storageError((e.target as IDBRequest | null)?.error, t.error))
+    t.onabort = () => reject(storageError(t.error, 'Delete aborted'))
+    const checks = t.objectStore('plantChecks')
+    const keys = checks.index('by_plant').getAllKeys(IDBKeyRange.only(id))
+    keys.onsuccess = () => {
+      for (const key of keys.result) checks.delete(key)
+      t.objectStore('plants').delete(id)
+    }
+  })
+}
+
+export async function listPlantChecksByTank(tankId: string): Promise<PlantCheck[]> {
+  const db = await openDB()
+  return new Promise<PlantCheck[]>((resolve, reject) => {
+    const req = tx(db, 'plantChecks').index('by_tank').getAll(IDBKeyRange.only(tankId))
+    req.onsuccess = () => resolve(req.result as PlantCheck[])
+    req.onerror = () => reject(storageError(req.error))
+  })
+}
+
+export async function addPlantCheck(
+  input: Omit<PlantCheck, 'id'> & { id?: string },
+): Promise<PlantCheck> {
+  const check: PlantCheck = { ...input, id: input.id ?? uuid() }
+  const db = await openDB()
+  await new Promise<void>((resolve, reject) => {
+    const req = tx(db, 'plantChecks', 'readwrite').add(check)
+    req.onsuccess = () => resolve()
+    req.onerror = () => reject(storageError(req.error))
+  })
+  return check
 }
 
 // Seed/init: create first tank if none exists
@@ -250,26 +355,35 @@ export async function ensureSeed(): Promise<Tank> {
 }
 
 export async function exportDump(): Promise<Dump> {
-  const [tanks, readings, settings] = await Promise.all([
+  const [tanks, readings, plants, plantChecks, settings] = await Promise.all([
     getAll<Tank>('tanks'),
     getAll<Reading>('readings'),
+    getAll<Plant>('plants'),
+    getAll<PlantCheck>('plantChecks'),
     getSettings(),
   ])
-  return { tanks, readings, settings }
+  return { tanks, readings, plants, plantChecks, settings }
 }
 
 export async function importDump(dump: Dump): Promise<void> {
   const db = await openDB()
   await new Promise<void>((resolve, reject) => {
-    const tx = db.transaction(['tanks', 'readings', 'settings'], 'readwrite')
+    const tx = db.transaction(
+      ['tanks', 'readings', 'plants', 'plantChecks', 'settings'],
+      'readwrite',
+    )
     tx.oncomplete = () => resolve()
-    tx.onerror = () => reject(tx.error)
-    tx.onabort = () => reject(tx.error ?? new Error('Import aborted'))
+    tx.onerror = (e) => reject(storageError((e.target as IDBRequest | null)?.error, tx.error))
+    tx.onabort = () => reject(storageError(tx.error, 'Import aborted'))
     // Queue every write synchronously so the transaction cannot auto-commit mid-import
     const tanks = tx.objectStore('tanks')
     const readings = tx.objectStore('readings')
     for (const t of dump.tanks) tanks.put(t)
     for (const r of dump.readings) readings.put(r)
+    const plants = tx.objectStore('plants')
+    const plantChecks = tx.objectStore('plantChecks')
+    for (const p of dump.plants ?? []) plants.put(p)
+    for (const c of dump.plantChecks ?? []) plantChecks.put(c)
     if (dump.settings) tx.objectStore('settings').put({ key: 'global', value: dump.settings })
   })
 }

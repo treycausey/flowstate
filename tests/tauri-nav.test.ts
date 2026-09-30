@@ -6,6 +6,10 @@ describe('mapNavToPath', () => {
     expect(mapNavToPath('/', 'abc')).toBe('/')
   })
 
+  test('plants maps to /plants', () => {
+    expect(mapNavToPath('plants', 'abc')).toBe('/plants')
+  })
+
   test('settings maps to /settings', () => {
     expect(mapNavToPath('settings', 'abc')).toBe('/settings')
   })

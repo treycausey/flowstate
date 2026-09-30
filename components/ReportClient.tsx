@@ -7,9 +7,12 @@ import { filterReadingsByDays, summarizeOutOfRange, summarizeTested } from '@/li
 import { readingsToSeries } from '@/lib/series'
 import { METRICS, METRIC_LABEL, type Reading } from '@/lib/models'
 import { formatLocal } from '@/lib/time'
+import { errorText } from '@/lib/errors'
 import { useTanks } from '@/components/TankProvider'
 import TankFromQuery from '@/components/TankFromQuery'
 import SmallMultiples from '@/components/charts/SmallMultiples'
+import PlantsReportSection from '@/components/plants/PlantsReportSection'
+import { usePlants } from '@/lib/plants/usePlants'
 
 type Range = '30' | '90' | 'all'
 const RANGE_LABEL: Record<Range, string> = {
@@ -21,15 +24,41 @@ const dateOnly = { dateStyle: 'medium' } as const
 
 export default function ReportClient() {
   const { activeTank, activeTanks, setActiveTankId, loaded } = useTanks()
-  const [readings, setReadings] = useState<Reading[]>([])
+  // Keyed by tank, so a tank switch (or a failed load) never shows the previous tank's rows
+  const [loadedReadings, setLoadedReadings] = useState<{
+    tankId: string
+    readings: Reading[]
+  } | null>(null)
+  const readings = useMemo(
+    () =>
+      loadedReadings && loadedReadings.tankId === activeTank?.id ? loadedReadings.readings : [],
+    [loadedReadings, activeTank?.id],
+  )
   const [range, setRange] = useState<Range>('30')
   // Fixed at mount so the report window doesn't drift between renders
   const [now] = useState(() => new Date())
+  const { plants, checks, failed: plantsFailed } = usePlants(activeTank?.id ?? null)
+  // Keyed by tank so switching tanks drops an old error without resetting state in the effect
+  const [readingsFailure, setReadingsFailure] = useState<{ tankId: string; text: string } | null>(
+    null,
+  )
+  const readingsError =
+    readingsFailure && readingsFailure.tankId === activeTank?.id ? readingsFailure.text : null
 
   useEffect(() => {
     if (!activeTank) return
     let mounted = true
-    listReadingsByTank(activeTank.id).then((rs) => mounted && setReadings(rs))
+    const tankId = activeTank.id
+    listReadingsByTank(tankId)
+      .then((rs) => {
+        if (!mounted) return
+        setLoadedReadings({ tankId, readings: rs })
+        setReadingsFailure(null)
+      })
+      .catch((err) => {
+        console.error('Failed to load readings', err)
+        if (mounted) setReadingsFailure({ tankId, text: errorText(err) })
+      })
     return () => {
       mounted = false
     }
@@ -120,6 +149,12 @@ export default function ReportClient() {
         </p>
       </header>
 
+      {readingsError && (
+        <p role="alert" className="danger">
+          Couldn&apos;t load readings: {readingsError}
+        </p>
+      )}
+
       <section aria-labelledby="summary-heading">
         <h2 id="summary-heading" className="section-title">
           Out-of-range summary
@@ -162,6 +197,13 @@ export default function ReportClient() {
           <SmallMultiples series={series} xDomain={xDomain} chartHeight={110} />
         )}
       </section>
+
+      {plantsFailed && (
+        <p role="alert" className="danger">
+          Couldn&apos;t load plants.
+        </p>
+      )}
+      {plants && checks && <PlantsReportSection plants={plants} checks={checks} />}
     </>
   )
 }
