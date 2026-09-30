@@ -271,7 +271,7 @@ export class CorySim implements Group {
       switch (c.mode) {
         case 'pause': {
           // Snout down, working the substrate.
-          pitchTarget = -0.32
+          pitchTarget = -0.15
           wiggleTarget = 1
           if (c.timer >= c.dur) {
             c.timer = 0
@@ -284,7 +284,7 @@ export class CorySim implements Group {
           const k = smooth(c.timer / c.dur)
           c.x = lerp(c.sx, c.tx, k)
           c.y = lerp(c.sy, c.ty, k)
-          pitchTarget = -0.1
+          pitchTarget = -0.05
           if (c.mode === 'food' && c.food) {
             // The pellet may have been eaten or faded meanwhile.
             if (!this.pellets.pellets.includes(c.food)) {
@@ -424,7 +424,7 @@ export class CorySim implements Group {
         heading: c.heading,
         facing: c.facing,
         turnProgress: c.turnT >= 0 ? clamp(c.turnT / CORY_TURN_SECONDS, 0, 1) : 0,
-        pitch: c.pitch + Math.sin(c.tailPhase * 0.9) * 0.05 * c.wiggle,
+        pitch: c.pitch + Math.sin(c.tailPhase * 0.9) * 0.03 * c.wiggle,
         speed: c.speed,
         tailPhase: c.tailPhase,
         pecPhase: c.pecPhase,

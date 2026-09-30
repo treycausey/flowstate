@@ -117,6 +117,7 @@ export class SchoolSim implements Group {
     this.visible = count
     this.wanted = count
     const n = count
+    const tiny = profile.lengthCm < 2.2
     for (let i = 0; i < n; i++) {
       const a = i * 2.39996 + this.rng() * 0.5
       const r = Math.sqrt((i + 0.5) / n)
@@ -129,8 +130,9 @@ export class SchoolSim implements Group {
         zBase: this.rng() * 2 - 1,
         speedK: 0.92 + this.rng() * 0.16,
         fit: 0.9 + this.rng() * 0.2,
-        rj: 0.55 + this.rng() * 0.6,
-        aj: (this.rng() - 0.5) * 1.2,
+        // Tiny fish in big groups need a looser, more uneven packing to avoid a lattice look.
+        rj: tiny ? 0.4 + this.rng() * 0.85 : 0.55 + this.rng() * 0.6,
+        aj: (this.rng() - 0.5) * (tiny ? 2.4 : 1.2),
         tiltBias: (this.rng() - 0.5) * 0.3,
         tailK: 0.85 + this.rng() * 0.3,
         x: 0,

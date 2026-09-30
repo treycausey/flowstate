@@ -60,6 +60,11 @@ export const NODES: readonly AnchorNode[] = [
   { u: 0.02, v: 0.7, kind: 'glass' },
 ]
 
+/** Snails rest on the carpet and on top edges (rock tops, the driftwood), never on steep faces. */
+export const SNAIL_NODES: ReadonlySet<number> = new Set([
+  0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 20, 21, 22, 23,
+])
+
 export const EDGES: ReadonlyArray<readonly [number, number]> = [
   [0, 1],
   [1, 2],
@@ -191,6 +196,7 @@ export class CrawlerSim implements Group {
   }
 
   private allowed(n: number) {
+    if (this.profile.kind === 'snail' && !SNAIL_NODES.has(n)) return false
     return !this.blocked[n] && this.allowedKinds.has(NODES[n].kind)
   }
 
@@ -499,7 +505,13 @@ export class CrawlerSim implements Group {
         species: this.profile.id,
         x: w.x,
         // The feet touch the surface: the body sits above the anchor point.
-        y: w.y - 0.2 * this.profile.ratio * this.bl * scale * this.world.aspect,
+        y:
+          w.y -
+          (this.profile.kind === 'snail' ? 0.3 : 0.2) *
+            this.profile.ratio *
+            this.bl *
+            scale *
+            this.world.aspect,
         z: 0.5,
         scale,
         fit: 1,

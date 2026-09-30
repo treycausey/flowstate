@@ -40,7 +40,7 @@ export function makeWorld(d: Def): World {
     fishWidth: d.fw,
     exclusion: ex,
     free: largestFreeRect(ex),
-    floorY: Math.min(0.93, map(0.5, 0.92)[1]),
+    floorY: Math.min(0.94, Math.max(0.7, map(0.5, 0.78)[1])),
     plateToView: map,
   }
 }

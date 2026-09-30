@@ -69,7 +69,7 @@ function speciesOf(stock: readonly StockEntry[]) {
 
 /** Normalised y of the substrate line: the carpet along the front of the plate. */
 function floorFor(r: { plateToView(u: number, v: number): [number, number] }) {
-  return Math.min(0.94, Math.max(0.8, r.plateToView(0.5, 0.84)[1]))
+  return Math.min(0.94, Math.max(0.7, r.plateToView(0.5, 0.78)[1]))
 }
 
 function webgl2Available() {

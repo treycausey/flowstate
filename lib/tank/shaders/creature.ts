@@ -122,9 +122,9 @@ vec4 fishAt(vec2 uv, float bias) {
 // The edge is never crisper than the photograph behind it: a few taps about a pixel wide
 // (wider when out of focus or softened) feather the alpha.
 vec4 softFish(vec2 uv) {
-  float k = 1.25 + 0.9 * u_bias + 0.7 * u_soft;
+  float k = 1.25 + 0.9 * u_bias + 0.4 * u_soft;
   vec2 o = u_pxLocal * k;
-  float b = u_bias + 0.6 * u_soft;
+  float b = u_bias + 0.3 * u_soft;
   return 0.36 * fishAt(uv, b)
        + 0.16 * (fishAt(uv + vec2(o.x, o.y), b) + fishAt(uv + vec2(-o.x, o.y), b)
                + fishAt(uv + vec2(o.x, -o.y), b) + fishAt(uv + vec2(-o.x, -o.y), b));
@@ -152,7 +152,7 @@ void main() {
   // Night: pale bodies go dim blue-grey; saturated stripes keep a faint glint, nothing glows.
   float nlum = dot(rgb, vec3(0.299, 0.587, 0.114));
   rgb = mix(rgb, vec3(nlum), 0.35 * u_darkness);
-  rgb *= 1.0 - 0.5 * u_darkness;
+  rgb *= 1.0 - 0.4 * u_darkness;
   rgb *= 1.0 + 0.45 * u_darkness * smoothstep(0.3, 0.65, sat0);
   // Water in front: some of the surrounding colour scatters into the animal.
   rgb = mix(rgb, v_ambient * u_tint * u_exposure * 1.25, u_scatter + 0.16 * u_far);
