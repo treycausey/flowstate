@@ -64,7 +64,11 @@ vec3 patch_over(vec3 col, sampler2D t, int k, vec2 uv, float lod) {
   float a = u_pa[k];
   if (a <= 0.001) return col;
   vec4 r = u_prect[k];
-  vec2 q = (uv - u_pshift[k] - r.xy) / (r.zw - r.xy);
+  vec2 span = r.zw - r.xy;
+  vec2 q = (uv - u_pshift[k] - r.xy) / span;
+  // The bob can slide the patch down off its own top edge; rows still inside the unshifted rectangle
+  // repeat the patch's top row, so no strip of plain plate shows above it.
+  if (q.y < 0.0 && (uv.y - r.y) / span.y >= 0.0) q.y = 0.0;
   if (q.x < 0.0 || q.x > 1.0 || q.y < 0.0 || q.y > 1.0) return col;
   vec4 s = textureLod(t, q, lod);
   return col * (1.0 - s.a * a) + s.rgb * a;
@@ -106,7 +110,9 @@ void main() {
   vec2 lo = vec2(0.5 * u_aspect, 0.5) - normalize(u_sunDir) * 1.15;
   float lightCone = 1.0 - smoothstep(0.8, 2.7, length(sp - lo));
   // Blur the composite (patches included), so a painted-in algae plate does not read as fine detail.
-  float lumBlur = dot(plate_side(u_plateA, 0, uv, 3.5), vec3(0.299, 0.587, 0.114));
+  vec3 colBlur = plate_side(u_plateA, 0, uv, 3.5);
+  if (u_hasB > 0.5) colBlur = mix(colBlur, plate_side(u_plateB, 1, uv, 3.5), u_mix);
+  float lumBlur = dot(colBlur, vec3(0.299, 0.587, 0.114));
   float detail = smoothstep(0.015, 0.09, abs(lum - lumBlur));
   float cMask = litMask * depthFall * surfaceBoost * mix(0.16, 1.0, detail) * (0.5 + 0.5 * lightCone);
   vec3 causticLight = u_causticTint * c * u_causticGain * cMask;

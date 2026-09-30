@@ -4,95 +4,83 @@
     "phase": "night",
     "uv": [0.765625, 0.6298828125, 0.8561197916666666, 0.74560546875],
     "w": 232,
-    "h": 198,
-    "opaque": false
+    "h": 198
   },
   "patch-nest-day": {
     "prop": "nest",
     "phase": "day",
     "uv": [0.654296875, 0.0, 0.8974609375, 0.11865234375],
     "w": 622,
-    "h": 202,
-    "opaque": false
+    "h": 202
   },
   "patch-nest-dawn": {
     "prop": "nest",
     "phase": "dawn",
     "uv": [0.6201171875, 0.0, 0.9069010416666666, 0.13037109375],
     "w": 734,
-    "h": 222,
-    "opaque": false
+    "h": 222
   },
   "patch-nest-dusk": {
     "prop": "nest",
     "phase": "dusk",
     "uv": [0.626953125, 0.0, 0.87890625, 0.12548828125],
     "w": 645,
-    "h": 214,
-    "opaque": false
+    "h": 214
   },
   "patch-nest-night": {
     "prop": "nest",
     "phase": "night",
     "uv": [0.6240234375, 0.0, 0.904296875, 0.1171875],
     "w": 718,
-    "h": 200,
-    "opaque": false
+    "h": 200
   },
   "patch-leaf-day": {
     "prop": "leaf",
     "phase": "day",
     "uv": [0.3391927083333333, 0.0, 0.529296875, 0.1103515625],
     "w": 487,
-    "h": 188,
-    "opaque": false
+    "h": 188
   },
   "patch-leaf-dawn": {
     "prop": "leaf",
     "phase": "dawn",
     "uv": [0.3444010416666667, 0.0, 0.55859375, 0.12841796875],
     "w": 548,
-    "h": 219,
-    "opaque": false
+    "h": 219
   },
   "patch-leaf-dusk": {
     "prop": "leaf",
     "phase": "dusk",
     "uv": [0.3665364583333333, 0.0, 0.53515625, 0.10791015625],
     "w": 432,
-    "h": 184,
-    "opaque": false
+    "h": 184
   },
   "patch-leaf-night": {
     "prop": "leaf",
     "phase": "night",
     "uv": [0.3815104166666667, 0.0, 0.5322265625, 0.09814453125],
     "w": 386,
-    "h": 168,
-    "opaque": false
+    "h": 168
   },
   "patch-algae-day": {
     "prop": "algae",
     "phase": "day",
     "uv": [0.0, 0.0, 1.0, 1.0],
     "w": 2560,
-    "h": 1707,
-    "opaque": true
+    "h": 1707
   },
   "patch-algae-dawn": {
     "prop": "algae",
     "phase": "dawn",
     "uv": [0.0, 0.0, 1.0, 1.0],
     "w": 2560,
-    "h": 1707,
-    "opaque": true
+    "h": 1707
   },
   "patch-algae-dusk": {
     "prop": "algae",
     "phase": "dusk",
     "uv": [0.0, 0.0, 1.0, 1.0],
     "w": 2560,
-    "h": 1707,
-    "opaque": true
+    "h": 1707
   }
 }

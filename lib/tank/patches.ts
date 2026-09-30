@@ -18,7 +18,6 @@ export type PatchMeta = {
   uv: [number, number, number, number]
   w: number
   h: number
-  opaque: boolean
 }
 
 const META = patchData as unknown as Record<string, PatchMeta>

@@ -38,4 +38,11 @@ describe('largest free rectangle', () => {
     expect(ex.right).toBe(375)
     expect(ex.top).toBe(500)
   })
+
+  it('never lets the phone band shrink below 30% of the height when the sheet is scrolled up', () => {
+    const ex = exclusionFor({ left: 0, top: 100, right: 375, bottom: 900 }, 375, 812)
+    expect(ex.top).toBeCloseTo(0.3 * 812, 5)
+    const wide = exclusionFor({ left: 0, top: 50, right: 844, bottom: 390 }, 844, 390)
+    expect(wide.top).toBeCloseTo(0.3 * 390, 5)
+  })
 })

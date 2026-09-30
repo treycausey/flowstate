@@ -511,6 +511,9 @@ export class TankRenderer {
     if (!img || this.lost) return
     const t = this.upload(img)
     if (t) {
+      // A re-load (algae plate) must not leak the texture it replaces.
+      const old = this.images.get(name)
+      if (old) this.gl.deleteTexture(old.tex)
       this.images.set(name, t)
       this.onAsset()
     }

@@ -68,6 +68,19 @@ const SUBSTRATE_BAND = 0.12
 /** Largest perspective scale a wandering fish reaches (z 0.65). */
 const SCALE_WANDER_MAX = 1.12
 const MIN_FIT = 0.6
+/** Half extents of the drawn quad, in fish widths (renderer.ts: the betta mesh spans +-0.56 x +-0.46). */
+const QUAD_HALF_W = 0.56
+const QUAD_HALF_H = 0.46
+/** Time to ease the fish into new bounds after the panel or viewport changes. */
+const RECONFIGURE_SECONDS = 0.6
+/** Chase eats a pellet when the mouth is this close, in viewport widths. */
+const EAT_RADIUS = 0.024
+/** A landed pellet rests this far below the lowest mouth position, in viewport widths (< EAT_RADIUS). */
+const PELLET_FLOOR_GAP = 0.012
+/** Mouth distance ahead of the sprite centre, in fish widths at scale 1. */
+const MOUTH_REACH = 0.46
+/** Lowest depth a wandering or chasing fish drifts to (wanderDepth bottoms out at 0.25). */
+const Z_MIN = 0.25
 /** Smallest swim range worth having, in viewport widths, before the fish shrinks. */
 const MIN_RANGE_X = 0.06
 const MIN_RANGE_Y = 0.04
@@ -114,6 +127,16 @@ const DEFAULT_CONFIG: BettaConfig = {
 
 type Vec = { x: number; y: number }
 
+/** A zero-height or not-yet-measured viewport yields aspect 0, NaN or Infinity: keep the last good value. */
+function sanitizeConfig(next: BettaConfig, fallback: BettaConfig): BettaConfig {
+  const good = (v: number) => Number.isFinite(v) && v > 0
+  return {
+    ...next,
+    aspect: good(next.aspect) ? next.aspect : fallback.aspect,
+    fishWidth: good(next.fishWidth) ? next.fishWidth : fallback.fishWidth,
+  }
+}
+
 /** Swim volume derived from the config. */
 type Geometry = {
   /** Largest free rectangle (viewport minus panel, surface band and substrate), normalised. */
@@ -159,16 +182,19 @@ const fallbackGeometry = (cfg: BettaConfig): Geometry => {
   }
   const freeW = free.x1 - free.x0
   const freeH = (free.y1 - free.y0) / aspect
-  const margin = Math.max(0.06 * freeW, 0.03)
+  const marginX = Math.max(0.06 * freeW, 0.03)
+  // Vertical margin comes from the free height: a short band must not lose its whole range to it.
+  const marginY = Math.max(0.06 * freeH, 0.015)
   // Shrink the fish until it fits with room to move, but never below MIN_FIT.
-  const fitX = (freeW - 2 * margin - MIN_RANGE_X) / (fw * SCALE_WANDER_MAX)
-  const fitY = (freeH - 2 * margin - MIN_RANGE_Y) / (fw * 0.6 * SCALE_WANDER_MAX)
+  const fitX = (freeW - 2 * marginX - MIN_RANGE_X) / (2 * QUAD_HALF_W * fw * SCALE_WANDER_MAX)
+  const fitY = (freeH - 2 * marginY - MIN_RANGE_Y) / (2 * QUAD_HALF_H * fw * SCALE_WANDER_MAX)
   const fit = clamp(Math.min(fitX, fitY), MIN_FIT, 1)
-  const halfW = 0.5 * fw * SCALE_WANDER_MAX * fit
-  const halfH = 0.3 * fw * SCALE_WANDER_MAX * fit
+  const halfW = QUAD_HALF_W * fw * SCALE_WANDER_MAX * fit
+  const halfH = QUAD_HALF_H * fw * SCALE_WANDER_MAX * fit
+  // Too small even at MIN_FIT: the range collapses to its centre (the fish then only moves sideways).
   const span = (lo: number, hi: number) => (hi < lo ? [(lo + hi) / 2, (lo + hi) / 2] : [lo, hi])
-  const [x0, x1] = span(free.x0 + margin + halfW, free.x1 - margin - halfW)
-  const [y0, y1] = span(free.y0 + (margin + halfH) * aspect, free.y1 - (margin + halfH) * aspect)
+  const [x0, x1] = span(free.x0 + marginX + halfW, free.x1 - marginX - halfW)
+  const [y0, y1] = span(free.y0 + (marginY + halfH) * aspect, free.y1 - (marginY + halfH) * aspect)
   return { free, bounds: { x0, y0, x1, y1 }, fit }
 }
 
@@ -177,6 +203,10 @@ export class BettaSim {
   private geo: Geometry
   private rng: () => number
   private ctx: BettaContext = { night: false, mood: 'healthy' }
+
+  /** Bounds and fit the fish is easing away from after a reconfigure (null when settled). */
+  private easeFrom: { bounds: Rect; fit: number } | null = null
+  private easeT = 0
 
   /** Times the hard clamp had to move the fish (should stay 0 in wander). */
   clampHits = 0
@@ -233,11 +263,12 @@ export class BettaSim {
   private breathPhase = 0
   private viewerFacing = 0
   private loopT = -1
+  private loopR = 0
   private gulpT = -1
   private zTarget = 0.5
 
   constructor(seed = 1, config: Partial<BettaConfig> = {}) {
-    this.cfg = { ...DEFAULT_CONFIG, ...config }
+    this.cfg = sanitizeConfig({ ...DEFAULT_CONFIG, ...config }, DEFAULT_CONFIG)
     this.geo = fallbackGeometry(this.cfg)
     this.rng = mulberry32(seed)
     this.noiseSeed = [this.rng() * TAU, this.rng() * TAU, this.rng() * TAU, this.rng() * TAU]
@@ -253,8 +284,9 @@ export class BettaSim {
   }
 
   configure(partial: Partial<BettaConfig>) {
-    this.cfg = { ...this.cfg, ...partial }
+    this.cfg = sanitizeConfig({ ...this.cfg, ...partial }, this.cfg)
     const before = this.geo
+    const shown = { bounds: this.easedBounds(), fit: this.easedFit() }
     this.geo = fallbackGeometry(this.cfg)
     const same =
       Math.abs(before.fit - this.geo.fit) < 1e-6 &&
@@ -264,9 +296,9 @@ export class BettaSim {
           Math.abs(before.free[k as keyof Rect] - this.geo.free[k as keyof Rect]) < 1e-6,
       )
     if (same) return
-    const p = this.project(this.px, this.py)
-    this.px = p.x
-    this.py = p.y
+    // Ease into the new bounds and size over RECONFIGURE_SECONDS instead of snapping in one frame.
+    this.easeFrom = shown
+    this.easeT = 0
     this.target = this.project(this.target.x, this.target.y)
     this.wander = { ...this.wander, state: 'settle', move: null, next: null }
   }
@@ -293,8 +325,11 @@ export class BettaSim {
     // Just ahead of the fish, so the drop reads as "for the betta".
     const fallback = { x: this.px + this.heading * (reach + 0.05 + this.rng() * 0.05), y: 0.08 }
     const raw = at ?? fallback
-    const f = this.geo.free
-    const x = clamp(raw.x, f.x0 + 0.02, Math.max(f.x0 + 0.02, f.x1 - 0.02))
+    // The mouth tip only reaches [b.x0 - reach, b.x1 + reach]; a pellet outside that can never be eaten.
+    // Use the shortest reach the fish has at any depth, so the range holds whatever z it drifts to.
+    const b = this.geo.bounds
+    const minReach = this.cfg.fishWidth * MOUTH_REACH * scaleForZ(Z_MIN) * this.geo.fit
+    const x = clamp(raw.x, b.x0 - minReach + 0.005, b.x1 + minReach - 0.005)
     this.pellets.push({
       id: this.nextPelletId++,
       x,
@@ -315,6 +350,14 @@ export class BettaSim {
     this.activity()
     this.flareTimer = 2.2
     this.loopT = 0
+    // Scale the loop to the room inside the free rect: it swings +-r sideways and 2r upward.
+    const f = this.geo.free
+    const hw = QUAD_HALF_W * this.cfg.fishWidth * this.drawnScale()
+    const hh = QUAD_HALF_H * this.cfg.fishWidth * this.drawnScale()
+    const aspect = this.cfg.aspect
+    const roomSide = Math.min(this.outX - (f.x0 + hw), f.x1 - hw - this.outX)
+    const roomUp = (this.outY - f.y0) / aspect - hh
+    this.loopR = clamp(Math.min(this.cfg.fishWidth * 0.2, roomSide, roomUp / 2), 0, Infinity)
   }
 
   /** Tap somewhere else: the fish turns to look and hangs still for a moment. */
@@ -340,14 +383,38 @@ export class BettaSim {
 
   // ---- geometry ----
 
+  /** 0..1 progress of the reconfigure ease (1 when settled). */
+  private easeK() {
+    if (!this.easeFrom) return 1
+    const k = clamp(this.easeT / RECONFIGURE_SECONDS, 0, 1)
+    return k * k * (3 - 2 * k)
+  }
+
+  private easedBounds(): Rect {
+    const to = this.geo.bounds
+    const from = this.easeFrom?.bounds
+    if (!from) return to
+    const k = this.easeK()
+    return {
+      x0: lerp(from.x0, to.x0, k),
+      y0: lerp(from.y0, to.y0, k),
+      x1: lerp(from.x1, to.x1, k),
+      y1: lerp(from.y1, to.y1, k),
+    }
+  }
+
+  private easedFit() {
+    return this.easeFrom ? lerp(this.easeFrom.fit, this.geo.fit, this.easeK()) : this.geo.fit
+  }
+
   /** Drawn scale now: perspective from depth times the fit-to-space shrink. */
   private drawnScale() {
-    return scaleForZ(this.z) * this.geo.fit
+    return scaleForZ(this.z) * this.easedFit()
   }
 
   /** Mouth distance ahead of the sprite centre, viewport widths. */
   mouthOffset() {
-    return this.cfg.fishWidth * 0.46 * this.drawnScale()
+    return this.cfg.fishWidth * MOUTH_REACH * this.drawnScale()
   }
 
   /** Allowed range for the sprite centre, normalised. */
@@ -367,7 +434,7 @@ export class BettaSim {
 
   /** Clamp a centre position into the swim bounds. */
   project(x: number, y: number): Vec {
-    const b = this.geo.bounds
+    const b = this.easedBounds()
     return { x: clamp(x, b.x0, b.x1), y: clamp(y, b.y0, b.y1) }
   }
 
@@ -415,7 +482,6 @@ export class BettaSim {
     const { bounds: b } = this.geo
     const aspect = this.cfg.aspect
     const rangeX = b.x1 - b.x0
-    const rangeY = (b.y1 - b.y0) / aspect
     const inset = 0.004
     const canTurn = this.sinceTurn >= WANDER_TURN_GAP && this.turnT < 0
     const rare = this.rng() < 0.1
@@ -436,9 +502,12 @@ export class BettaSim {
       let dist = rare ? lerp(0.14, 0.18, this.rng()) : lerp(0.06, 0.18, this.rng() ** 1.4)
       dist = Math.min(dist, roomX * 0.98, rangeX)
       if (dist < 0.05) continue
-      const dyw = (this.rng() * 2 - 1) * 0.35 * dist
-      const ty = this.py + dyw * aspect
-      if (ty < b.y0 + inset * aspect || ty > b.y1 - inset * aspect) continue
+      // A collapsed vertical range (short band) still allows sideways moves: clamp, do not reject.
+      const wantDy = (this.rng() * 2 - 1) * 0.35 * dist
+      const yLo = Math.min(b.y0 + inset * aspect, (b.y0 + b.y1) / 2)
+      const yHi = Math.max(b.y1 - inset * aspect, (b.y0 + b.y1) / 2)
+      const ty = clamp(this.py + wantDy * aspect, yLo, yHi)
+      const dyw = (ty - this.py) / aspect
       const dxw = dir * Math.sqrt(Math.max(0, dist * dist - dyw * dyw))
       const tx = this.px + dxw
       if (!inCentre(tx, ty) && !towardCentre(tx, ty) && this.rng() > 0.15) continue
@@ -461,7 +530,6 @@ export class BettaSim {
         v0y: this.vy,
       }
     }
-    void rangeY
     return null
   }
 
@@ -535,6 +603,11 @@ export class BettaSim {
       if (this.gulpT >= GULP_SECONDS) this.gulpT = -1
     }
 
+    if (this.easeFrom) {
+      this.easeT += dt
+      if (this.easeT >= RECONFIGURE_SECONDS) this.easeFrom = null
+    }
+
     this.stepPellets(dt)
 
     if (
@@ -549,7 +622,7 @@ export class BettaSim {
 
     const next = this.resolveMode()
     if (next !== this.mode) {
-      // Leaving inspect only happens through the 'out' stage below.
+      // Inspect is left only from plan() (its 'out' stage sets mode back to wander), never here.
       this.mode = next
       this.enter(next)
     }
@@ -563,7 +636,8 @@ export class BettaSim {
     const b = this.geo.bounds
     for (const p of this.pellets) {
       p.age += dt
-      const floor = b.y1 + 0.02
+      // Rests within the mouth's reach of the lowest fish position (normalised y scales with aspect).
+      const floor = b.y1 + PELLET_FLOOR_GAP * this.cfg.aspect
       if (p.y < floor) {
         p.y = Math.min(floor, p.y + 0.045 * this.cfg.aspect * dt)
       } else {
@@ -582,6 +656,8 @@ export class BettaSim {
     let faceDir: 1 | -1 | null = null
     let follow = false
     let hoverV: Vec = { x: 0, y: 0 }
+    let maxVy = 0.02
+    let reverse = false
     let poseTarget = { cruise: 1, flare: 0, clamped: 0 }
     let fin = 0.75 + 0.1 * this.noise(t, 2)
     let tailScale = 1
@@ -646,15 +722,19 @@ export class BettaSim {
         const pellet = this.nearestPellet()
         if (!pellet) break
         const mouth = this.mouthOffset()
-        const face =
-          Math.abs(pellet.x - this.px) > mouth * 0.4 ? sign(pellet.x - this.px) : this.heading
+        // Positive when the pellet is ahead of the sprite centre. Only a pellet clearly behind
+        // the fish makes it turn; one just behind the mouth is reached by backing up a little.
+        const ahead = (pellet.x - this.px) * this.heading
+        const face: 1 | -1 = ahead < -mouth * 0.15 ? (-this.heading as 1 | -1) : this.heading
         goal = this.project(pellet.x - face * mouth, pellet.y)
         faceDir = face
         maxSpeed = SPEED_CHASE
         accelMax = 0.06
+        maxVy = 0.06
+        reverse = ahead > -mouth * 0.15 && ahead < mouth * 1.2
         fin = 0.65
         const tip = { x: this.px + this.heading * mouth, y: this.py }
-        if (Math.hypot(this.worldDx(tip.x, pellet.x), this.worldDy(tip.y, pellet.y)) < 0.024) {
+        if (Math.hypot(this.worldDx(tip.x, pellet.x), this.worldDy(tip.y, pellet.y)) < EAT_RADIUS) {
           this.pellets = this.pellets.filter((p) => p !== pellet)
           this.satisfiedTimer = 1.8
           this.gulpT = 0
@@ -745,6 +825,8 @@ export class BettaSim {
       goal,
       maxSpeed,
       accelMax,
+      maxVy,
+      reverse,
       faceDir,
       follow,
       hoverV,
@@ -849,8 +931,9 @@ export class BettaSim {
             dvx = (dx / dist) * desired
             dvy = (dy / dist) * desired
           }
-          if (dvx * this.heading < 0) dvx = 0
-          dvy = clamp(dvy, -0.02, 0.02)
+          // Never backwards, except a short back-up to a pellet just behind the mouth.
+          if (dvx * this.heading < 0) dvx = plan.reverse ? clamp(dvx, -0.03, 0.03) : 0
+          dvy = clamp(dvy, -plan.maxVy, plan.maxVy)
         }
         const ax = clamp((dvx - this.vx) / Math.max(dt, 1e-4), -accelMax, accelMax)
         const ay = clamp((dvy - this.vy) / Math.max(dt, 1e-4), -accelMax, accelMax)
@@ -895,7 +978,7 @@ export class BettaSim {
   /** Move the anchor; the hard clamp is a safety net and is counted when it fires. */
   private applyPosition(nx: number, ny: number) {
     const p = this.project(nx, ny)
-    if (Math.abs(p.x - nx) > 1e-9 || Math.abs(p.y - ny) > 1e-9) this.clampHits++
+    if (!this.easeFrom && (Math.abs(p.x - nx) > 1e-9 || Math.abs(p.y - ny) > 1e-9)) this.clampHits++
     if (p.x !== nx) this.vx = 0
     if (p.y !== ny) this.vy = 0
     this.px = p.x
@@ -934,7 +1017,7 @@ export class BettaSim {
     if (this.loopT >= 0) {
       const k = clamp(this.loopT / LOOP_SECONDS, 0, 1)
       const theta = Math.PI * 2 * (k * k * (3 - 2 * k))
-      const r = this.cfg.fishWidth * 0.2
+      const r = this.loopR
       loopX = this.heading * Math.sin(theta) * r
       loopY = -(1 - Math.cos(theta)) * r * this.cfg.aspect
       loopPitch = theta

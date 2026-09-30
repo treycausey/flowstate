@@ -4,7 +4,7 @@
  * - Other same-origin GETs: network-first with cache fallback. This covers the large tank plates and the
  *   lazy /tank/patch-*.webp prop patches: they are cached when first fetched, not precached.
  */
-const CACHE_NAME = 'flowstate-v3'
+const CACHE_NAME = 'flowstate-v4'
 const PAGES = ['/', '/tanks', '/tanks/report', '/settings']
 const ASSETS = [
   '/manifest.webmanifest',

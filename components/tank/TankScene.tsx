@@ -205,7 +205,7 @@ export default function TankScene({
         : null
 
     const configure = () => {
-      if (!renderer || width === 0) return
+      if (!renderer || width === 0 || height === 0) return
       const l = live.current
       const rest = renderer.plateToView(REST_PLATE[0], REST_PLATE[1])
       sim.configure({
@@ -221,7 +221,7 @@ export default function TankScene({
 
     let marked = false
     const draw = () => {
-      if (!renderer || width === 0) return
+      if (!renderer || width === 0 || height === 0) return
       const l = live.current
       const e = currentEnv(performance.now())
       renderer.setPhase(e.phase)
@@ -253,7 +253,7 @@ export default function TankScene({
 
     const runStatic = () => {
       staticFrameQueued = false
-      if (!renderer || disposed) return
+      if (!renderer || disposed || width === 0 || height === 0) return
       const l = live.current
       const target = l.freezeAt ?? 9
       // Deterministic: fresh sim stepped in fixed 1/30 s slices.
