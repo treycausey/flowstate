@@ -87,3 +87,21 @@ async function pickImport() {
   Object.defineProperty(input, 'files', { value: [file] })
   return input
 }
+
+describe('SettingsClient export', () => {
+  it('shows a readable error when reading the data fails, never "null"', async () => {
+    const { exportDump } = jest.requireMock('@/lib/idb') as { exportDump: jest.Mock }
+    exportDump.mockRejectedValueOnce(null)
+    jest.spyOn(console, 'error').mockImplementation(() => {})
+    render(<SettingsClient />)
+    fireEvent.click(await screen.findByRole('button', { name: /export backup/i }))
+    const msg = await screen.findByText(/Export failed/)
+    expect(msg).toHaveClass('danger')
+    expect(msg).toHaveTextContent(/^Export failed: Storage error\.$/)
+  })
+
+  it('says the backup includes plants', async () => {
+    render(<SettingsClient />)
+    expect(await screen.findByText(/every tank, reading, plant/)).toBeInTheDocument()
+  })
+})

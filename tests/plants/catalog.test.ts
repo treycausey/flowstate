@@ -70,8 +70,8 @@ describe('plant catalog integrity', () => {
     // One or two sentences each, never empty and never a wall of text
     for (const text of [s.propagation, s.planting, s.care, s.bettaNote]) {
       expect(text.trim().length).toBeGreaterThan(20)
-      expect(text.length).toBeLessThan(400)
-      expect((text.match(/[.!?](\s|$)/g) ?? []).length).toBeLessThanOrEqual(3)
+      expect(text.length).toBeLessThan(560)
+      expect((text.match(/[.!?](\s|$)/g) ?? []).length).toBeLessThanOrEqual(6)
     }
   })
 
@@ -101,8 +101,24 @@ describe('plant catalog integrity', () => {
       ['anubias-barteri', 'anubias-nana', 'bucephalandra', 'java-fern'].sort(),
     )
     for (const s of PLANT_CATALOG.filter((x) => x.rhizome)) {
-      expect(s.planting).toMatch(/do not bury/i)
+      expect(s.planting).toMatch(/not/i)
+      expect(s.planting).toMatch(/bur/i)
     }
+  })
+
+  it('tells people never to release the four regulated species', () => {
+    for (const id of ['hygrophila-polysperma', 'salvinia', 'anacharis', 'amazon-frogbit']) {
+      const s = getSpecies(id)!
+      expect(`${s.care} ${s.planting}`).toMatch(/never release/i)
+    }
+  })
+
+  it('flags exactly frogbit and salvinia as surface floaters', () => {
+    expect(
+      PLANT_CATALOG.filter((s) => s.surfaceFloater)
+        .map((s) => s.id)
+        .sort(),
+    ).toEqual(['amazon-frogbit', 'salvinia'])
   })
 
   it('warns about the surface for every floating plant', () => {

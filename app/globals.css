@@ -1459,6 +1459,21 @@ button.link-button {
 .plant-hero__text {
   min-width: 0;
 }
+.plant-hero--species {
+  flex-wrap: wrap;
+}
+/* Species page photo: square, rounded, sized so the text still fits beside it on wide screens */
+.plant-photo {
+  display: block;
+  flex: none;
+  width: min(100%, 13rem);
+  height: auto;
+  aspect-ratio: 1;
+  object-fit: cover;
+  background: var(--field-bg);
+  border: 1px solid var(--hairline);
+  border-radius: 16px;
+}
 .plant-hero__text p {
   margin: 0;
 }

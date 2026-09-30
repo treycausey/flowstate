@@ -131,6 +131,28 @@ describe('diagnose', () => {
     expect(run(['brown-edges'], { species: 'amazon-sword' })[0].id).toBe('brown-edges')
   })
 
+  it('does not read brown edges on submerged hornwort as wet leaves', () => {
+    expect(ids(run(['brown-edges'], { species: 'hornwort' }))).not.toContain('floating-wet')
+  })
+
+  it('branches the floating-loose advice by species', () => {
+    const fern = run(['floating-loose'], { species: 'java-fern' })[0]
+    expect(fern.title).toBe('Not attached yet')
+    expect(fern.suggestion).toMatch(/Do not push it into the substrate/)
+    const marimo = run(['floating-loose'], { species: 'marimo-moss-ball' })[0]
+    expect(marimo.title).toBe('Trapped gas')
+    expect(marimo.suggestion).toMatch(/Squeeze it gently/)
+    expect(ids(run(['floating-loose'], { species: 'amazon-frogbit' }))).not.toContain('not-rooted')
+    expect(run(['floating-loose'], { species: 'rotala-rotundifolia' })[0].title).toBe(
+      'Not anchored yet',
+    )
+  })
+
+  it('rates a buried rhizome as possible, not likely', () => {
+    const d = run(['melting'], { species: 'java-fern' }).find((x) => x.id === 'buried-rhizome')
+    expect(d?.likelihood).toBe('possible')
+  })
+
   it('puts an ammonia or nitrite reading first for damage symptoms', () => {
     const result = run(['melting', 'brown-edges'], {
       species: 'amazon-sword',

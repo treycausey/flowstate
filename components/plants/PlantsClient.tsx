@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTanks } from '@/components/TankProvider'
 import TankFromQuery from '@/components/TankFromQuery'
 import { useTankReadings } from '@/lib/useTankReadings'
@@ -66,6 +66,20 @@ export default function PlantsClient({ images = [] }: { images?: string[] }) {
     [plants, latestChecks, now],
   )
   const latestReadings = useMemo(() => latestReadingsOf(readings ?? []), [readings])
+  // After an add, move focus to the new plant's row once the list shows it (the first-add
+  // button that opened the dialog is gone by then, so focus would otherwise drop to <body>)
+  const [focusPlantId, setFocusPlantId] = useState<string | null>(null)
+  const focusedPlantId = useRef<string | null>(null)
+  useEffect(() => {
+    if (!focusPlantId || focusedPlantId.current === focusPlantId) return
+    const href = routeHref({ view: 'plant', id: focusPlantId })
+    // routeHref URI-encodes the id, so it holds no quote or backslash to escape
+    const row = document.querySelector<HTMLElement>(`a.plant-row[href="${href}"]`)
+    if (row) {
+      row.focus()
+      focusedPlantId.current = focusPlantId
+    }
+  }, [focusPlantId, plants])
 
   if (!loaded) return null
   if (!activeTank) return <p>No tanks yet.</p>
@@ -292,7 +306,11 @@ export default function PlantsClient({ images = [] }: { images?: string[] }) {
             <span className="visually-hidden">Tank</span>
             <select
               value={activeTank.id}
-              onChange={(e) => setActiveTankId(e.target.value)}
+              onChange={(e) => {
+                setActiveTankId(e.target.value)
+                // A plant page belongs to the old tank: show My plants for the new one
+                if (route.view === 'plant') go({ view: 'mine' })
+              }}
               aria-label="Tank"
             >
               {activeTanks.map((t) => (
@@ -315,6 +333,7 @@ export default function PlantsClient({ images = [] }: { images?: string[] }) {
             setAdding(null)
             setAdded(`Added ${plant.name}.`)
             if (opened) go({ view: 'plant', id: plant.id })
+            else setFocusPlantId(plant.id)
           }}
         />
       )}

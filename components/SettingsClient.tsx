@@ -5,6 +5,7 @@ import { isTauri } from '@/lib/tauri'
 import { getDbInfo, revealDb } from '@/lib/desktop'
 import { exportDump, importDump, listTanks } from '@/lib/idb'
 import { BackupFormatError } from '@/lib/backup'
+import { errorText } from '@/lib/errors'
 import { downloadText } from '@/lib/export'
 import { emitPlantsChanged, emitReadingsChanged } from '@/lib/events'
 import { useTanks } from '@/components/TankProvider'
@@ -77,7 +78,14 @@ export default function SettingsClient() {
   }
 
   const onExportJson = async () => {
-    const dump = await exportDump()
+    let dump: Awaited<ReturnType<typeof exportDump>>
+    try {
+      dump = await exportDump()
+    } catch (err) {
+      console.error('Failed to read data for export', err)
+      setMessage({ kind: 'error', text: `Export failed: ${errorText(err)}.` })
+      return
+    }
     const content = JSON.stringify(dump, null, 2)
     const date = new Date().toISOString().slice(0, 10)
     const defaultName = `flowstate-export-${date}.json`
@@ -260,8 +268,8 @@ export default function SettingsClient() {
       <section>
         <h2 className="section-title">Backup & Migrate</h2>
         <p className="muted small">
-          A JSON backup holds every tank, reading, and setting. Use it to move data between devices
-          or into the desktop app.
+          A JSON backup holds every tank, reading, plant, plant check and setting. Use it to move
+          data between devices or into the desktop app.
         </p>
         <div className="cluster">
           <button type="button" className="button" onClick={onExportJson}>

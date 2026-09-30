@@ -153,6 +153,13 @@ export function parseDump(data: unknown): Dump {
   if (orphanCheck) {
     throw new BackupFormatError(`Plant check ${orphanCheck.id} refers to an unknown plant or tank`)
   }
+  const plantTank = new Map(plants.map((p) => [p.id, p.tankId]))
+  const strayCheck = plantChecks.find((c) => plantTank.get(c.plantId) !== c.tankId)
+  if (strayCheck) {
+    throw new BackupFormatError(
+      `Plant check ${strayCheck.id} is on a different tank than its plant`,
+    )
+  }
   const dump: Dump = { tanks, readings, plants, plantChecks }
   if (isObject(data.settings)) dump.settings = data.settings as Settings
   return dump

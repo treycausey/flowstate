@@ -5,7 +5,7 @@ const BASICS: { title: string; body: string }[] = [
   },
   {
     title: 'Some plants feed through roots, some through leaves.',
-    body: 'Crypts, swords and sagittaria take nutrients from the substrate. Stems, mosses, floating plants and epiphytes take them from the water.',
+    body: 'Crypts, swords and sagittaria take nutrients from the substrate. Stem plants use both. Mosses, floating plants and epiphytes take them from the water.',
   },
   {
     title: 'Rhizome plants must not be buried.',
@@ -21,7 +21,7 @@ const BASICS: { title: string; body: string }[] = [
   },
   {
     title: 'Floating plants shade the tank, and bettas need the surface.',
-    body: 'Bettas breathe air, so keep part of the surface clear. Floating plants also like dry leaf tops, calm water and some room between the lid and the water.',
+    body: 'Bettas breathe air, so keep part of the surface clear. Floating plants also like dry leaf tops, calm water and some room between the lid and the water. Keep the lid on: bettas jump.',
   },
   {
     title: 'Let your water tests help.',

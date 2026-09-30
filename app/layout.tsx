@@ -5,6 +5,7 @@ import ServiceWorkerRegister from '@/components/ServiceWorkerRegister'
 import { TankProvider } from '@/components/TankProvider'
 import TankHost from '@/components/tank/TankHost'
 import NavBar from '@/components/NavBar'
+import StorageError from '@/components/StorageError'
 import PanelShell from '@/components/PanelShell'
 import TauriNavigationBridge from '@/components/TauriNavigationBridge'
 import { PHASE_SCRIPT } from '@/lib/tank/phaseScript'
@@ -61,6 +62,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <TankHost />
           <PanelShell>
             <NavBar />
+            <StorageError />
             {children}
           </PanelShell>
         </TankProvider>

@@ -1,6 +1,6 @@
 'use client'
 
-import { createContext, useContext } from 'react'
+import { createContext, useContext, useState } from 'react'
 import type { Placement } from '@/lib/plants/types'
 
 /** Species ids that have an image at /plants/<id>.webp. Filled by the page at build time. */
@@ -31,17 +31,61 @@ type Props = {
 /** Species photo when one ships in /plants, else a small line drawing for the placement. */
 export default function PlantThumb({ speciesId, placement, size = 'sm' }: Props) {
   const images = useContext(PlantImagesContext)
-  const hasImage = !!speciesId && images.has(speciesId)
+  // Ids whose image failed to load (missing file, offline and never cached): show the glyph instead
+  const [broken, setBroken] = useState<ReadonlySet<string>>(new Set())
+  const hasImage = !!speciesId && images.has(speciesId) && !broken.has(speciesId)
   return (
     <span className="plant-thumb" data-size={size} aria-hidden="true">
       {hasImage ? (
         // eslint-disable-next-line @next/next/no-img-element -- static export, no image optimizer
-        <img src={`/plants/${speciesId}.webp`} alt="" loading="lazy" decoding="async" />
+        <img
+          src={`/plants/${speciesId}.webp`}
+          alt=""
+          loading="lazy"
+          decoding="async"
+          onError={() => setBroken((prev) => new Set(prev).add(speciesId))}
+        />
       ) : (
         <svg viewBox="0 0 40 40" fill="none" stroke="currentColor" strokeWidth="1.6">
           <path d={GLYPH[placement]} strokeLinecap="round" strokeLinejoin="round" />
         </svg>
       )}
     </span>
+  )
+}
+
+/** Side of the square photos in public/plants, so the hero reserves its space before loading. */
+const PHOTO_PX = 720
+
+/**
+ * Large species photo for the species page, or the placement glyph when no photo ships or it
+ * fails to load. Unlike the thumbnail it is content, so its alt text names the plant.
+ */
+export function SpeciesPhoto({
+  speciesId,
+  name,
+  placement,
+}: {
+  speciesId: string
+  name: string
+  placement: Placement
+}) {
+  const images = useContext(PlantImagesContext)
+  const [broken, setBroken] = useState(false)
+  if (!images.has(speciesId) || broken) {
+    return <PlantThumb speciesId={null} placement={placement} size="lg" />
+  }
+  return (
+    // eslint-disable-next-line @next/next/no-img-element -- static export, no image optimizer
+    <img
+      className="plant-photo"
+      src={`/plants/${speciesId}.webp`}
+      alt={name}
+      width={PHOTO_PX}
+      height={PHOTO_PX}
+      loading="lazy"
+      decoding="async"
+      onError={() => setBroken(true)}
+    />
   )
 }

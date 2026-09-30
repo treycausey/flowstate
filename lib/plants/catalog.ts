@@ -35,7 +35,7 @@ export const PLANT_CATALOG: readonly PlantSpecies[] = [
     name: 'Anubias barteri',
     scientific: 'Anubias barteri var. barteri',
     aliases: ['broadleaf anubias'],
-    placement: 'background',
+    placement: 'epiphyte',
     difficulty: 'easy',
     light: 'low',
     co2: 'not needed',
@@ -45,7 +45,7 @@ export const PLANT_CATALOG: readonly PlantSpecies[] = [
     bettaFriendly: true,
     ph: [6.0, 7.5],
     tempC: [22, 28],
-    maxHeightCm: 30,
+    maxHeightCm: 45,
     propagation: 'Cut the rhizome into pieces that each keep a few leaves and some roots.',
     planting:
       'Do not bury the rhizome, the thick horizontal stem. Tie or glue it to wood or rock, or tuck the roots into the substrate with the rhizome sitting above it.',
@@ -160,7 +160,7 @@ export const PLANT_CATALOG: readonly PlantSpecies[] = [
     bettaFriendly: true,
     ph: [6.0, 7.5],
     tempC: [22, 28],
-    maxHeightCm: 10,
+    maxHeightCm: 8,
     propagation:
       'Sends out runners that grow new plants nearby. It spreads very slowly, so be patient.',
     planting:
@@ -173,8 +173,14 @@ export const PLANT_CATALOG: readonly PlantSpecies[] = [
   {
     id: 'amazon-sword',
     name: 'Amazon sword',
-    scientific: 'Echinodorus bleherae',
-    aliases: ['sword plant', 'Echinodorus amazonicus'],
+    scientific: "Echinodorus grisebachii 'Bleherae'",
+    aliases: [
+      'sword plant',
+      'Echinodorus bleherae',
+      'Echinodorus bleheri',
+      'Echinodorus amazonicus',
+      'Aquarius grisebachii',
+    ],
     placement: 'background',
     difficulty: 'easy',
     light: 'medium',
@@ -204,7 +210,7 @@ export const PLANT_CATALOG: readonly PlantSpecies[] = [
     id: 'vallisneria',
     name: 'Vallisneria',
     scientific: 'Vallisneria spiralis',
-    aliases: ['val', 'eelgrass', 'jungle val'],
+    aliases: ['val', 'eelgrass', 'Italian val', 'straight val'],
     placement: 'background',
     difficulty: 'easy',
     light: 'medium',
@@ -218,7 +224,7 @@ export const PLANT_CATALOG: readonly PlantSpecies[] = [
     propagation: 'Spreads by runners that send up new plants. Separate them once they have roots.',
     planting:
       'Push the roots into the substrate with the crown, where the leaves start, just above the surface. Burying the crown can rot the plant.',
-    care: 'Grows quickly from runners. It prefers neutral to harder water, and it may struggle in very soft, acidic water. Trim leaves that reach the surface.',
+    care: 'Grows quickly from runners. It prefers neutral to harder water, and it may struggle in very soft, acidic water. Trim leaves that reach the surface. Jungle val (Vallisneria americana) is a different, much larger species. It often melts when "liquid carbon" products are used.',
     bettaNote:
       'Soft ribbon leaves that are safe for fins and make good cover. Untrimmed leaves lie across the surface, so keep some of it clear for breathing.',
     commonProblems: ['melting', 'yellowing-old-leaves', 'brown-edges', 'stunted', 'pinholes'],
@@ -237,7 +243,7 @@ export const PLANT_CATALOG: readonly PlantSpecies[] = [
     bettaFriendly: true,
     ph: [6.0, 7.5],
     tempC: [20, 28],
-    maxHeightCm: 20,
+    maxHeightCm: 30,
     propagation:
       'Spreads by runners and forms clumps. Separate runner plants once they have roots.',
     planting:
@@ -245,7 +251,7 @@ export const PLANT_CATALOG: readonly PlantSpecies[] = [
     care: 'Spreads into a lawn when trimmed and kept in stronger light. In low light the leaves grow taller and thinner.',
     bettaNote:
       'Grassy, soft leaves that are safe for fins. They give ground cover and thin cover higher up when the plant grows tall.',
-    commonProblems: ['melting', 'leggy-growth', 'stunted', 'yellowing-old-leaves'],
+    commonProblems: ['melting', 'stunted', 'yellowing-old-leaves'],
   },
   {
     id: 'rotala-rotundifolia',
@@ -297,7 +303,7 @@ export const PLANT_CATALOG: readonly PlantSpecies[] = [
     id: 'hygrophila-polysperma',
     name: 'Hygrophila polysperma',
     scientific: 'Hygrophila polysperma',
-    aliases: ['Indian waterweed', 'dwarf hygro', 'hygro'],
+    aliases: ['Indian waterweed', 'dwarf hygro', 'hygro', 'East Indian hygrophila'],
     placement: 'background',
     difficulty: 'easy',
     light: 'medium',
@@ -311,7 +317,7 @@ export const PLANT_CATALOG: readonly PlantSpecies[] = [
     propagation: 'Cut the stem and replant the top. Each cutting grows into a new plant.',
     planting:
       'Push the cut end of each stem a few cm into the substrate. Remove the lowest leaves first so they do not rot.',
-    care: 'Very hardy and fast. Trim it often, because the lower leaves yellow and drop once the top shades them.',
+    care: 'Very hardy and fast. Trim it often, because the lower leaves yellow and drop once the top shades them. In the US this is a federal noxious weed: it is illegal to import it or move it between states without a permit, and several states ban it. Check your local rules before you buy, and never release it or put trimmings in a drain or waterway.',
     bettaNote:
       'Soft, fin-safe leaves. It grows quickly to the surface, so trim it to keep the water surface open.',
     commonProblems: ['leggy-growth', 'yellowing-old-leaves', 'melting', 'pale-new-growth'],
@@ -366,11 +372,11 @@ export const PLANT_CATALOG: readonly PlantSpecies[] = [
     id: 'dwarf-hairgrass',
     name: 'Dwarf hairgrass',
     scientific: 'Eleocharis parvula',
-    aliases: ['hair grass', 'Eleocharis acicularis', 'eleocharis'],
+    aliases: ['hair grass', 'Eleocharis acicularis', 'Eleocharis pusilla', 'eleocharis'],
     placement: 'foreground',
     difficulty: 'moderate',
     light: 'high',
-    co2: 'helps',
+    co2: 'recommended',
     growth: 'moderate',
     feeding: 'both',
     bettaFriendly: true,
@@ -465,24 +471,25 @@ export const PLANT_CATALOG: readonly PlantSpecies[] = [
     co2: 'not needed',
     growth: 'slow',
     feeding: 'water column',
-    bettaFriendly: true,
+    bettaFriendly: false,
     ph: [6.5, 8.0],
-    tempC: [15, 26],
+    tempC: [15, 25],
     propagation:
       'Very slow. You can carefully split a large ball into pieces and roll each piece back into a ball.',
     planting:
       'Do not plant it. Set it on the substrate or on a rock. Roll it gently every so often so every side gets light and it keeps its round shape.',
-    care: 'Prefers cooler, shaded water. Strong light turns it brown and warm water damages it. Rinse it gently in tank water if it collects debris.',
+    care: 'Not a moss or a plant: it is a ball of green algae. Prefers cooler, shaded water. Strong light turns it brown and warm water damages it. Rinse it gently in tank water if it collects debris.',
     bettaNote:
-      'Soft and fin-safe, and bettas like to nudge and rest beside it. Betta-tank temperatures sit at the top of its range, so keep it out of direct light and heat.',
-    commonProblems: ['algae-on-leaves', 'melting', 'floating-loose', 'pale-new-growth'],
+      'Soft and fin-safe, but it prefers cooler water than a betta tank. It can survive at the low end of betta temperatures (about 24–25 °C) in shade, and it tends to brown in warmer water.',
+    commonProblems: ['algae-on-leaves', 'floating-loose', 'no-new-growth'],
   },
   {
     id: 'amazon-frogbit',
     name: 'Amazon frogbit',
     scientific: 'Limnobium laevigatum',
-    aliases: ['frogbit'],
+    aliases: ['frogbit', 'South American spongeplant', 'Hydrocharis laevigata'],
     placement: 'floating',
+    surfaceFloater: true,
     difficulty: 'easy',
     light: 'medium',
     co2: 'not needed',
@@ -494,7 +501,7 @@ export const PLANT_CATALOG: readonly PlantSpecies[] = [
     propagation: 'Grows runners with new plants. Separate them, or thin the extra plants.',
     planting:
       'Just drop it on the surface. Its roots hang in the water. Keep the tops of the leaves dry.',
-    care: 'Wants bright light and still surface water. Splashing, or condensation dripping from a close lid, wets the leaves and they rot. Thin it out before it covers the whole surface.',
+    care: 'Wants bright light and still surface water. Splashing, or condensation dripping from a close lid, wets the leaves and they rot. Thin it out before it covers the whole surface. It is a regulated invasive weed in some places (for example California and Washington state). Check your local rules and never release it.',
     bettaNote:
       'The hanging roots give bettas cover and the leaves shade the tank. Bettas breathe air at the surface, so keep part of the surface clear.',
     commonProblems: ['brown-edges', 'melting', 'yellowing-old-leaves', 'stunted'],
@@ -502,10 +509,17 @@ export const PLANT_CATALOG: readonly PlantSpecies[] = [
   {
     id: 'salvinia',
     name: 'Salvinia',
-    scientific: 'Salvinia natans',
-    aliases: ['floating fern', 'water fern'],
+    scientific: 'Salvinia minima',
+    aliases: [
+      'water spangles',
+      'floating fern',
+      'water fern',
+      'Salvinia natans',
+      'Salvinia auriculata',
+    ],
     placement: 'floating',
-    difficulty: 'moderate',
+    surfaceFloater: true,
+    difficulty: 'easy',
     light: 'medium',
     co2: 'not needed',
     growth: 'fast',
@@ -515,7 +529,7 @@ export const PLANT_CATALOG: readonly PlantSpecies[] = [
     tempC: [22, 28],
     propagation: 'Splits by itself as it grows. Separate and thin the extra plants.',
     planting:
-      'Just drop it on the surface. The dangling parts are modified leaves that work as roots. Buy Salvinia natans, because giant salvinia (Salvinia molesta) is a regulated invasive weed in many places.',
+      'Just drop it on the surface. The dangling parts are modified leaves that work as roots. Shop labels for Salvinia are often wrong. Giant salvinia (Salvinia molesta and its close relatives, including S. auriculata) is a US federal noxious weed, and some states restrict all Salvinia. Check your local rules, and never release it.',
     care: 'Wants bright light and calm surface water. Splashing or heavy condensation makes the leaves brown and rot.',
     bettaNote:
       'The dangling parts give cover, but the leaves can cover the surface quickly. Bettas breathe air at the surface, so keep part of it clear.',
@@ -547,7 +561,7 @@ export const PLANT_CATALOG: readonly PlantSpecies[] = [
     id: 'anacharis',
     name: 'Anacharis',
     scientific: 'Egeria densa',
-    aliases: ['Elodea', 'Brazilian waterweed', 'egeria'],
+    aliases: ['Elodea', 'Elodea densa', 'Brazilian waterweed', 'egeria'],
     placement: 'background',
     difficulty: 'easy',
     light: 'medium',
@@ -561,7 +575,7 @@ export const PLANT_CATALOG: readonly PlantSpecies[] = [
       'Cut the stem and replant the top, or let a piece float. Each piece keeps growing.',
     planting:
       'Push the cut end of each stem a few cm into the substrate, or let it float. Remove the lowest leaves first so they do not rot.',
-    care: 'Fast and undemanding, and it soaks up nutrients from the water. It prefers cooler water and gets thin and brown when it is too warm. Trim it often.',
+    care: 'Fast and undemanding, and it soaks up nutrients from the water. It prefers cooler water and gets thin and brown when it is too warm. Trim it often. It often melts when "liquid carbon" products are used. It is an invasive weed that several US states ban from sale (for example Washington). Check your local rules and never release it.',
     bettaNote:
       'Fin-safe, but it prefers cooler water than a betta tank, so it often struggles at betta temperatures. Other stem plants are a better fit.',
     commonProblems: ['melting', 'leggy-growth', 'pale-new-growth', 'stunted'],

@@ -51,6 +51,8 @@ export type PlantSpecies = {
   feeding: FeedingMode
   /** Rhizome plants rot when buried: attach to wood or rock. */
   rhizome?: boolean
+  /** Floats on the surface with its leaf tops in air (not fully submerged like hornwort). */
+  surfaceFloater?: boolean
   /** Suits a typical betta tank (warm, gentle flow, fin-safe leaves). */
   bettaFriendly: boolean
   /** Comfortable pH range [min, max]. */

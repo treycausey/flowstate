@@ -4,7 +4,7 @@ import { countText } from '@/lib/plants/format'
 import type { PlantSpecies } from '@/lib/plants/types'
 import { PLACEMENT_LABEL } from '@/lib/plants/types'
 import CareCard from './CareCard'
-import PlantThumb from './PlantThumb'
+import { SpeciesPhoto } from './PlantThumb'
 
 type Props = {
   species: PlantSpecies
@@ -18,8 +18,8 @@ type Props = {
 export default function SpeciesPage({ species, tankName, inTank, onAdd }: Props) {
   return (
     <div className="stack plant-detail">
-      <div className="plant-hero">
-        <PlantThumb speciesId={species.id} placement={species.placement} size="lg" />
+      <div className="plant-hero plant-hero--species">
+        <SpeciesPhoto speciesId={species.id} name={species.name} placement={species.placement} />
         <div className="plant-hero__text">
           <h2 tabIndex={-1} id="plants-heading" className="plant-hero__name">
             {species.name}

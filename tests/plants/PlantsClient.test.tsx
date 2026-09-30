@@ -119,7 +119,7 @@ describe('adding a plant', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
     const group = await screen.findByRole('region', { name: /Background/ })
     expect(within(group).getByText('Amazon sword')).toBeInTheDocument()
-    expect(within(group).getByText('Echinodorus bleherae')).toBeInTheDocument()
+    expect(within(group).getByText("Echinodorus grisebachii 'Bleherae'")).toBeInTheDocument()
     expect(screen.getByText(/Planted today/)).toBeInTheDocument()
 
     const [stored] = await listPlantsByTank(tankId)
@@ -129,7 +129,10 @@ describe('adding a plant', () => {
       placement: 'background',
     })
     expect(new Date(stored.plantedAt).getTime()).toBeGreaterThan(Date.now() - 60_000)
-    // Focus returns to the button that opened the dialog
+    // The first-plant button is gone, so focus moves to the new plant's row, not <body>
+    await waitFor(() =>
+      expect(document.activeElement).toHaveAttribute('href', `/plants?plant=${stored.id}`),
+    )
     expect(screen.getByRole('button', { name: 'Add plant' })).toBeInTheDocument()
   })
 
@@ -290,6 +293,21 @@ describe('my plants', () => {
     expect(currentSearch()).toBe(`plant=${sword.id}`)
     expect(await screen.findByRole('heading', { name: 'Amazon sword' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: '← My plants' })).toBeInTheDocument()
+  })
+
+  it('returns to My plants for the new tank when the tank changes on a plant page', async () => {
+    const other = await createTank(`Plants test ${++counter}`)
+    await freshTank()
+    const sword = await seedPlant()
+    setSearch(`plant=${sword.id}`)
+    await renderPlants()
+    expect(await screen.findByRole('heading', { name: 'Amazon sword' })).toBeInTheDocument()
+    fireEvent.change(screen.getByRole('combobox', { name: 'Tank' }), {
+      target: { value: other.id },
+    })
+    expect(await screen.findByText('Nothing planted yet')).toBeInTheDocument()
+    expect(screen.queryByText('Plant not found')).not.toBeInTheDocument()
+    expect(currentSearch()).toBe('')
   })
 })
 

@@ -236,7 +236,7 @@ export function diagnose({
   const ammonia = reading('ammonia')
   const nitrite = reading('nitrite')
   const isCrypt = species?.scientific.startsWith('Cryptocoryne') ?? false
-  const isFloating = species?.placement === 'floating'
+  const isSurfaceFloater = species?.surfaceFloater === true
   const melting = has('melting', 'transparent-leaves')
 
   if (melting && age <= TRANSITION_DAYS) {
@@ -273,7 +273,7 @@ export function diagnose({
       score: 90,
       title: 'Ammonia or nitrite in the water',
       explanation:
-        'Your latest test shows ammonia or nitrite. That stresses fish first and can damage sensitive plants, so it is worth fixing whatever the plants are doing.',
+        'Your latest test shows ammonia or nitrite. That stresses fish first and can damage sensitive plants, so it is worth fixing whatever the plants are doing. Rotting leaves can also be what is raising it.',
       suggestion:
         'Retest, and if it is still above 0 do a partial water change. Look for the source, such as a dead plant, extra food or a filter that is not working.',
       evidence: found ? { metric, value: found.value, ts: found.ts } : undefined,
@@ -283,7 +283,7 @@ export function diagnose({
   if (species?.rhizome && has('melting', 'yellowing-old-leaves', 'stunted', 'no-new-growth')) {
     add({
       id: 'buried-rhizome',
-      score: 85,
+      score: 60,
       title: 'The rhizome may be buried',
       explanation:
         'Anubias, java fern and bucephalandra grow from a thick horizontal stem, the rhizome. If it is buried in substrate it often rots and the leaves decline.',
@@ -347,7 +347,7 @@ export function diagnose({
       explanation:
         'Small round holes in older leaves are often a sign of low potassium. Fast-growing plants and tanks with many plants use it up.',
       suggestion:
-        'A planted-tank fertiliser that contains potassium may help, used as its label says. Check whether the holes appear on new leaves too.',
+        'A planted-tank fertiliser that contains potassium may help, used as its label says. Check whether the holes appear on new leaves too. Snails or fish can also chew holes; chewed holes are ragged rather than round.',
     })
   }
 
@@ -396,14 +396,14 @@ export function diagnose({
       score: 70,
       title: 'Black beard algae',
       explanation:
-        'This algae often shows up where flow is weak, or where light and nutrients swing up and down. It grows on slow, older leaves and on hard surfaces.',
+        'This algae often shows up when organic waste builds up (old leaves, trapped debris, a dirty filter), when there is more light than the plants can use, or in tanks with added CO₂ when the CO₂ level swings. It settles on slow, older leaves and on hard surfaces, often near the filter outlet.',
       suggestion:
-        'Trim the worst leaves, improve flow around the plant and keep light and maintenance steady. Do not expect it to disappear quickly.',
+        'Trim the worst leaves, clear out debris and rinse the filter media in tank water, keep up regular partial water changes and keep the light period steady. Do not expect it to disappear quickly.',
     })
   }
 
   if (has('brown-edges')) {
-    if (isFloating) {
+    if (isSurfaceFloater) {
       add({
         id: 'floating-wet',
         score: 78,
@@ -430,16 +430,36 @@ export function diagnose({
     }
   }
 
-  if (has('floating-loose')) {
-    add({
-      id: 'not-rooted',
-      score: 65,
-      title: 'Not anchored yet',
-      explanation:
-        'New cuttings and small portions often float up until they grow roots. Fish digging, or a stem cut too short, can also pull them out.',
-      suggestion:
-        'Push the base a few cm into the substrate, or hold it down with a small stone or plant weight until roots take hold.',
-    })
+  if (has('floating-loose') && !isSurfaceFloater) {
+    if (species?.rhizome || species?.placement === 'epiphyte') {
+      add({
+        id: 'not-rooted',
+        score: 65,
+        title: 'Not attached yet',
+        explanation:
+          'New cuttings and small portions often float up until they grow roots or hold on. Fish digging can also pull them loose.',
+        suggestion:
+          'Tie it back onto wood or rock with thread, or use a gel glue made for aquariums. Do not push it into the substrate.',
+      })
+    } else if (species?.id === 'marimo-moss-ball') {
+      add({
+        id: 'not-rooted',
+        score: 65,
+        title: 'Trapped gas',
+        explanation: 'A marimo ball floats when gas bubbles are trapped inside it.',
+        suggestion: 'Squeeze it gently under water to release the bubbles and it sinks again.',
+      })
+    } else {
+      add({
+        id: 'not-rooted',
+        score: 65,
+        title: 'Not anchored yet',
+        explanation:
+          'New cuttings and small portions often float up until they grow roots. Fish digging, or a stem cut too short, can also pull them out.',
+        suggestion:
+          'Push the base a few cm into the substrate, or hold it down with a small stone or plant weight until roots take hold.',
+      })
+    }
   }
 
   if (has('stunted', 'no-new-growth')) {

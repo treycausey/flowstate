@@ -34,3 +34,15 @@ describe('service worker precache list', () => {
       expect(fs.existsSync(path.join(process.cwd(), 'public', f))).toBe(true)
   })
 })
+
+describe('service worker plant photos', () => {
+  it('caches /plants/*.webp cache-first without precaching them', () => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const fs = require('fs') as typeof import('fs')
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const path = require('path') as typeof import('path')
+    const src = fs.readFileSync(path.join(process.cwd(), 'public/service-worker.js'), 'utf8')
+    expect(src).toMatch(/plants\\\/\[\^\/\]\+\\\.webp/)
+    expect(src).not.toMatch(/'\/plants\/[a-z-]+\.webp'/)
+  })
+})

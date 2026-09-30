@@ -44,7 +44,14 @@ export function PlantsStatusView({
 
 /** Compact plants summary under the Log screen's tank status, linking to the Plants tab. */
 export default function PlantsStatusLine({ tankId }: { tankId: string | null }) {
-  const { plants, checks } = usePlants(tankId)
+  const { plants, checks, failed } = usePlants(tankId)
+  if (failed) {
+    return (
+      <p role="alert" className="danger">
+        Couldn&apos;t load plants.
+      </p>
+    )
+  }
   if (!plants || !checks) return null
   return <PlantsStatusView plants={plants} checks={checks} />
 }

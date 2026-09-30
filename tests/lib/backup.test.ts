@@ -103,4 +103,15 @@ describe('parseDump plants', () => {
   ])('rejects %s', (_label, extra) => {
     expect(() => parseDump({ ...backup, ...extra })).toThrow(BackupFormatError)
   })
+
+  it('rejects a check filed under a different tank than its plant', () => {
+    const other = { ...tank, id: 't2', name: 'Other' }
+    expect(() =>
+      parseDump({
+        ...backup,
+        tanks: [tank, other],
+        plantChecks: [{ ...plantCheck, tankId: 't2' }],
+      }),
+    ).toThrow(`Plant check ${plantCheck.id} is on a different tank than its plant`)
+  })
 })
