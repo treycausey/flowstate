@@ -37,7 +37,10 @@ function parseTank(v: unknown, i: number): Tank {
     reminderCadence:
       typeof cadence === 'number' && Number.isInteger(cadence) && cadence > 0 ? cadence : null,
   }
-  if (typeof volume === 'number' && Number.isFinite(volume) && volume > 0) tank.volumeL = volume
+  // Same bounds as the volume field: litres above 0 and up to 100000. Anything else is dropped
+  if (typeof volume === 'number' && Number.isFinite(volume) && volume > 0 && volume <= 100000) {
+    tank.volumeL = volume
+  }
   return tank
 }
 

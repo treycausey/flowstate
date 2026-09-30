@@ -24,8 +24,8 @@ export const STOCK_CATALOG: readonly StockSpecies[] = [
     bioload: 2,
     bettaCompat: 'avoid',
     bettaReason:
-      'Males fight other male bettas, often to injury. Keep one male betta per tank unless you are an experienced keeper.',
-    care: 'Gentle flow, warm stable water and somewhere to rest near the surface. Bettas breathe air, so keep the surface open and the air above it warm.',
+      'Male bettas fight each other, often to serious injury. Never keep two males in the same undivided tank.',
+    care: 'Gentle flow, warm stable water and somewhere to rest near the surface. Bettas breathe air, so keep the surface open and the air above it warm. Keep a lid on: bettas can jump.',
     notes:
       'Long-finned males can tear their fins on sharp decor. Each betta has its own temperament, so watch how yours reacts to new tankmates.',
   },
@@ -48,7 +48,7 @@ export const STOCK_CATALOG: readonly StockSpecies[] = [
       'Usually fine in a school of six or more, but some bettas chase or eat small tetras.',
     care: 'Keep a school of six or more in a tank with some plants and dim corners. Neons are sensitive to sudden changes, so add them slowly to a cycled tank.',
     notes:
-      'Fin-rot and stress show up fast in small groups. A longer tank suits a school better than a tall one.',
+      'Small groups are stressed and hide more. A longer tank suits a school better than a tall one.',
   },
   {
     id: 'cardinal-tetra',
@@ -91,8 +91,9 @@ export const STOCK_CATALOG: readonly StockSpecies[] = [
   {
     id: 'rummy-nose-tetra',
     name: 'Rummy-nose tetra',
-    scientific: 'Hemigrammus rhodostomus',
-    aliases: ['rummynose', 'rummy nose'],
+    scientific:
+      'Petitella rhodostoma (formerly Hemigrammus rhodostomus); P. bleheri is also sold under this name',
+    aliases: ['rummynose', 'rummy nose', 'hemigrammus rhodostomus'],
     kind: 'fish',
     zone: 'middle',
     sizeCm: 5,
@@ -131,7 +132,7 @@ export const STOCK_CATALOG: readonly StockSpecies[] = [
     id: 'chili-rasbora',
     name: 'Chili rasbora',
     scientific: 'Boraras brigittae',
-    aliases: ['mosquito rasbora', 'mosquito fish'],
+    aliases: ['mosquito rasbora'],
     kind: 'fish',
     zone: 'middle',
     sizeCm: 2,
@@ -245,7 +246,7 @@ export const STOCK_CATALOG: readonly StockSpecies[] = [
     bioload: 1.3,
     bettaCompat: 'caution',
     bettaReason:
-      'A betta may treat a gourami as a rival because they look alike and share the top of the tank.',
+      'A betta often treats a gourami as a rival, because both are labyrinth fish that hold the surface. Try it only in a well-planted tank of about 75 L (20 US gal) or more, and have a plan to separate them.',
     care: 'Shy and gentle. Give it floating plants and plenty of cover. A single fish is fine, or a pair in a larger tank.',
     notes: 'Like bettas, gouramis breathe air at the surface, so keep the surface open.',
   },
@@ -253,11 +254,11 @@ export const STOCK_CATALOG: readonly StockSpecies[] = [
     id: 'panda-corydoras',
     name: 'Panda corydoras',
     plural: 'panda corydoras',
-    scientific: 'Corydoras panda',
-    aliases: ['panda cory'],
+    scientific: 'Hoplisoma panda (formerly Corydoras panda)',
+    aliases: ['panda cory', 'corydoras panda'],
     kind: 'fish',
     zone: 'bottom',
-    sizeCm: 5,
+    sizeCm: 4.5,
     tempC: [22, 26],
     ph: [6.0, 7.5],
     minGroup: 6,
@@ -274,8 +275,8 @@ export const STOCK_CATALOG: readonly StockSpecies[] = [
     id: 'bronze-corydoras',
     name: 'Bronze corydoras',
     plural: 'bronze corydoras',
-    scientific: 'Corydoras aeneus',
-    aliases: ['bronze cory', 'green cory'],
+    scientific: 'Osteogaster aeneus (formerly Corydoras aeneus)',
+    aliases: ['bronze cory', 'green cory', 'corydoras aeneus'],
     kind: 'fish',
     zone: 'bottom',
     sizeCm: 7,
@@ -295,8 +296,8 @@ export const STOCK_CATALOG: readonly StockSpecies[] = [
     id: 'pygmy-corydoras',
     name: 'Pygmy corydoras',
     plural: 'pygmy corydoras',
-    scientific: 'Corydoras pygmaeus',
-    aliases: ['pygmy cory'],
+    scientific: 'Gastrodermus pygmaeus (formerly Corydoras pygmaeus)',
+    aliases: ['pygmy cory', 'corydoras pygmaeus'],
     kind: 'fish',
     zone: 'bottom',
     sizeCm: 2.5,
@@ -315,7 +316,7 @@ export const STOCK_CATALOG: readonly StockSpecies[] = [
     id: 'otocinclus',
     name: 'Otocinclus',
     plural: 'otocinclus',
-    scientific: 'Otocinclus vittatus',
+    scientific: 'Otocinclus spp. (often O. vittatus or O. macrospilus)',
     aliases: ['oto', 'otto', 'dwarf sucker catfish'],
     kind: 'fish',
     zone: 'surfaces',
@@ -336,20 +337,20 @@ export const STOCK_CATALOG: readonly StockSpecies[] = [
     id: 'kuhli-loach',
     name: 'Kuhli loach',
     plural: 'kuhli loaches',
-    scientific: 'Pangio kuhlii',
-    aliases: ['coolie loach'],
+    scientific: 'Pangio semicincta (often sold as P. kuhlii)',
+    aliases: ['coolie loach', 'pangio kuhlii'],
     kind: 'fish',
     zone: 'bottom',
     sizeCm: 10,
     tempC: [24, 30],
     ph: [5.5, 7.0],
-    minGroup: 5,
+    minGroup: 6,
     temperament: 'peaceful',
     diet: 'Sinking pellets and wafers, plus frozen or live worms.',
     bioload: 1.2,
     bettaCompat: 'good',
     bettaReason: 'Shy, mostly nocturnal bottom dwellers that a betta rarely notices.',
-    care: 'Keep a group of five or more on soft sand with lots of hiding places. They can slip through small gaps, so cover the tank and filter intakes.',
+    care: 'Keep a group of six or more on soft sand with lots of hiding places. They can slip through small gaps, so cover the tank and filter intakes.',
     notes: 'They hide often, so a group you rarely see is normal.',
   },
   {
@@ -398,8 +399,8 @@ export const STOCK_CATALOG: readonly StockSpecies[] = [
   {
     id: 'nerite-snail',
     name: 'Nerite snail',
-    scientific: 'Neritina natalensis',
-    aliases: ['zebra nerite', 'nerite'],
+    scientific: 'Vittina natalensis (formerly Neritina natalensis)',
+    aliases: ['zebra nerite', 'nerite', 'neritina natalensis'],
     kind: 'snail',
     zone: 'surfaces',
     sizeCm: 2.5,
@@ -428,8 +429,9 @@ export const STOCK_CATALOG: readonly StockSpecies[] = [
     temperament: 'peaceful',
     diet: 'Scavenges algae and leftovers. Add algae wafers and blanched vegetables.',
     bioload: 1.5,
-    bettaCompat: 'good',
-    bettaReason: 'Too big and armoured to be eaten, but a betta may nip the long antennae.',
+    bettaCompat: 'caution',
+    bettaReason:
+      'Too big to be eaten, but some bettas repeatedly nip the long antennae. Watch closely for the first weeks.',
     care: 'Needs hard enough water for the shell. Leave a gap between the water and lid, because they lay eggs above the waterline and breathe air.',
     notes: 'Females lay a pink clutch above the water. Remove it if you do not want more snails.',
   },
@@ -460,8 +462,12 @@ export function stockSpecies(id: string | null | undefined): StockSpecies | unde
   return id ? BY_ID.get(id) : undefined
 }
 
+/** The betta cut-out is the single right-facing frame the living tank already ships. */
+export const BETTA_IMAGE = '/tank/betta-cruise.webp'
+
 /** Path of the optional cut-out image. The UI must cope with it being absent. */
 export function stockImageSrc(speciesId: string): string {
+  if (speciesId === 'betta') return BETTA_IMAGE
   return `/tank/fish/${speciesId}.webp`
 }
 

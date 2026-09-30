@@ -82,7 +82,7 @@ function bettaFlags(known: Known[]): StockFlag[] {
     flags.push({
       id: 'betta:multiple',
       level: 'danger',
-      text: 'More than one betta: males fight, often to injury. Keep one male betta per tank unless you have planned for it.',
+      text: 'More than one betta: males fight, often to serious injury. Never keep two males together in one undivided tank. Groups of females are also prone to fighting and are not a beginner setup.',
       groupIds: bettas.map((k) => k.group.id),
     })
   }
@@ -223,8 +223,8 @@ export type StockingEstimate = {
   text: string
 }
 
-/** One neon-tetra unit per this many litres is treated as a full tank. A deliberately cautious figure. */
-export const LITRES_PER_LOAD_UNIT = 6
+/** One neon-tetra unit per this many litres is treated as a full tank. A cautious figure for small fish. */
+export const LITRES_PER_LOAD_UNIT = 4
 
 /**
  * A rough stocking estimate. Null when the volume is unknown or nothing is stocked.

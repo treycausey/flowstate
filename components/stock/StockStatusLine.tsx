@@ -6,6 +6,7 @@ import type { StockEvent, StockGroup } from '@/lib/models'
 import { animalCount } from '@/lib/stock/guidance'
 import { fedToday } from '@/lib/stock/feeding'
 import { countText } from '@/lib/stock/format'
+import { useNow } from '@/lib/stock/useNow'
 import { useStock } from '@/lib/stock/useStock'
 
 /** Presentational line; `now` is injectable for tests. Nothing when the tank has no animals. */
@@ -19,7 +20,7 @@ export function StockStatusView({
   now?: Date
 }) {
   const animals = useMemo(() => animalCount(groups), [groups])
-  const fed = useMemo(() => fedToday(events, now ?? new Date()), [events, now])
+  const fed = fedToday(events, now ?? new Date())
   if (animals === 0) return null
   return (
     <p className="plants-line">
@@ -41,6 +42,7 @@ export function StockStatusView({
 /** Compact stock summary under the Log screen's tank status, linking to the Stock tab. */
 export default function StockStatusLine({ tankId }: { tankId: string | null }) {
   const { groups, events, failed } = useStock(tankId)
+  const now = useNow()
   if (failed) {
     return (
       <p role="alert" className="danger">
@@ -49,5 +51,5 @@ export default function StockStatusLine({ tankId }: { tankId: string | null }) {
     )
   }
   if (!groups || !events) return null
-  return <StockStatusView groups={groups} events={events} />
+  return <StockStatusView groups={groups} events={events} now={now} />
 }

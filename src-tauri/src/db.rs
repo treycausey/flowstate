@@ -684,7 +684,10 @@ pub fn add_stock_event(conn: &Connection, event: &StockEvent) -> Result<StockEve
                 params![stock_id],
                 |r| Ok((r.get(0)?, r.get(1)?)),
             )
-            .map_err(|_| "That group no longer exists.".to_string())?;
+            .map_err(|e| match e {
+                rusqlite::Error::QueryReturnedNoRows => "That group no longer exists.".to_string(),
+                other => other.to_string(),
+            })?;
         if matches!(event.kind.as_str(), "lost" | "rehomed" | "added") {
             let raw = event.count_delta.unwrap_or(0);
             if raw == 0 {
@@ -698,7 +701,7 @@ pub fn add_stock_event(conn: &Connection, event: &StockEvent) -> Result<StockEve
             let next = (count + signed).max(0);
             let removed = if next == 0 {
                 Some(event.ts.clone())
-            } else if count == 0 {
+            } else if count == 0 || event.kind == "added" {
                 None
             } else {
                 removed_at
@@ -1519,18 +1522,27 @@ mod tests {
         assert_eq!(g.count, 4);
         assert_eq!(g.removed_at, None);
 
+        // Adding more to a group that was removed with animals left brings it back too.
+        let mut gone = current(&conn);
+        gone.removed_at = Some("2026-09-21T00:00:00Z".into());
+        update_stock(&conn, &gone).unwrap();
+        add_stock_event(&conn, &event("e4b", Some("g1"), "added", Some(1))).unwrap();
+        let g = current(&conn);
+        assert_eq!((g.count, g.removed_at), (5, None));
+        add_stock_event(&conn, &event("e4c", Some("g1"), "lost", Some(1))).unwrap();
+
         // Observations do not touch the count.
         let mut obs = event("e5", Some("g1"), "health", None);
         obs.health = Some("concern".into());
         add_stock_event(&conn, &obs).unwrap();
         assert_eq!(current(&conn).count, 4);
-        assert_eq!(list_stock_events_by_tank(&conn, "t1").unwrap().len(), 5);
+        assert_eq!(list_stock_events_by_tank(&conn, "t1").unwrap().len(), 7);
 
         // A failing event changes nothing: no count, no event row.
         assert!(add_stock_event(&conn, &event("e6", Some("g1"), "lost", None)).is_err());
         assert!(add_stock_event(&conn, &event("e7", Some("missing"), "lost", Some(1))).is_err());
         assert_eq!(current(&conn).count, 4);
-        assert_eq!(list_stock_events_by_tank(&conn, "t1").unwrap().len(), 5);
+        assert_eq!(list_stock_events_by_tank(&conn, "t1").unwrap().len(), 7);
     }
 
     #[test]

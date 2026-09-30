@@ -792,7 +792,7 @@ table.summary {
   white-space: nowrap;
   color: var(--muted);
 }
-.nav-links a:first-child {
+.nav-links li:first-child a {
   padding-left: 0.4rem;
 }
 .nav-links a:hover {
@@ -878,7 +878,7 @@ table.summary {
 }
 @media (max-width: 24rem) {
   .nav-links a,
-  .nav-links a:first-child {
+  .nav-links li:first-child a {
     padding-inline: 0.25em;
   }
   .theme-select {

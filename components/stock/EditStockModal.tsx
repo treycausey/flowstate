@@ -86,6 +86,7 @@ export default function EditStockModal({ group, onClose, onSaved, onDeleted }: P
             note: group.note ?? '',
           }}
           countLabel="Count now"
+          allowZeroCount={group.count === 0}
           submitLabel="Save changes"
           saving={saving}
           error={error}

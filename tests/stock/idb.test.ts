@@ -113,6 +113,15 @@ describe('stock events change the count in the same transaction', () => {
     expect(back.removedAt).toBeNull()
   })
 
+  it('added clears removedAt on a group that was removed with animals left', async () => {
+    const { tank, group } = await setup(5)
+    await updateStock({ ...group, removedAt: '2026-09-10T00:00:00.000Z' })
+    await addStockEvent(ev(tank.id, group.id, 'added', 2))
+    const [back] = await listStockByTank(tank.id)
+    expect(back.count).toBe(7)
+    expect(back.removedAt).toBeNull()
+  })
+
   it('rolls everything back when the event is invalid', async () => {
     const { tank, group } = await setup(5)
     await expect(addStockEvent(ev(tank.id, group.id, 'lost'))).rejects.toThrow(/how many/i)

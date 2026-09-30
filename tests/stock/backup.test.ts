@@ -52,6 +52,15 @@ describe('parseDump stock', () => {
     expect(dump.tanks[0].volumeL).toBeUndefined()
   })
 
+  it('drops a tank volume above 100000 L like the volume field does', () => {
+    expect(
+      parseDump({ tanks: [{ ...tank, volumeL: 100001 }], readings: [] }).tanks[0].volumeL,
+    ).toBeUndefined()
+    expect(
+      parseDump({ tanks: [{ ...tank, volumeL: 100000 }], readings: [] }).tanks[0].volumeL,
+    ).toBe(100000)
+  })
+
   it('drops a nonsense tank volume instead of failing', () => {
     expect(parseDump({ tanks: [{ ...tank, volumeL: -4 }], readings: [] }).tanks[0].volumeL).toBe(
       undefined,

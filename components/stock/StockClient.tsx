@@ -11,6 +11,7 @@ import { stockSpecies } from '@/lib/stock/catalog'
 import { countText } from '@/lib/stock/format'
 import { summarizeStock } from '@/lib/stock/summary'
 import type { StockSpecies } from '@/lib/stock/types'
+import { useNow } from '@/lib/stock/useNow'
 import { useStock } from '@/lib/stock/useStock'
 import AddStockModal from './AddStockModal'
 import FedBar from './FedBar'
@@ -52,8 +53,8 @@ export default function StockClient({ images = [] }: { images?: string[] }) {
   const { groups, events, failed } = useStock(tankId)
   const { readings } = useTankReadings(tankId)
   const { route, go } = useStockRoute()
-  // Fixed at mount so ages don't drift between renders; the Fed line refreshes on each change
-  const [now] = useState(() => new Date())
+  // Fresh each render, and re-rendered every minute and on return to the tab, so "fed today" rolls over at midnight
+  const now = useNow()
   const [adding, setAdding] = useState<AddState>(null)
   const [added, setAdded] = useState<string | null>(null)
   const [basicsOpen, setBasicsOpen] = useState(readBasicsOpen)

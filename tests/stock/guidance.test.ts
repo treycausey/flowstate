@@ -154,7 +154,7 @@ describe('stocking estimate', () => {
   it('rates light, moderate and heavy with hedged text', () => {
     const light = stockingEstimate([group('neon-tetra', 4)], 60)
     const moderate = stockingEstimate([group('neon-tetra', 8)], 60)
-    const heavy = stockingEstimate([group('neon-tetra', 14)], 60)
+    const heavy = stockingEstimate([group('neon-tetra', 20)], 60)
     expect(light?.level).toBe('light')
     expect(moderate?.level).toBe('moderate')
     expect(heavy?.level).toBe('heavy')
@@ -164,6 +164,28 @@ describe('stocking estimate', () => {
     expect(heavy?.text).toMatch(/filtration/)
     expect(heavy?.text).toMatch(/water changes/)
     expect(light?.text).toContain('60 L (about 15.9 US gal)')
+  })
+
+  it('uses 4 L per load unit and rates realistic betta and community tanks', () => {
+    expect(stockingEstimate([group('betta', 1)], 20)?.level).toBe('light')
+    expect(
+      stockingEstimate(
+        [group('betta', 1), group('pygmy-corydoras', 6), group('cherry-shrimp', 5)],
+        40,
+      )?.level,
+    ).toBe('moderate')
+    expect(
+      stockingEstimate(
+        [
+          group('neon-tetra', 10),
+          group('panda-corydoras', 6),
+          group('otocinclus', 3),
+          group('cherry-shrimp', 5),
+          group('nerite-snail', 2),
+        ],
+        60,
+      )?.level,
+    ).toBe('heavy')
   })
 
   it('weights by species and counts custom animals as one unit each', () => {

@@ -26,6 +26,8 @@ type Props = {
   /** Where focus goes when the form appears: the save button (Enter saves) or the name. */
   focusOn?: 'submit' | 'name'
   countLabel?: string
+  /** Let a group that is already at 0 keep its count while only the name or note changes. */
+  allowZeroCount?: boolean
   /** Hide the date field (a quick add keeps "now"). Shown as a line of text instead. */
   dateLabel?: string
 }
@@ -42,6 +44,7 @@ export default function StockForm({
   nameHint,
   focusOn,
   countLabel = 'How many',
+  allowZeroCount = false,
   dateLabel = 'Added',
 }: Props) {
   const id = useId()
@@ -69,8 +72,12 @@ export default function StockForm({
       return
     }
     const n = Number(count)
-    if (!Number.isInteger(n) || n < 1) {
-      setProblem({ field: 'count', text: 'Enter a count of 1 or more.' })
+    const minCount = allowZeroCount ? 0 : 1
+    if (!Number.isInteger(n) || n < minCount) {
+      setProblem({
+        field: 'count',
+        text: allowZeroCount ? 'Enter a count of 0 or more.' : 'Enter a count of 1 or more.',
+      })
       document.getElementById(`${id}-count`)?.focus()
       return
     }
@@ -121,6 +128,7 @@ export default function StockForm({
           id={`${id}-count`}
           label={countLabel}
           value={count}
+          min={allowZeroCount ? 0 : 1}
           onChange={(v) => {
             setCount(v)
             setProblem(null)

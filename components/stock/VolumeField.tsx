@@ -32,14 +32,25 @@ export default function VolumeField({ tank }: { tank: Tank }) {
     setMessage(null)
     try {
       await setTankVolume(tank.id, parsed)
-      await refresh()
-      emitStockChanged(tank.id)
-      setMessage({ kind: 'ok', text: parsed === null ? 'Volume cleared.' : 'Volume saved.' })
     } catch (err) {
       console.error('Failed to save tank volume', err)
       setMessage({
         kind: 'error',
         text: `Couldn’t save: ${err instanceof Error ? err.message : String(err)}`,
+      })
+      setSaving(false)
+      return
+    }
+    try {
+      await refresh()
+      emitStockChanged(tank.id)
+      setMessage({ kind: 'ok', text: parsed === null ? 'Volume cleared.' : 'Volume saved.' })
+    } catch (err) {
+      console.error('Failed to refresh tanks after saving volume', err)
+      emitStockChanged(tank.id)
+      setMessage({
+        kind: 'error',
+        text: `Volume saved, but the screen couldn’t refresh: ${err instanceof Error ? err.message : String(err)}. Reload the page to see it.`,
       })
     } finally {
       setSaving(false)

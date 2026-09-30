@@ -46,3 +46,15 @@ describe('service worker plant photos', () => {
     expect(src).not.toMatch(/'\/plants\/[a-z-]+\.webp'/)
   })
 })
+
+describe('service worker pages', () => {
+  it('precaches the stock page under a bumped cache name', () => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const fs = require('fs') as typeof import('fs')
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const path = require('path') as typeof import('path')
+    const src = fs.readFileSync(path.join(process.cwd(), 'public/service-worker.js'), 'utf8')
+    expect(src).toMatch(/const PAGES = \[[^\]]*'\/stock'/)
+    expect(src).toContain("CACHE_NAME = 'flowstate-v7'")
+  })
+})

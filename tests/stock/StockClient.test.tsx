@@ -1,5 +1,5 @@
 import 'fake-indexeddb/auto'
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { axe } from 'jest-axe'
 import { TankProvider } from '@/components/TankProvider'
 import StockClient from '@/components/stock/StockClient'
@@ -116,7 +116,7 @@ describe('adding stock', () => {
     expect(safe).toHaveAttribute('aria-pressed', 'true')
     expect(within(picker).queryByRole('button', { name: /Guppy/ })).not.toBeInTheDocument()
     fireEvent.click(within(picker).getByRole('button', { name: 'Snails' }))
-    expect(within(picker).getByText('3 species')).toBeInTheDocument()
+    expect(within(picker).getByText('2 species')).toBeInTheDocument()
     fireEvent.click(within(picker).getByRole('button', { name: 'Top' }))
     expect(within(picker).getByText('No animals match.')).toBeInTheDocument()
     fireEvent.click(within(picker).getByRole('button', { name: 'Clear filters' }))
@@ -212,7 +212,7 @@ describe('my stock', () => {
 
   it('shows a stocking estimate only when the tank volume is set', async () => {
     await freshTank()
-    await seed('neon-tetra', 'Neon tetra', 6)
+    await seed('neon-tetra', 'Neon tetra', 10)
     const view = await renderStock()
     expect(await screen.findByText(/Add your tank’s volume/)).toBeInTheDocument()
     view.unmount()
@@ -344,6 +344,30 @@ describe('group detail', () => {
     confirm.mockRestore()
   })
 
+  it('edits the name and note of a count-0 group without restoring it', async () => {
+    await freshTank()
+    const g = await seed('guppy', 'Guppy', 1)
+    const lost = await addStockEvent({
+      tankId,
+      stockId: g.id,
+      ts: ago(1),
+      kind: 'lost',
+      countDelta: 1,
+    })
+    const removedAt = lost.ts
+    setSearch(`group=${g.id}`)
+    await renderStock()
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit' }))
+    fireEvent.change(within(dialog()).getByLabelText('Name'), { target: { value: 'Old guppies' } })
+    fireEvent.change(within(dialog()).getByLabelText(/Note/), { target: { value: 'Sold on' } })
+    fireEvent.click(within(dialog()).getByRole('button', { name: 'Save changes' }))
+    await waitFor(async () => expect((await listStockByTank(tankId))[0].name).toBe('Old guppies'))
+    const [saved] = await listStockByTank(tankId)
+    expect(saved.count).toBe(0)
+    expect(saved.note).toBe('Sold on')
+    expect(saved.removedAt).toBe(removedAt)
+  })
+
   it('shows guidance for the group and the care card', async () => {
     await freshTank()
     await seed('betta', 'Betta', 1)
@@ -387,5 +411,51 @@ describe('images', () => {
     // A failed load falls back to the drawing
     fireEvent.error(images()[0])
     expect(images()).toHaveLength(0)
+  })
+})
+
+describe('fed today across midnight', () => {
+  const FAKE_ONLY_CLOCK = [
+    'setTimeout',
+    'clearTimeout',
+    'setImmediate',
+    'clearImmediate',
+    'nextTick',
+    'queueMicrotask',
+    'performance',
+    'requestAnimationFrame',
+    'cancelAnimationFrame',
+    'requestIdleCallback',
+    'cancelIdleCallback',
+  ] as const
+  afterEach(() => jest.useRealTimers())
+
+  it('turns "Fed today" into "Last fed" after midnight without new events', async () => {
+    await freshTank()
+    const fedAt = new Date(2026, 5, 10, 23, 50)
+    await seed('neon-tetra', 'Neon tetra', 6, { addedAt: new Date(2026, 5, 1).toISOString() })
+    await addStockEvent({ tankId, stockId: null, ts: fedAt.toISOString(), kind: 'fed' })
+    jest.useFakeTimers({ now: new Date(2026, 5, 10, 23, 51), doNotFake: [...FAKE_ONLY_CLOCK] })
+    await renderStock()
+    expect(await screen.findByText(/^Fed today at/)).toBeInTheDocument()
+    act(() => {
+      jest.setSystemTime(new Date(2026, 5, 11, 0, 1))
+      jest.advanceTimersByTime(60_000)
+    })
+    expect(screen.getByText(/^Last fed /)).toBeInTheDocument()
+    expect(screen.queryByText(/^Fed today/)).not.toBeInTheDocument()
+  })
+
+  it('shows "Fed today" for a feeding at 00:05 after mounting at 23:50', async () => {
+    await freshTank()
+    await seed('neon-tetra', 'Neon tetra', 6, { addedAt: new Date(2026, 5, 1).toISOString() })
+    jest.useFakeTimers({ now: new Date(2026, 5, 10, 23, 50), doNotFake: [...FAKE_ONLY_CLOCK] })
+    await renderStock()
+    expect(await screen.findByText('Not fed yet')).toBeInTheDocument()
+    act(() => {
+      jest.setSystemTime(new Date(2026, 5, 11, 0, 5))
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Fed' }))
+    expect(await screen.findByText(/^Fed today at/)).toBeInTheDocument()
   })
 })

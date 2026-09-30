@@ -103,7 +103,19 @@ describe('stock catalog integrity', () => {
     expect(speciesCountName(stockSpecies('neon-tetra')!, 1)).toBe('Neon tetra')
     expect(speciesCountName(stockSpecies('neon-tetra')!, 6)).toBe('neon tetras')
     expect(speciesCountName(stockSpecies('cherry-shrimp')!, 6)).toBe('cherry shrimp')
-    expect(stockImageSrc('betta')).toBe('/tank/fish/betta.webp')
+    expect(stockImageSrc('betta')).toBe('/tank/betta-cruise.webp')
+    expect(stockImageSrc('neon-tetra')).toBe('/tank/fish/neon-tetra.webp')
+  })
+
+  it('keeps fact-checked names searchable under old and new scientific names', () => {
+    expect(searchStock('Corydoras panda').map((s) => s.id)).toContain('panda-corydoras')
+    expect(searchStock('hoplisoma').map((s) => s.id)).toEqual(['panda-corydoras'])
+    expect(searchStock('Hemigrammus rhodostomus').map((s) => s.id)).toEqual(['rummy-nose-tetra'])
+    expect(searchStock('pangio kuhlii').map((s) => s.id)).toEqual(['kuhli-loach'])
+    expect(searchStock('Neritina natalensis').map((s) => s.id)).toEqual(['nerite-snail'])
+    expect(searchStock('mosquito fish')).toEqual([])
+    expect(stockSpecies('mystery-snail')?.bettaCompat).toBe('caution')
+    expect(stockSpecies('kuhli-loach')?.minGroup).toBe(6)
   })
 
   it('searches names, scientific names and aliases, and filters', () => {

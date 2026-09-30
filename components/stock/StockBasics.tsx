@@ -1,7 +1,7 @@
 const BASICS: { title: string; body: string }[] = [
   {
     title: 'Cycle the tank first.',
-    body: 'A new tank has no bacteria to clear ammonia and nitrite, and both harm fish. Test until ammonia and nitrite read 0 and nitrate appears, then add animals. The Log tab shows where your tank stands.',
+    body: 'A new tank has no bacteria to clear ammonia and nitrite, and both harm fish. Add an ammonia source (fish food or bottled ammonia) and test every few days. The tank is ready when it clears that ammonia to 0 ammonia and 0 nitrite within a day, and nitrate is rising. This usually takes several weeks. The Log tab shows where your tank stands.',
   },
   {
     title: 'Add slowly.',
