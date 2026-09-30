@@ -12,7 +12,13 @@ const customJestConfig = {
     '^@/(.*)$': '<rootDir>/$1',
   },
   testMatch: ['<rootDir>/**/*.test.ts', '<rootDir>/**/*.test.tsx'],
-  modulePathIgnorePatterns: ['<rootDir>/src-tauri/target/', '<rootDir>/out/', '<rootDir>/.next/'],
+  modulePathIgnorePatterns: [
+    '<rootDir>/src-tauri/target/',
+    '<rootDir>/out/',
+    '<rootDir>/.next/',
+    '<rootDir>/.claude/worktrees/',
+  ],
+  testPathIgnorePatterns: ['/node_modules/', '<rootDir>/.claude/worktrees/'],
 }
 
 export default createJestConfig(customJestConfig)

@@ -30,5 +30,5 @@
     ".next/types/**/*.ts",
     ".next/dev/types/**/*.ts"
   ],
-  "exclude": ["node_modules", "src-tauri/target", "out", ".next/dev"]
+  "exclude": ["node_modules", "src-tauri/target", "out", ".next/dev", ".claude/worktrees", "tmp"]
 }

@@ -131,6 +131,8 @@ uniform float u_fishHaze;
 uniform vec3 u_hazeColor;
 uniform float u_stress;
 uniform float u_opacity;
+uniform float u_far;
+uniform vec2 u_pxLocal;   // one screen pixel in sprite-local units
 
 const vec2 EYE_L = vec2(${EYE_LOCAL[0]}, ${EYE_LOCAL[1]});
 
@@ -147,8 +149,18 @@ vec4 fishAt(vec2 L, float bias) {
        + samplePose(u_texClamped, u_pose[2], u_poseW.z, L, bias);
 }
 
+// The cut-out edge is never crisper than the photograph behind it: average a few taps about a
+// pixel wide (wider when out of focus) so the alpha edge feathers.
+vec4 softFish(vec2 L) {
+  float k = 1.15 + 0.9 * u_bias;
+  vec2 o = u_pxLocal * k;
+  return 0.36 * fishAt(L, u_bias)
+       + 0.16 * (fishAt(L + vec2(o.x, o.y), u_bias) + fishAt(L + vec2(-o.x, o.y), u_bias)
+               + fishAt(L + vec2(o.x, -o.y), u_bias) + fishAt(L + vec2(-o.x, -o.y), u_bias));
+}
+
 void main() {
-  vec4 s = fishAt(v_local, u_bias);
+  vec4 s = softFish(v_local);
   if (s.a < 0.003) discard;
   vec3 rgb = s.rgb / s.a;
 
@@ -164,7 +176,7 @@ void main() {
   rgb *= light * 0.9;
   rgb *= mix(vec3(1.0), vec3(0.72, 0.92, 1.18), u_darkness);
   // Water in front of the fish: a little of the surrounding colour scatters into it.
-  rgb = mix(rgb, v_ambient * u_tint * u_exposure * 1.25, 0.14);
+  rgb = mix(rgb, v_ambient * u_tint * u_exposure * 1.25, 0.14 + 0.16 * u_far);
 
   // Caustics play across the body.
   float vFall = 1.0 - smoothstep(0.5, 1.0, v_scene.y);

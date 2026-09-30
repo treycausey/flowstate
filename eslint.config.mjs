@@ -6,6 +6,7 @@ import jestDom from 'eslint-plugin-jest-dom'
 const config = [
   {
     ignores: [
+      '.claude/worktrees/**',
       '.next/**',
       'node_modules/**',
       'out/**',

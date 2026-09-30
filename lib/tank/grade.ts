@@ -16,7 +16,7 @@ export type Grade = {
   shaftGain: number
   shaftTint: [number, number, number]
   moteTint: [number, number, number]
-  /** 0 by day, 1 by night; used by bubbles and shrimp. */
+  /** 0 by day, 1 by night; used by bubbles. */
   darkness: number
   /** Brightness of things drawn on top of the plate (props, foreground): 1 by day, about 0.3 at night. */
   ambient: number
