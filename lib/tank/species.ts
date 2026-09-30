@@ -4,17 +4,15 @@
 // about 6 cm at the betta sprite width, so any creature is `lengthCm / 6` of the betta width at the
 // focal plane. Speeds are in body lengths per second, so a fish looks the same on a phone and a desktop.
 
-export type StockKind = 'fish' | 'shrimp' | 'snail'
-export type StockZone = 'top' | 'middle' | 'bottom' | 'surfaces'
+// One stock type for the app: the Stock feature's kinds, zones and scene entry are the tank's too.
+import type { TankStockEntry } from '@/lib/stock/forTank'
+import type { StockKind, StockZone } from '@/lib/stock/types'
+
+export type { StockKind, StockZone }
 export type MotionModel = 'solitary' | 'school' | 'bottom' | 'kuhli' | 'grazer' | 'crawler'
 
-/** One line of recorded stock. The Stock data layer produces these. */
-export type StockEntry = {
-  speciesId: string | null
-  count: number
-  zone: StockZone
-  kind: StockKind
-}
+/** One line of recorded stock, as `stockForTank` produces it. */
+export type StockEntry = TankStockEntry
 
 export type SpeciesProfile = {
   id: string

@@ -185,7 +185,7 @@ export class SchoolSim implements Group {
     )
     // The formation should leave room to drift: at most about a quarter of the width in radius.
     const radiusFit = Math.floor(
-      ((0.26 * width) / (this.profile.spacing * this.bl * 0.72 * 0.85)) ** 2,
+      ((0.34 * width) / (this.profile.spacing * this.bl * 0.72 * 0.85)) ** 2,
     )
     this.visible = Math.min(
       this.wanted,

@@ -8,7 +8,9 @@ import { useTankReadings } from '@/lib/useTankReadings'
 import { getEnvironment } from '@/lib/tank/environment'
 import { devClockFromSearch } from '@/lib/tank/devOverrides'
 import { reportActivity } from '@/lib/tank/events'
-import { waterFromReadings } from '@/lib/tank/fromReadings'
+import { usePlantVitality } from '@/lib/plants/vitality'
+import { useTankStock } from '@/lib/stock/forTank'
+import { waterFromReadings, withPlantVitality } from '@/lib/tank/fromReadings'
 import { DEFAULT_PREFS, loadTankPrefs, onTankPrefsChanged, type TankPrefs } from '@/lib/tank/prefs'
 import type { PanelRect } from '@/components/tank/TankScene'
 
@@ -166,13 +168,31 @@ export default function TankHost() {
     }
   }, [enabled])
 
-  const water = useMemo(() => waterFromReadings(readings ?? [], now), [readings, now])
+  const liveStock = useTankStock(activeTankId)
+  // `useTankStock` builds a new array every render; the scene re-plans only when the content changes.
+  const stockKey = liveStock ? JSON.stringify(liveStock) : null
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the content, not the identity
+  const stock = useMemo(() => liveStock, [stockKey])
+  const vitality = usePlantVitality(activeTankId)
+  // Wait briefly for the stock so the tank does not flash the betta first; if it never loads,
+  // show the betta rather than nothing.
+  const [stockWaited, setStockWaited] = useState(false)
+  useEffect(() => {
+    if (!enabled) return
+    const id = window.setTimeout(() => setStockWaited(true), 1500)
+    return () => window.clearTimeout(id)
+  }, [enabled])
+  const water = useMemo(
+    () => withPlantVitality(waterFromReadings(readings ?? [], now), vitality),
+    [readings, now, vitality],
+  )
   const exclusion = usePanelRect(enabled && armed)
 
-  if (!enabled || !armed) return null
+  if (!enabled || !armed || (stock === null && !stockWaited)) return null
   return (
     <TankScene
       water={water}
+      stock={stock ?? undefined}
       exclusion={exclusion}
       hemisphere={prefs.hemisphere}
       clock={clock ?? undefined}
