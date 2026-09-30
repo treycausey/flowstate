@@ -39,6 +39,7 @@ function run(
   return diagnose({
     symptoms,
     species: opts.species ? getSpecies(opts.species) : undefined,
+    placement: opts.placement,
     latestReadings: opts.latestReadings ?? {},
     daysSincePlanted: opts.daysSincePlanted ?? 60,
   })
@@ -47,6 +48,35 @@ function run(
 const ids = (list: { id: string }[]) => list.map((d) => d.id)
 
 describe('diagnose', () => {
+  it('never gives substrate advice for a custom epiphyte that floats loose', () => {
+    const [d] = run(['floating-loose'], { placement: 'epiphyte' })
+    expect(d.suggestion).toMatch(/wood or rock/i)
+    expect(d.suggestion).not.toMatch(/push the base/i)
+  })
+
+  it('never gives substrate advice for a custom floating plant, and gives it the wet-leaf text', () => {
+    expect(ids(run(['floating-loose'], { placement: 'floating' }))).not.toContain('not-rooted')
+    const result = run(['brown-edges'], { placement: 'floating' })
+    expect(ids(result)).toContain('floating-wet')
+  })
+
+  it('says floating is normal for hornwort', () => {
+    const [d] = run(['floating-loose'], { species: 'hornwort' })
+    expect(d.suggestion).toMatch(/floating is normal for hornwort/i)
+    expect(d.suggestion).not.toMatch(/substrate/i)
+  })
+
+  it('suggests wood or rock only for rhizome plants that must not touch substrate', () => {
+    const java = run(['melting'], { species: 'java-fern', daysSincePlanted: 60 })
+    const javaTip = java.find((d) => d.id === 'buried-rhizome')!.suggestion
+    expect(javaTip).toMatch(/wood or rock/i)
+    expect(javaTip).not.toMatch(/roots in the substrate|only the roots in it/i)
+    const anubias = run(['melting'], { species: 'anubias-nana', daysSincePlanted: 60 })
+    expect(anubias.find((d) => d.id === 'buried-rhizome')!.suggestion).toMatch(
+      /above the substrate/i,
+    )
+  })
+
   it('calls melting soon after planting a crypt a transition melt and tells you to leave the roots', () => {
     const result = run(['melting'], { species: 'cryptocoryne-wendtii', daysSincePlanted: 9 })
     expect(result[0].id).toBe('transition-melt')

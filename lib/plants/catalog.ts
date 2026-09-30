@@ -510,13 +510,7 @@ export const PLANT_CATALOG: readonly PlantSpecies[] = [
     id: 'salvinia',
     name: 'Salvinia',
     scientific: 'Salvinia minima',
-    aliases: [
-      'water spangles',
-      'floating fern',
-      'water fern',
-      'Salvinia natans',
-      'Salvinia auriculata',
-    ],
+    aliases: ['water spangles', 'floating fern', 'water fern', 'Salvinia natans'],
     placement: 'floating',
     surfaceFloater: true,
     difficulty: 'easy',
@@ -529,8 +523,8 @@ export const PLANT_CATALOG: readonly PlantSpecies[] = [
     tempC: [22, 28],
     propagation: 'Splits by itself as it grows. Separate and thin the extra plants.',
     planting:
-      'Just drop it on the surface. The dangling parts are modified leaves that work as roots. Shop labels for Salvinia are often wrong. Giant salvinia (Salvinia molesta and its close relatives, including S. auriculata) is a US federal noxious weed, and some states restrict all Salvinia. Check your local rules, and never release it.',
-    care: 'Wants bright light and calm surface water. Splashing or heavy condensation makes the leaves brown and rot.',
+      'Just drop it on the surface. The dangling parts are modified leaves that work as roots. Shop labels for Salvinia are often wrong.',
+    care: 'Wants bright light and calm surface water. Splashing or heavy condensation makes the leaves brown and rot. Giant salvinia (Salvinia molesta and its close relatives, including S. auriculata) is a US federal noxious weed, and some states restrict all Salvinia. Check your local rules, and never release it.',
     bettaNote:
       'The dangling parts give cover, but the leaves can cover the surface quickly. Bettas breathe air at the surface, so keep part of it clear.',
     commonProblems: ['brown-edges', 'melting', 'stunted', 'yellowing-old-leaves'],

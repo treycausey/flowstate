@@ -81,6 +81,7 @@ export default function PlantDetail({ plant, checks, latestReadings, now, onLeav
       diagnose({
         symptoms: check.symptoms,
         species,
+        placement: plant.placement,
         latestReadings,
         daysSincePlanted: daysSincePlanted(plant, new Date()),
       }),

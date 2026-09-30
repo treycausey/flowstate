@@ -2,7 +2,14 @@ import type { Metric, Plant, PlantCheck } from '../models'
 import { calendarDaysBetween, compareTs } from '../time'
 import { metricStatus } from '../status'
 import type { Reading } from '../models'
-import { HEALTH_LEVELS, type Health, type PlantSpecies, type SymptomId, SYMPTOM_IDS } from './types'
+import {
+  HEALTH_LEVELS,
+  type Health,
+  type Placement,
+  type PlantSpecies,
+  type SymptomId,
+  SYMPTOM_IDS,
+} from './types'
 
 // ---- Symptoms and health levels -----------------------------------------------------------
 
@@ -209,6 +216,8 @@ export type Diagnosis = {
 export type DiagnoseInput = {
   symptoms: readonly SymptomId[]
   species?: PlantSpecies
+  /** Where the plant sits. Decides the advice for custom plants, which have no species. */
+  placement?: Placement
   latestReadings: LatestReadings
   daysSincePlanted: number
 }
@@ -224,6 +233,7 @@ const MAX_DIAGNOSES = 4
 export function diagnose({
   symptoms,
   species,
+  placement,
   latestReadings,
   daysSincePlanted: age,
 }: DiagnoseInput): Diagnosis[] {
@@ -236,7 +246,11 @@ export function diagnose({
   const ammonia = reading('ammonia')
   const nitrite = reading('nitrite')
   const isCrypt = species?.scientific.startsWith('Cryptocoryne') ?? false
-  const isSurfaceFloater = species?.surfaceFloater === true
+  const effectivePlacement = species?.placement ?? placement
+  // A custom floating plant has no species detail, so treat it as a surface floater: it never
+  // gets substrate advice and gets the wet-leaf text.
+  const isSurfaceFloater = species ? species.surfaceFloater === true : placement === 'floating'
+  const isSubmergedFloater = species?.placement === 'floating' && !species.surfaceFloater
   const melting = has('melting', 'transparent-leaves')
 
   if (melting && age <= TRANSITION_DAYS) {
@@ -287,8 +301,9 @@ export function diagnose({
       title: 'The rhizome may be buried',
       explanation:
         'Anubias, java fern and bucephalandra grow from a thick horizontal stem, the rhizome. If it is buried in substrate it often rots and the leaves decline.',
-      suggestion:
-        'Lift the plant and check the rhizome. Attach it to wood or rock with thread or a gel glue made for aquariums, with only the roots in the substrate.',
+      suggestion: /substrate/i.test(species.planting)
+        ? 'Lift the plant and check the rhizome. Attach it to wood or rock with thread or a gel glue made for aquariums, or keep the rhizome above the substrate with only the roots in it.'
+        : 'Lift the plant and check the rhizome. Attach it to wood or rock with thread or a gel glue made for aquariums. Do not put any of it in the substrate.',
     })
   }
 
@@ -431,7 +446,15 @@ export function diagnose({
   }
 
   if (has('floating-loose') && !isSurfaceFloater) {
-    if (species?.rhizome || species?.placement === 'epiphyte') {
+    if (isSubmergedFloater) {
+      add({
+        id: 'not-rooted',
+        score: 65,
+        title: 'Floating is normal',
+        explanation: 'Hornwort and similar plants have no true roots, so they drift.',
+        suggestion: 'Floating is normal for hornwort; weigh a stem down if you want it anchored.',
+      })
+    } else if (species?.rhizome || effectivePlacement === 'epiphyte') {
       add({
         id: 'not-rooted',
         score: 65,

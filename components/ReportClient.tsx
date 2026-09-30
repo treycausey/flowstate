@@ -24,7 +24,16 @@ const dateOnly = { dateStyle: 'medium' } as const
 
 export default function ReportClient() {
   const { activeTank, activeTanks, setActiveTankId, loaded } = useTanks()
-  const [readings, setReadings] = useState<Reading[]>([])
+  // Keyed by tank, so a tank switch (or a failed load) never shows the previous tank's rows
+  const [loadedReadings, setLoadedReadings] = useState<{
+    tankId: string
+    readings: Reading[]
+  } | null>(null)
+  const readings = useMemo(
+    () =>
+      loadedReadings && loadedReadings.tankId === activeTank?.id ? loadedReadings.readings : [],
+    [loadedReadings, activeTank?.id],
+  )
   const [range, setRange] = useState<Range>('30')
   // Fixed at mount so the report window doesn't drift between renders
   const [now] = useState(() => new Date())
@@ -41,7 +50,11 @@ export default function ReportClient() {
     let mounted = true
     const tankId = activeTank.id
     listReadingsByTank(tankId)
-      .then((rs) => mounted && setReadings(rs))
+      .then((rs) => {
+        if (!mounted) return
+        setLoadedReadings({ tankId, readings: rs })
+        setReadingsFailure(null)
+      })
       .catch((err) => {
         console.error('Failed to load readings', err)
         if (mounted) setReadingsFailure({ tankId, text: errorText(err) })

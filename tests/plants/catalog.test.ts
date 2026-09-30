@@ -109,7 +109,7 @@ describe('plant catalog integrity', () => {
   it('tells people never to release the four regulated species', () => {
     for (const id of ['hygrophila-polysperma', 'salvinia', 'anacharis', 'amazon-frogbit']) {
       const s = getSpecies(id)!
-      expect(`${s.care} ${s.planting}`).toMatch(/never release/i)
+      expect(s.care).toMatch(/never release/i)
     }
   })
 
