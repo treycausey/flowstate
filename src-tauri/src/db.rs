@@ -74,6 +74,10 @@ pub struct Settings {
     pub theme: Option<String>,
     #[serde(rename = "chartOptions")]
     pub chart_options: Option<serde_json::Value>,
+    /// Every other settings key (`livingTank`, `hemisphere`, `shimmerSeen`, future keys)
+    /// passes through untouched, so the desktop app never drops settings it does not know.
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -541,5 +545,46 @@ mod tests {
         assert!(json["pH"].is_null() && json["ammonia"].is_null());
         let back: Reading = serde_json::from_value(json).unwrap();
         assert_eq!(back, cleared);
+    }
+
+    #[test]
+    fn unknown_settings_keys_round_trip() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        init_schema(&mut conn).unwrap();
+        let incoming: Settings = serde_json::from_str(
+            r#"{"theme":"dark","livingTank":false,"hemisphere":"south","shimmerSeen":["t1"],"futureKey":{"a":1}}"#,
+        )
+        .unwrap();
+        set_settings(&conn, &incoming).unwrap();
+        let stored = get_settings(&conn).unwrap().unwrap();
+        let out = serde_json::to_value(&stored).unwrap();
+        assert_eq!(out["livingTank"], serde_json::json!(false));
+        assert_eq!(out["hemisphere"], serde_json::json!("south"));
+        assert_eq!(out["shimmerSeen"], serde_json::json!(["t1"]));
+        assert_eq!(out["futureKey"], serde_json::json!({"a": 1}));
+        assert_eq!(stored.theme.as_deref(), Some("dark"));
+        // export_dump and import_dump keep them too.
+        let dump = export_dump(&conn).unwrap();
+        let mut other = Connection::open_in_memory().unwrap();
+        init_schema(&mut other).unwrap();
+        import_dump(&mut other, &dump).unwrap();
+        let again = serde_json::to_value(get_settings(&other).unwrap().unwrap()).unwrap();
+        assert_eq!(again["shimmerSeen"], serde_json::json!(["t1"]));
+        assert_eq!(again["futureKey"], serde_json::json!({"a": 1}));
+    }
+
+    #[test]
+    fn older_stored_settings_still_load() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        init_schema(&mut conn).unwrap();
+        conn.execute_batch(
+            "INSERT INTO settings VALUES ('global','{\"units\":\"metric\",\"theme\":\"light\",\"chartOptions\":{\"rollingAverageDays\":7}}');",
+        )
+        .unwrap();
+        let s = get_settings(&conn).unwrap().unwrap();
+        assert_eq!(s.units.as_deref(), Some("metric"));
+        assert_eq!(s.theme.as_deref(), Some("light"));
+        assert!(s.chart_options.is_some());
+        assert!(s.extra.is_empty());
     }
 }

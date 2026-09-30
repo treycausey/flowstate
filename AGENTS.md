@@ -134,6 +134,8 @@ A change is “done” when:
 - 2026‑09: Partial readings. Blank metrics mean "not tested" and are stored as `null` (not 0); a reading needs at least one result. Charts, counts and CSV skip nulls. The desktop SQLite schema migrates via `PRAGMA user_version` (0 → 2) to drop `NOT NULL` on the metric columns.
 - 2026‑09: Kit chips show the API Freshwater Master Test Kit colour-card values under each input. pH shows one row at a time with a "High-range kit" toggle to keep the form short on phones. Chips set the field text; tapping the selected chip clears it (not tested).
 - 2026‑09: Nitrogen-cycle status rule (`lib/status.ts`): cycling (latest ammonia or nitrite > 0), not-started (otherwise, ammonia or nitrite never tested), cycled (latest 3 readings that tested both were 0/0 and nitrate > 0 was seen), otherwise nearly-cycled (both tested, both 0).
+- 2026‑09: Living tank UI. The app is one frosted panel over a photoreal aquarium: generated WebP plates (dawn/day/dusk/night) plus a plain-WebGL2 renderer (`lib/tank/`, no 3D library) with a procedural betta (mesh-deformed cut-out, not video, so it can react). The scene loads after first paint and is decorative (`aria-hidden`); the CSS plate is the fallback when WebGL2 is missing, the setting is off, or offline assets are absent. Reduced motion shows one still frame. The water reacts to the latest readings (`lib/tank/waterState.ts`). This supersedes "minimal styling" for the app chrome only; charts stay Tufte-minimal.
+- 2026‑09: Auto theme follows the tank phase: night tokens apply from dusk's end to dawn (same `PHASE_START` table in the pre-paint script and the engine).
 
 ## Agent Workflow Notes
 

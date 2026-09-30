@@ -5,7 +5,14 @@ import { useTankReadings } from '@/lib/useTankReadings'
 import { METRICS, METRIC_SHORT, type Metric, type Reading } from '@/lib/models'
 import { formatMetric, unitFor } from '@/lib/format'
 import { severity } from '@/lib/series'
-import { tankStatus, type CycleStatus, type MetricStatus, type Trend } from '@/lib/status'
+import {
+  metricHistory,
+  tankStatus,
+  type CycleStatus,
+  type MetricStatus,
+  type Trend,
+} from '@/lib/status'
+import Sparkline from '@/components/charts/Sparkline'
 
 const CYCLE_LABEL: Record<CycleStatus, string> = {
   'not-started': 'Not started',
@@ -21,7 +28,6 @@ const CYCLE_HINT: Record<CycleStatus, string> = {
   cycled: 'Three clean tests in a row and nitrate is present.',
 }
 
-const TREND_ARROW: Record<Exclude<Trend, null>, string> = { up: '↑', down: '↓', flat: '→' }
 const TREND_WORD: Record<Exclude<Trend, null>, string> = {
   up: 'up',
   down: 'down',
@@ -41,21 +47,21 @@ function MetricStatusRow({ metric, status }: { metric: Metric; status: MetricSta
   if (!latest)
     return (
       <div className="status-metric">
-        <dt>{METRIC_SHORT[metric]}</dt>
-        <dd className="muted">
+        <span className="status-label">{METRIC_SHORT[metric]}</span>
+        <span className="status-value muted">
           <span aria-hidden="true">—</span>
           <span className="visually-hidden">not tested yet</span>
-        </dd>
+        </span>
       </div>
     )
   const level = severity(metric, latest.value)
   return (
     <div className="status-metric">
-      <dt>{METRIC_SHORT[metric]}</dt>
-      <dd>
+      <span className="status-label">{METRIC_SHORT[metric]}</span>
+      <span className="status-value-wrap">
         <span className={level === 'ok' ? 'status-value' : `status-value flag flag--${level}`}>
           {formatMetric(metric, latest.value)}
-          {unitFor(metric)}
+          <span className="visually-hidden">{unitFor(metric)}</span>
           {level !== 'ok' && (
             <>
               <span aria-hidden="true">{level === 'high' ? ' ▲' : ' △'}</span>
@@ -65,7 +71,6 @@ function MetricStatusRow({ metric, status }: { metric: Metric; status: MetricSta
         </span>
         {trend && previous && (
           <span className="status-trend muted">
-            <span aria-hidden="true"> {TREND_ARROW[trend]}</span>
             <span className="visually-hidden">
               {' '}
               trend {TREND_WORD[trend]}
@@ -73,30 +78,39 @@ function MetricStatusRow({ metric, status }: { metric: Metric; status: MetricSta
             </span>
           </span>
         )}
-      </dd>
+      </span>
     </div>
   )
 }
 
-/** Presentational card; `now` is injectable for tests. */
+/** Presentational block; `now` is injectable for tests. */
 export function TankStatusView({ readings, now }: { readings: Reading[]; now?: Date }) {
   if (readings.length === 0) return <p className="muted">No tests yet. Log one above.</p>
   const status = tankStatus(readings, now)
   return (
-    <div className="card status-card">
-      <div className="status-head">
+    <div className="status-card">
+      <div className="status-line">
         <p className="status-cycle">
-          <span className="muted">Nitrogen cycle: </span>
+          <span className="visually-hidden">Nitrogen cycle: </span>
           <strong>{CYCLE_LABEL[status.cycle]}</strong>
         </p>
-        <p className="muted small">{daysText(status.daysSinceLastTest)}</p>
-      </div>
-      <p className="muted small">{CYCLE_HINT[status.cycle]}</p>
-      <dl className="status-metrics">
         {METRICS.map((m) => (
           <MetricStatusRow key={m} metric={m} status={status.metrics[m]} />
         ))}
-      </dl>
+      </div>
+      <div className="sparklines">
+        {METRICS.map((m) => {
+          const latest = status.metrics[m].latest
+          const level = latest ? severity(m, latest.value) : 'ok'
+          return (
+            <div key={m} className="spark-cell" data-label={METRIC_SHORT[m]}>
+              <Sparkline values={metricHistory(readings, m)} label={METRIC_SHORT[m]} tone={level} />
+            </div>
+          )
+        })}
+      </div>
+      <p className="status-hint">{CYCLE_HINT[status.cycle]}</p>
+      <p className="visually-hidden">{daysText(status.daysSinceLastTest)}</p>
     </div>
   )
 }

@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useTanks } from '@/components/TankProvider'
 import { deleteReading, listReadingsWithinHour, updateReading } from '@/lib/idb'
 import { emitReadingsChanged } from '@/lib/events'
@@ -52,6 +53,9 @@ export default function ReadingList({ limit = 10 }: { limit?: number }) {
   const [draft, setDraft] = useState<DraftReading | null>(null)
   const [error, setError] = useState<string | null>(null)
   const firstFieldRef = useRef<HTMLInputElement>(null)
+  const dialogRef = useRef<HTMLDivElement>(null)
+  // The Edit button that opened the dialog; focus returns to it on close.
+  const triggerRef = useRef<HTMLElement | null>(null)
 
   const cancelEditing = () => {
     setEditingReading(null)
@@ -65,10 +69,37 @@ export default function ReadingList({ limit = 10 }: { limit?: number }) {
       if (event.key === 'Escape') {
         event.preventDefault()
         cancelEditing()
+        return
+      }
+      if (event.key === 'Tab' && dialogRef.current) {
+        // Focus trap: cycle within the dialog
+        const focusables = dialogRef.current.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), [href], input:not([disabled]), select, textarea, [tabindex]:not([tabindex="-1"])',
+        )
+        const first = focusables[0]
+        const last = focusables[focusables.length - 1]
+        const activeEl = document.activeElement as HTMLElement | null
+        if (!first || !last) return
+        if (!activeEl || !dialogRef.current.contains(activeEl)) {
+          event.preventDefault()
+          first.focus()
+        } else if (event.shiftKey && activeEl === first) {
+          event.preventDefault()
+          last.focus()
+        } else if (!event.shiftKey && activeEl === last) {
+          event.preventDefault()
+          first.focus()
+        }
       }
     }
     window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
+    // Capture now: strict mode's simulated unmount would otherwise null the ref before real close.
+    const trigger = triggerRef.current
+    return () => {
+      window.removeEventListener('keydown', handler)
+      triggerRef.current = null
+      if (trigger?.isConnected) trigger.focus()
+    }
   }, [editingReading])
 
   useEffect(() => {
@@ -91,7 +122,8 @@ export default function ReadingList({ limit = 10 }: { limit?: number }) {
     emitReadingsChanged(reading.tankId)
   }
 
-  const startEditing = (reading: Reading) => {
+  const startEditing = (reading: Reading, trigger: HTMLElement) => {
+    triggerRef.current = trigger
     setError(null)
     setDraft({
       ts: toDatetimeLocalValue(new Date(reading.ts)),
@@ -210,7 +242,7 @@ export default function ReadingList({ limit = 10 }: { limit?: number }) {
                     <button
                       className="button button--ghost button--small"
                       type="button"
-                      onClick={() => startEditing(r)}
+                      onClick={(e) => startEditing(r, e.currentTarget)}
                       aria-label={`Edit reading from ${formatLocal(new Date(r.ts))}`}
                     >
                       Edit
@@ -232,100 +264,105 @@ export default function ReadingList({ limit = 10 }: { limit?: number }) {
           {showAll ? 'Show fewer' : `Show all ${items.length}`}
         </button>
       )}
-      {editingReading && draft ? (
-        <div className="modal-overlay" role="presentation">
-          <div
-            className="modal"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby={`edit-${editingReading.id}`}
-          >
-            <form
-              className="stack"
-              noValidate
-              onSubmit={(event) => {
-                event.preventDefault()
-                saveEditing()
-              }}
-            >
-              <h3 id={`edit-${editingReading.id}`} style={{ margin: 0 }}>
-                Edit Reading
-              </h3>
-              <div className="stack" style={{ gap: 'var(--space-3)' }}>
-                <label>
-                  Date &amp; time
-                  <input
-                    type="datetime-local"
-                    value={draft.ts}
-                    onChange={(e) => setDraftField('ts', e.target.value)}
-                  />
-                </label>
-                <div className="metric-grid">
-                  {METRICS.map((m, i) => (
-                    <div className="field" key={m}>
-                      <label htmlFor={`edit-${m}`}>{EDIT_LABEL[m]}</label>
-                      <KitChips
-                        metric={m}
-                        value={draft[m]}
-                        onChange={(next) => setDraftField(m, next)}
-                      >
-                        <input
-                          id={`edit-${m}`}
-                          ref={i === 0 ? firstFieldRef : undefined}
-                          type="text"
-                          inputMode="decimal"
-                          autoComplete="off"
-                          value={draft[m]}
-                          onChange={(e) => setDraftField(m, e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return
-                            if (e.shiftKey || e.altKey || e.metaKey || e.ctrlKey) return
-                            e.preventDefault()
-                            setDraftField(
-                              m,
-                              stepMetricText(m, draft[m], e.key === 'ArrowUp' ? 1 : -1),
-                            )
-                          }}
-                        />
-                      </KitChips>
-                    </div>
-                  ))}
-                </div>
-                <label>
-                  Note
-                  <input
-                    type="text"
-                    maxLength={200}
-                    value={draft.note}
-                    onChange={(e) => setDraftField('note', e.target.value)}
-                  />
-                </label>
-                {error ? (
-                  <div role="alert" className="danger">
-                    {error}
-                  </div>
-                ) : null}
-              </div>
-              <div className="cluster" style={{ justifyContent: 'flex-end' }}>
-                <button
-                  className="button button--ghost button--danger"
-                  type="button"
-                  style={{ marginRight: 'auto' }}
-                  onClick={() => onDelete(editingReading)}
+      {editingReading && draft
+        ? // Portal: the frosted panel's backdrop-filter would otherwise trap position: fixed
+          createPortal(
+            <div className="modal-overlay" role="presentation" data-tank-ignore>
+              <div
+                ref={dialogRef}
+                className="modal"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby={`edit-${editingReading.id}`}
+              >
+                <form
+                  className="stack"
+                  noValidate
+                  onSubmit={(event) => {
+                    event.preventDefault()
+                    saveEditing()
+                  }}
                 >
-                  Delete
-                </button>
-                <button className="button button--ghost" type="button" onClick={cancelEditing}>
-                  Cancel
-                </button>
-                <button className="button" type="submit">
-                  Save changes
-                </button>
+                  <h3 id={`edit-${editingReading.id}`} style={{ margin: 0 }}>
+                    Edit Reading
+                  </h3>
+                  <div className="stack" style={{ gap: 'var(--space-3)' }}>
+                    <label>
+                      Date &amp; time
+                      <input
+                        type="datetime-local"
+                        value={draft.ts}
+                        onChange={(e) => setDraftField('ts', e.target.value)}
+                      />
+                    </label>
+                    <div className="metric-grid">
+                      {METRICS.map((m, i) => (
+                        <div className="field" key={m}>
+                          <label htmlFor={`edit-${m}`}>{EDIT_LABEL[m]}</label>
+                          <KitChips
+                            metric={m}
+                            value={draft[m]}
+                            onChange={(next) => setDraftField(m, next)}
+                          >
+                            <input
+                              id={`edit-${m}`}
+                              ref={i === 0 ? firstFieldRef : undefined}
+                              type="text"
+                              inputMode="decimal"
+                              autoComplete="off"
+                              value={draft[m]}
+                              onChange={(e) => setDraftField(m, e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return
+                                if (e.shiftKey || e.altKey || e.metaKey || e.ctrlKey) return
+                                e.preventDefault()
+                                setDraftField(
+                                  m,
+                                  stepMetricText(m, draft[m], e.key === 'ArrowUp' ? 1 : -1),
+                                )
+                              }}
+                            />
+                          </KitChips>
+                        </div>
+                      ))}
+                    </div>
+                    <label>
+                      Note
+                      <input
+                        type="text"
+                        maxLength={200}
+                        value={draft.note}
+                        onChange={(e) => setDraftField('note', e.target.value)}
+                      />
+                    </label>
+                    {error ? (
+                      <div role="alert" className="danger">
+                        {error}
+                      </div>
+                    ) : null}
+                  </div>
+                  <div className="cluster" style={{ justifyContent: 'flex-end' }}>
+                    <button
+                      className="button button--ghost button--danger"
+                      type="button"
+                      style={{ marginRight: 'auto' }}
+                      onClick={() => onDelete(editingReading)}
+                    >
+                      Delete
+                    </button>
+                    <button className="button button--ghost" type="button" onClick={cancelEditing}>
+                      Cancel
+                    </button>
+                    <button className="button" type="submit">
+                      Save changes
+                    </button>
+                  </div>
+                </form>
               </div>
-            </form>
-          </div>
-        </div>
-      ) : null}
+            </div>,
+            document.body,
+          )
+        : null}
     </div>
   )
 }

@@ -1,7 +1,12 @@
 'use client'
 
 import { useEffect, useEffectEvent, useRef, useState } from 'react'
-import { addReading, findMostRecentReading, listReadingsWithinHour } from '@/lib/idb'
+import {
+  addReading,
+  findMostRecentReading,
+  listReadingsByTank,
+  listReadingsWithinHour,
+} from '@/lib/idb'
 import { useTanks } from '@/components/TankProvider'
 import { METRICS, type Metric, type MetricValue } from '@/lib/models'
 import { parseReadingInputs, stepMetricText } from '@/lib/validation'
@@ -10,6 +15,11 @@ import { fromDatetimeLocalValue, toDatetimeLocalValue } from '@/lib/time'
 import InstructionsModal from '@/components/InstructionsModal'
 import ProgressRing from '@/components/ProgressRing'
 import KitChips from '@/components/KitChips'
+import FieldHint from '@/components/FieldHint'
+import { fieldHint } from '@/lib/hints'
+import { noteSummonsBetta, shouldShimmer } from '@/lib/tank/eggs'
+import { blurTank, celebrateTank, dropPellet, focusTank, shimmerTank } from '@/lib/tank/events'
+import { loadTankPrefs, saveTankPrefs } from '@/lib/tank/prefs'
 
 type TimerRow = {
   id: string
@@ -34,6 +44,33 @@ const FIELD_LABEL: Record<Metric, string> = {
 }
 
 const FUTURE_TOLERANCE_MS = 5 * 60 * 1000
+
+/** The tank shows the betta reacting to the field you are on; only on desktop, where it is visible. */
+function announceFocus(e: React.FocusEvent<HTMLFormElement>) {
+  const el = e.target
+  if (!(el instanceof HTMLInputElement) || el.id === 'qe-ts') return
+  if (window.innerWidth < 900) return
+  const panel = el.closest('.app-panel')
+  const right = panel ? panel.getBoundingClientRect().right : 0
+  const box = el.getBoundingClientRect()
+  focusTank(right + 24, box.top + box.height / 2)
+}
+
+/** After a save: pellet for the betta, and the golden shimmer the first time a tank reaches 100 readings. */
+async function celebrateSave(tankId: string) {
+  dropPellet()
+  try {
+    const prefs = await loadTankPrefs()
+    // Already celebrated: skip loading the whole reading list.
+    if (prefs.shimmerSeen.includes(tankId)) return
+    const all = await listReadingsByTank(tankId)
+    if (!shouldShimmer(tankId, all.length, prefs.shimmerSeen)) return
+    await saveTankPrefs({ shimmerSeen: [...prefs.shimmerSeen, tankId] })
+    shimmerTank()
+  } catch (err) {
+    console.error('Could not check the 100th-reading shimmer', err)
+  }
+}
 
 const emptyValues = () => ({ pH: '', ammonia: '', nitrite: '', nitrate: '', note: '' })
 
@@ -186,6 +223,7 @@ export default function QuickEntry() {
       const note = state.note.trim()
       await addReading({ tankId: activeTankId, ts: tsISO, ...values, note: note || undefined })
       emitReadingsChanged(activeTankId)
+      void celebrateSave(activeTankId)
       setTsTouched(false)
       setState({ ts: toDatetimeLocalValue(new Date()), ...emptyValues() })
       setStatus('Reading saved.')
@@ -201,15 +239,26 @@ export default function QuickEntry() {
     const { name, value } = e.target
     if (name === 'ts') setTsTouched(true)
     setStatus(null)
+    if (name === 'note' && noteSummonsBetta(state.note, value)) celebrateTank()
     setErrors((prev) => ({ ...prev, [name]: undefined, form: undefined }))
     setState((s) => ({ ...s, [name]: value }))
   }
 
   const describedBy = (key: keyof Errors) => (errors[key] ? `qe-${key}-error` : undefined)
+  const metricDescribedBy = (m: Metric) =>
+    [describedBy(m), fieldHint(m, state[m]) ? `qe-${m}-hint` : undefined]
+      .filter(Boolean)
+      .join(' ') || undefined
 
   return (
-    <form onSubmit={onSubmit} className="stack quick-entry" noValidate>
-      <div className="field">
+    <form
+      onSubmit={onSubmit}
+      onFocus={announceFocus}
+      onBlur={() => blurTank()}
+      className="stack quick-entry"
+      noValidate
+    >
+      <div className="field field--row">
         <label htmlFor="qe-ts">Date &amp; time</label>
         <input
           id="qe-ts"
@@ -265,7 +314,7 @@ export default function QuickEntry() {
                 }}
                 disabled={disabled}
                 aria-invalid={!!errors[m]}
-                aria-describedby={describedBy(m)}
+                aria-describedby={metricDescribedBy(m)}
               />
             </KitChips>
             {errors[m] && (
@@ -273,6 +322,7 @@ export default function QuickEntry() {
                 {errors[m]}
               </span>
             )}
+            <FieldHint id={`qe-${m}-hint`} hint={fieldHint(m, state[m])} />
           </div>
         ))}
       </div>
@@ -289,8 +339,8 @@ export default function QuickEntry() {
         />
       </div>
       <div className="cluster quick-entry-actions">
-        <button className="button" type="submit" disabled={disabled}>
-          {saving ? 'Saving…' : 'Save'}
+        <button className="button quick-entry-primary" type="submit" disabled={disabled}>
+          {saving ? 'Saving…' : 'Save reading'}
         </button>
         <button
           className="button button--ghost"

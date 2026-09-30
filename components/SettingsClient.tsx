@@ -3,11 +3,19 @@
 import { useEffect, useState } from 'react'
 import { isTauri } from '@/lib/tauri'
 import { getDbInfo, revealDb } from '@/lib/desktop'
-import { exportDump, importDump } from '@/lib/idb'
+import { exportDump, importDump, listTanks } from '@/lib/idb'
 import { BackupFormatError } from '@/lib/backup'
 import { downloadText } from '@/lib/export'
 import { emitReadingsChanged } from '@/lib/events'
 import { useTanks } from '@/components/TankProvider'
+import {
+  DEFAULT_PREFS,
+  loadTankPrefs,
+  onTankPrefsChanged,
+  refreshTankPrefs,
+  saveTankPrefs,
+  type TankPrefs,
+} from '@/lib/tank/prefs'
 
 type DbInfo = { dir: string; file: string }
 
@@ -15,7 +23,34 @@ export default function SettingsClient() {
   const [db, setDb] = useState<DbInfo | null>(null)
   const [tauri, setTauri] = useState(false)
   const [message, setMessage] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null)
-  const { refresh, tanks } = useTanks()
+  const { refresh } = useTanks()
+  const [prefs, setPrefs] = useState<TankPrefs>(DEFAULT_PREFS)
+
+  useEffect(() => {
+    loadTankPrefs()
+      .then(setPrefs)
+      .catch((err) => console.error('Failed to load tank settings', err))
+    return onTankPrefsChanged(setPrefs)
+  }, [])
+
+  const updatePrefs = async (patch: Partial<TankPrefs>) => {
+    const previous = prefs
+    setPrefs((current) => ({ ...current, ...patch }))
+    try {
+      await saveTankPrefs(patch)
+    } catch (err) {
+      console.error('Failed to save tank settings', err)
+      // Roll back only the keys this change touched.
+      setPrefs((current) => {
+        const next = { ...current }
+        for (const key of Object.keys(patch) as (keyof TankPrefs)[]) {
+          ;(next as Record<string, unknown>)[key] = previous[key]
+        }
+        return next
+      })
+      setMessage({ kind: 'error', text: 'Couldn’t save that setting.' })
+    }
+  }
 
   useEffect(() => {
     ;(async () => {
@@ -70,8 +105,18 @@ export default function SettingsClient() {
       )
       if (!ok) return
       await importDump(data)
-      await refresh()
-      for (const t of tanks) emitReadingsChanged(t.id)
+      try {
+        await refresh()
+        await refreshTankPrefs()
+        for (const t of await listTanks()) emitReadingsChanged(t.id)
+      } catch (err) {
+        console.error('Refresh after import failed', err)
+        setMessage({
+          kind: 'error',
+          text: 'Imported, but couldn’t refresh — reload the app.',
+        })
+        return
+      }
       setMessage({
         kind: 'ok',
         text: `Imported ${data.tanks.length} tank(s) and ${data.readings.length} reading(s).`,
@@ -117,6 +162,40 @@ export default function SettingsClient() {
 
   return (
     <div className="stack" style={{ gap: 16 }}>
+      <section aria-labelledby="living-tank-heading">
+        <h2 id="living-tank-heading" className="section-title">
+          Living tank
+        </h2>
+        <div className="stack" style={{ gap: 12 }}>
+          <label className="inline checkbox">
+            <input
+              type="checkbox"
+              checked={prefs.livingTank}
+              onChange={(e) => updatePrefs({ livingTank: e.target.checked })}
+            />
+            <span>Show living tank</span>
+          </label>
+          <div className="field field--row">
+            <label htmlFor="tank-hemisphere">Hemisphere</label>
+            <select
+              id="tank-hemisphere"
+              value={prefs.hemisphere}
+              onChange={(e) =>
+                updatePrefs({ hemisphere: e.target.value === 'south' ? 'south' : 'north' })
+              }
+            >
+              <option value="north">Northern</option>
+              <option value="south">Southern</option>
+            </select>
+          </div>
+          <p className="muted small">
+            The tank follows the time of day, the season, and your latest water tests. It also
+            follows your system’s Reduce Motion setting. Turn it off to save battery: the page then
+            shows a still picture and never starts WebGL.
+          </p>
+        </div>
+      </section>
+
       <section>
         <h2 className="section-title">Storage</h2>
         {tauri ? (

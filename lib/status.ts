@@ -101,3 +101,18 @@ export function tankStatus(readings: Reading[], now = new Date()): TankStatus {
     cycle: cycleStatus(readings),
   }
 }
+
+/** The last `count` tested values for a metric, oldest first (for sparklines). */
+export function metricHistory(readings: Reading[], metric: Metric, count = 10): number[] {
+  return testedValues(sortedOldestFirst(readings), metric)
+    .slice(-count)
+    .map((t) => t.value)
+}
+
+/** "Last test today / yesterday / N days ago"; the panel header and status block share it. */
+export function lastTestText(days: number | null): string {
+  if (days === null) return 'No tests yet'
+  if (days === 0) return 'Last test today'
+  if (days === 1) return 'Last test yesterday'
+  return `Last test ${days} days ago`
+}

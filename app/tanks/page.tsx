@@ -5,11 +5,11 @@ export const metadata = { title: 'Charts — Flowstate' }
 
 export default function TanksPage() {
   return (
-    <main className="container stack page">
-      <h1 className="page-title">Charts</h1>
+    <div className="stack page">
+      <h1 className="page-title visually-hidden">Charts</h1>
       <Suspense fallback={null}>
         <TankDetailClient />
       </Suspense>
-    </main>
+    </div>
   )
 }

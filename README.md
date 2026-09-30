@@ -71,6 +71,33 @@ Local-first app to log freshwater aquarium chemistry and visualize trends with m
 - `public/manifest.webmanifest`, `public/service-worker.js`, `public/icons/*`
 - `styles/print.css`, `app/globals.css`
 
+## Living tank
+
+Behind the panel is a small WebGL2 aquarium with a betta. It follows the time of day, the season, and your latest water tests: ammonia or nitrite makes the water hazy and the fish pale, high nitrate greens the water, and a long gap since the last test dusts the glass. Focusing a field makes the fish look your way, and saving a reading drops it a pellet.
+
+- Turn it off in Settings > Living tank (no WebGL runs; the page shows a still picture). Pick your hemisphere there for the seasons.
+- It follows the system Reduce Motion setting (one still frame).
+- The engine loads after first paint, so logging stays fast.
+- Dev only: `?tankPhase=dawn|day|dusk|night` and `?tankDate=2026-12-31T23:59:30` (local time) override the clock, and `/dev/tank` is a control drawer.
+
+There are easter eggs. Spoilers below.
+
+<details>
+<summary>Easter eggs</summary>
+
+- Tap the betta and it flares. Tap elsewhere in the tank and it looks there.
+- At night it rests against the moss, and a red shrimp comes out.
+- In autumn a catappa leaf floats at the surface.
+- After a 7-day streak of in-range tests it builds a bubble nest.
+- Leave the app idle for 2 minutes (by day) and the betta swims up to look at you.
+- Full moon nights have brighter moonbeams.
+- Type "betta" in the Note field for a happy flare and a loop-the-loop.
+- Around midnight on New Year (Dec 31 23:59 to Jan 1 00:10) bubbles burst from the substrate.
+- On Halloween night the tank glows faintly orange and the betta flares once when the page opens.
+- Log a tank's 100th reading and a golden shimmer passes through the water, once per tank.
+
+</details>
+
 ## Data Schema (v1)
 
 - Tank: `{ id, name, createdAt, archivedAt?, reminderCadence }`
