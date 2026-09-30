@@ -3,6 +3,7 @@ import type { Metadata, Viewport } from 'next'
 import { Inter, Newsreader } from 'next/font/google'
 import ServiceWorkerRegister from '@/components/ServiceWorkerRegister'
 import { TankProvider } from '@/components/TankProvider'
+import TankHost from '@/components/tank/TankHost'
 import NavBar from '@/components/NavBar'
 import PanelShell from '@/components/PanelShell'
 import TauriNavigationBridge from '@/components/TauriNavigationBridge'
@@ -56,6 +57,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <ServiceWorkerRegister />
         <TankProvider>
           <TauriNavigationBridge />
+          <TankHost />
           <PanelShell>
             <NavBar />
             {children}

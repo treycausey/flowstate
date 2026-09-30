@@ -1,7 +1,12 @@
 'use client'
 
 import { useEffect, useEffectEvent, useRef, useState } from 'react'
-import { addReading, findMostRecentReading, listReadingsWithinHour } from '@/lib/idb'
+import {
+  addReading,
+  findMostRecentReading,
+  listReadingsByTank,
+  listReadingsWithinHour,
+} from '@/lib/idb'
 import { useTanks } from '@/components/TankProvider'
 import { METRICS, type Metric, type MetricValue } from '@/lib/models'
 import { parseReadingInputs, stepMetricText } from '@/lib/validation'
@@ -12,6 +17,9 @@ import ProgressRing from '@/components/ProgressRing'
 import KitChips from '@/components/KitChips'
 import FieldHint from '@/components/FieldHint'
 import { fieldHint } from '@/lib/hints'
+import { noteSummonsBetta, shouldShimmer } from '@/lib/tank/eggs'
+import { blurTank, celebrateTank, dropPellet, focusTank, shimmerTank } from '@/lib/tank/events'
+import { loadTankPrefs, saveTankPrefs } from '@/lib/tank/prefs'
 
 type TimerRow = {
   id: string
@@ -36,6 +44,30 @@ const FIELD_LABEL: Record<Metric, string> = {
 }
 
 const FUTURE_TOLERANCE_MS = 5 * 60 * 1000
+
+/** The tank shows the betta reacting to the field you are on; only on desktop, where it is visible. */
+function announceFocus(e: React.FocusEvent<HTMLFormElement>) {
+  const el = e.target
+  if (!(el instanceof HTMLInputElement) || el.id === 'qe-ts') return
+  if (window.innerWidth < 900) return
+  const panel = el.closest('.app-panel')
+  const right = panel ? panel.getBoundingClientRect().right : 0
+  const box = el.getBoundingClientRect()
+  focusTank(right + 24, box.top + box.height / 2)
+}
+
+/** After a save: pellet for the betta, and the golden shimmer the first time a tank reaches 100 readings. */
+async function celebrateSave(tankId: string) {
+  dropPellet()
+  try {
+    const [all, prefs] = await Promise.all([listReadingsByTank(tankId), loadTankPrefs()])
+    if (!shouldShimmer(tankId, all.length, prefs.shimmerSeen)) return
+    await saveTankPrefs({ shimmerSeen: [...prefs.shimmerSeen, tankId] })
+    shimmerTank()
+  } catch (err) {
+    console.error('Could not check the 100th-reading shimmer', err)
+  }
+}
 
 const emptyValues = () => ({ pH: '', ammonia: '', nitrite: '', nitrate: '', note: '' })
 
@@ -188,6 +220,7 @@ export default function QuickEntry() {
       const note = state.note.trim()
       await addReading({ tankId: activeTankId, ts: tsISO, ...values, note: note || undefined })
       emitReadingsChanged(activeTankId)
+      void celebrateSave(activeTankId)
       setTsTouched(false)
       setState({ ts: toDatetimeLocalValue(new Date()), ...emptyValues() })
       setStatus('Reading saved.')
@@ -203,6 +236,7 @@ export default function QuickEntry() {
     const { name, value } = e.target
     if (name === 'ts') setTsTouched(true)
     setStatus(null)
+    if (name === 'note' && noteSummonsBetta(state.note, value)) celebrateTank()
     setErrors((prev) => ({ ...prev, [name]: undefined, form: undefined }))
     setState((s) => ({ ...s, [name]: value }))
   }
@@ -214,7 +248,13 @@ export default function QuickEntry() {
       .join(' ') || undefined
 
   return (
-    <form onSubmit={onSubmit} className="stack quick-entry" noValidate>
+    <form
+      onSubmit={onSubmit}
+      onFocus={announceFocus}
+      onBlur={() => blurTank()}
+      className="stack quick-entry"
+      noValidate
+    >
       <div className="field field--row">
         <label htmlFor="qe-ts">Date &amp; time</label>
         <input

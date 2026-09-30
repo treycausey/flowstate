@@ -98,7 +98,7 @@ export function computeGrade(env: Environment, water: WaterState): Grade {
 
   const daylight = 1 - darkness
   const causticGain =
-    (0.55 * daylight + 0.28 * darkness * moonGain) *
+    (0.4 * daylight + 0.3 * darkness * moonGain) *
     (0.7 + 0.5 * water.sparkle) *
     (1 - 0.65 * water.haze)
   const causticTint = mix3([1.0, 0.93, 0.74], [0.5, 0.75, 1.0], darkness)

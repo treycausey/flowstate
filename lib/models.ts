@@ -27,6 +27,12 @@ export type Settings = {
   chartOptions?: {
     rollingAverageDays?: number
   }
+  /** Living tank scene. Off means CSS plate only, no WebGL. Default on. */
+  livingTank?: boolean
+  /** Which hemisphere's seasons the tank follows. Default north. */
+  hemisphere?: 'north' | 'south'
+  /** Tank ids that have already seen the 100th-reading shimmer. */
+  shimmerSeen?: string[]
 }
 
 export type Dump = {

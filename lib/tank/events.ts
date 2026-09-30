@@ -11,6 +11,10 @@ export type TankEventMap = {
   /** The user is focused on something at this point (an input field); the betta drifts to look. */
   focus: Point
   blur: Record<string, never>
+  /** A happy flare and a quick loop (the "betta" note egg). */
+  celebrate: Record<string, never>
+  /** A golden shimmer passes through the water once (the 100th reading). */
+  shimmer: Record<string, never>
   /** Any user activity; resets the idle timer for the inspect easter egg. */
   activity: Record<string, never>
 }
@@ -46,3 +50,5 @@ export const tapTank = (x: number, y: number) => tankEvents.emit('tap', { x, y }
 export const focusTank = (x: number, y: number) => tankEvents.emit('focus', { x, y })
 export const blurTank = () => tankEvents.emit('blur', {})
 export const reportActivity = () => tankEvents.emit('activity', {})
+export const celebrateTank = () => tankEvents.emit('celebrate', {})
+export const shimmerTank = () => tankEvents.emit('shimmer', {})

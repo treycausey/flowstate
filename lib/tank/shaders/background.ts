@@ -41,6 +41,8 @@ uniform vec2 u_sunDir;
 uniform vec4 u_leaf;      // x, y, rx, ry (normalised view space); zw unused when alpha 0
 uniform float u_leafShadow;
 uniform float u_vignette;
+uniform float u_shimmer; // 0..1 progress of the golden shimmer, negative when off
+uniform float u_glow;    // halloween glow, 0..1
 
 vec3 sample_plate(sampler2D tex, vec2 uv, float lod) {
   return textureLod(tex, uv, lod).rgb;
@@ -58,8 +60,8 @@ void main() {
   vec2 sp = vec2(pv.x * u_aspect, pv.y); // aspect-corrected scene coords
 
   // Caustics sit on lit surfaces: plate luminance is the mask, and they fade toward the floor.
-  float litMask = smoothstep(0.12, 0.5, lum);
-  float depthFall = 1.0 - smoothstep(0.5, 1.0, pv.y);
+  float litMask = smoothstep(0.03, 0.32, lum);
+  float depthFall = 1.0 - smoothstep(0.68, 1.0, pv.y);
   float surfaceBoost = 0.55 + 0.45 * (1.0 - smoothstep(0.0, 0.7, pv.y));
   float shadow = 0.0;
   if (u_leafShadow > 0.001) {
@@ -69,13 +71,13 @@ void main() {
   }
   float c = caustic(sp, t);
   vec2 lo = vec2(0.5 * u_aspect, 0.5) - normalize(u_sunDir) * 1.15;
-  float lightCone = 1.0 - smoothstep(0.35, 1.7, length(sp - lo));
+  float lightCone = 1.0 - smoothstep(0.8, 2.7, length(sp - lo));
   float lumBlur = dot(textureLod(u_plateA, uv, 3.5).rgb, vec3(0.299, 0.587, 0.114));
   float detail = smoothstep(0.015, 0.09, abs(lum - lumBlur));
-  float cMask = litMask * depthFall * surfaceBoost * mix(0.18, 1.0, detail) * (0.25 + 0.75 * lightCone) * (1.0 - 0.75 * shadow);
+  float cMask = litMask * depthFall * surfaceBoost * mix(0.16, 1.0, detail) * (0.5 + 0.5 * lightCone) * (1.0 - 0.75 * shadow);
   vec3 causticLight = u_causticTint * c * u_causticGain * cMask;
-  col *= 1.0 + causticLight * 1.35;
-  col += causticLight * 0.05;
+  col *= 1.0 + causticLight * 2.6;
+  col += causticLight * 0.22 * (0.3 + 0.7 * (1.0 - lum));
 
   // Grade.
   col = mix(vec3(dot(col, vec3(0.299, 0.587, 0.114))), col, u_saturation);
@@ -95,6 +97,20 @@ void main() {
   float sh = shaftAt(sp, normalize(u_sunDir), t, u_aspect);
   vec3 shaftLight = u_shaftTint * sh * u_shaftGain * (1.0 - 0.6 * shadow);
   col = 1.0 - (1.0 - col) * (1.0 - shaftLight * 0.45);
+
+  // Golden shimmer (100th reading): a soft diagonal band sweeps through the water once.
+  if (u_shimmer >= 0.0) {
+    float sd = pv.x * 0.75 + (1.0 - pv.y) * 0.6 - mix(-0.35, 1.7, u_shimmer);
+    float band = exp(-sd * sd * 16.0);
+    float sparkle = 0.65 + 0.35 * vnoise2(sp * 55.0 + t * 2.0);
+    float env = smoothstep(0.0, 0.1, u_shimmer) * (1.0 - smoothstep(0.9, 1.0, u_shimmer));
+    col += vec3(1.0, 0.76, 0.3) * band * sparkle * env * (0.4 + 0.5 * lum);
+  }
+  // Halloween: a faint orange glow low in the tank.
+  if (u_glow > 0.001) {
+    float flick = 0.85 + 0.15 * sin(t * 1.7 + pv.x * 5.0) * sin(t * 0.9 + 2.0);
+    col += vec3(1.0, 0.42, 0.08) * u_glow * flick * 0.42 * smoothstep(0.35, 1.0, pv.y) * (0.7 + 0.5 * lum);
+  }
 
   // Slight vignette, like a lens.
   vec2 vq = pv - 0.5;

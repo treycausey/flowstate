@@ -26,6 +26,9 @@ const PLATE_ASPECT = 2560 / 1707
 const CROSSFADE_SECONDS = 6
 const PARTICLE_COUNT = 200
 const BUBBLE_SLOTS = 18
+const BURST_SLOTS = 64
+const BURST_SECONDS = 13
+const SHIMMER_SECONDS = 4.5
 /** The plates are cropped by this factor so parallax never shows an edge. */
 const PLATE_CROP = 0.975
 
@@ -180,6 +183,8 @@ export class TankRenderer {
   private onAsset: () => void = () => {}
 
   private nestAlpha = 0
+  private burstT0: number | null = null
+  private shimmerT0: number | null = null
   private lastTime = 0
   private floatBuf = new Float32Array(12)
   private poseUniform = new Float32Array([
@@ -372,8 +377,8 @@ export class TankRenderer {
     this.buffer(quad)
     gl.enableVertexAttribArray(0)
     gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0)
-    const ks = new Float32Array(BUBBLE_SLOTS)
-    for (let i = 0; i < BUBBLE_SLOTS; i++) ks[i] = i
+    const ks = new Float32Array(BURST_SLOTS)
+    for (let i = 0; i < BURST_SLOTS; i++) ks[i] = i
     this.buffer(ks)
     gl.enableVertexAttribArray(1)
     gl.vertexAttribPointer(1, 1, gl.FLOAT, false, 0, 0)
@@ -555,6 +560,21 @@ export class TankRenderer {
     return this.phaseCur !== null && this.plateTex(this.phaseCur) !== null
   }
 
+  /** Whether a cut-out (e.g. 'betta-cruise') has finished uploading. */
+  hasImage(name: string) {
+    return this.images.has(name)
+  }
+
+  /** New Year: a celebratory burst of bubbles from the substrate, starting at render time `time`. */
+  startBurst(time: number) {
+    this.burstT0 = time
+  }
+
+  /** The 100th-reading golden shimmer, starting at render time `time`. */
+  startShimmer(time: number) {
+    this.shimmerT0 = time
+  }
+
   // ---- drawing ----
 
   render(input: RenderInput) {
@@ -631,6 +651,9 @@ export class TankRenderer {
     this.floatBuf[3] = leafPos.w * plateW * 0.4 * this.aspect * 0.55
     bg.v4('u_leaf', this.floatBuf.subarray(0, 4))
     bg.f1('u_vignette', 0.22)
+    if (this.shimmerT0 !== null && time - this.shimmerT0 > SHIMMER_SECONDS) this.shimmerT0 = null
+    bg.f1('u_shimmer', this.shimmerT0 === null ? -1 : (time - this.shimmerT0) / SHIMMER_SECONDS)
+    bg.f1('u_glow', env.holiday === 'halloween' ? grade.darkness : 0)
     gl.bindVertexArray(this.vao.fullscreen)
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4)
     gl.enable(gl.BLEND)
@@ -638,6 +661,7 @@ export class TankRenderer {
     // 2. Far motes, bubbles, props.
     this.drawParticles(input, grade, water, 0, 0.5, par)
     this.drawBubbles(input, grade, par)
+    this.drawBurst(input, grade, par)
     if (this.nestAlpha > 0.01) this.drawNest(time, grade, par)
     if (leafOn) this.drawLeaf(time, grade, leafPos, par)
     this.drawShrimp(time, grade, par)
@@ -720,11 +744,42 @@ export class TankRenderer {
     p.f1('u_period', lerp(26, 44, night))
     p.f1('u_count', Math.round(lerp(BUBBLE_SLOTS, 7, night)))
     p.f1('u_rise', lerp(4.6, 7.5, night))
+    p.f1('u_stagger', 0.46)
+    p.f1('u_spread', 0.012)
+    p.f1('u_size', 1)
     p.f2('u_parallax', par[0], par[1])
     p.v3('u_tint', g.moteTint)
     p.f1('u_exposure', g.exposure)
     gl.bindVertexArray(this.vao.bubbles)
     gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, BUBBLE_SLOTS)
+  }
+
+  private drawBurst(input: RenderInput, g: Grade, par: [number, number]) {
+    if (this.burstT0 === null) return
+    const age = input.time - this.burstT0
+    if (age > BURST_SECONDS) {
+      this.burstT0 = null
+      return
+    }
+    const gl = this.gl
+    const p = this.progs.bubble
+    p.use()
+    const origin = this.plateToView(0.5, 0.93)
+    p.f1('u_time', age)
+    p.f1('u_aspect', this.aspect)
+    p.f1('u_px', 1 / this.width)
+    p.f2('u_origin', origin[0], 0.96)
+    p.f1('u_period', 1e5)
+    p.f1('u_count', BURST_SLOTS)
+    p.f1('u_rise', 5.5)
+    p.f1('u_stagger', 0.09)
+    p.f1('u_spread', 0.9)
+    p.f1('u_size', 1.9)
+    p.f2('u_parallax', par[0], par[1])
+    p.v3('u_tint', g.moteTint)
+    p.f1('u_exposure', Math.max(g.exposure, 0.9) * 1.5)
+    gl.bindVertexArray(this.vao.bubbles)
+    gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, BURST_SLOTS)
   }
 
   private spriteDraw(
@@ -930,7 +985,7 @@ export class TankRenderer {
     const l = this.lightVec(g)
     for (const pellet of input.betta.pellets) {
       const wob = 0.004 * Math.sin(pellet.age * 3.1 + pellet.id * 2.0)
-      const r = 5.2 / this.width
+      const r = 8.5 / this.width
       p.f2('u_center', pellet.x + wob, pellet.y)
       p.f2('u_radius', r, r * this.aspect)
       const k = 0.75 + 0.3 * (1 - g.darkness)
@@ -1006,7 +1061,7 @@ export class TankRenderer {
     p.f2('u_shift', par[0], par[1])
     p.f1('u_aspect', this.aspect)
     p.f1('u_spriteW', fw)
-    p.f1('u_scale', b.scale)
+    p.f1('u_scale', b.scale * (1 + 0.05 * b.gulp))
     p.f1('u_facing', b.facing)
     p.f1('u_widthScale', widthScale)
     p.f1('u_rot', -b.pitch * b.facing)

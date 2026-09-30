@@ -51,12 +51,16 @@ export type BettaFrame = {
   accel: { forward: number; up: number }
   /** 0..1 while the fish stares out of the glass (inspect). */
   viewerFacing: number
+  /** 0..1 pulse right after the fish swallows a pellet. */
+  gulp: number
   pellets: readonly Pellet[]
 }
 
 export const TURN_SECONDS = 0.45
 export const CRUISE_SPEED = 0.06
 export const IDLE_INSPECT_SECONDS = 120
+export const LOOP_SECONDS = 1.1
+const GULP_SECONDS = 0.4
 
 const TAU = Math.PI * 2
 const MAX_SUBSTEP = 1 / 60
@@ -133,6 +137,8 @@ export class BettaSim {
   private pectoralPhase = 0
   private breathPhase = 0
   private viewerFacing = 0
+  private loopT = -1
+  private gulpT = -1
   private zTarget = 0.5
 
   constructor(seed = 1, config: Partial<BettaConfig> = {}) {
@@ -173,7 +179,8 @@ export class BettaSim {
     this.activity()
     const reach = this.mouthOffset()
     const b = this.bounds()
-    const fallback = { x: lerp(b.x0 + reach, b.x1 - reach, 0.25 + this.rng() * 0.6), y: 0.08 }
+    // Just ahead of the fish, so the drop reads as "for the betta".
+    const fallback = { x: this.px + this.heading * (reach + 0.05 + this.rng() * 0.05), y: 0.08 }
     const raw = at ?? fallback
     const x = clamp(raw.x, b.x0 + reach, Math.max(b.x0 + reach, b.x1 - reach))
     const safeX = this.pushOutOfExclusionX(x, reach)
@@ -190,6 +197,13 @@ export class BettaSim {
   flare() {
     this.activity()
     this.flareTimer = 1.5 + this.rng()
+  }
+
+  /** The "betta" easter egg: a happy flare and one quick loop-the-loop. */
+  celebrate() {
+    this.activity()
+    this.flareTimer = 2.2
+    this.loopT = 0
   }
 
   /** Tap somewhere else: the fish turns to look and hangs still for a moment. */
@@ -371,6 +385,14 @@ export class BettaSim {
     this.flareTimer = Math.max(0, this.flareTimer - dt)
     this.lookTimer = Math.max(0, this.lookTimer - dt)
     this.satisfiedTimer = Math.max(0, this.satisfiedTimer - dt)
+    if (this.loopT >= 0) {
+      this.loopT += dt
+      if (this.loopT >= LOOP_SECONDS) this.loopT = -1
+    }
+    if (this.gulpT >= 0) {
+      this.gulpT += dt
+      if (this.gulpT >= GULP_SECONDS) this.gulpT = -1
+    }
 
     this.stepPellets(dt)
 
@@ -444,7 +466,7 @@ export class BettaSim {
       case 'approach': {
         const fp = this.focusPoint
         if (!fp) break
-        const stop = this.cfg.fishWidth * 0.85
+        const stop = this.cfg.fishWidth * 0.62
         const side = sign(this.px - fp.x)
         goal = this.project(fp.x + side * stop, fp.y)
         faceDir = -side as 1 | -1
@@ -467,6 +489,7 @@ export class BettaSim {
         if (Math.hypot(this.worldDx(mouth.x, pellet.x), this.worldDy(mouth.y, pellet.y)) < 0.032) {
           this.pellets = this.pellets.filter((p) => p !== pellet)
           this.satisfiedTimer = 1.8
+          this.gulpT = 0
           this.pauseTimer = 0
         }
         break
@@ -668,7 +691,7 @@ export class BettaSim {
     this.pectoralPhase = (this.pectoralPhase + TAU * pecHz * dt) % (TAU * 64)
     this.breathPhase = (this.breathPhase + TAU * (restful ? 0.6 : 1.05) * dt) % (TAU * 64)
 
-    const rate = 3.2
+    const rate = 5
     this.pose.cruise = approach(this.pose.cruise, plan.poseTarget.cruise, rate, dt)
     this.pose.flare = approach(this.pose.flare, plan.poseTarget.flare, rate, dt)
     this.pose.clamped = approach(this.pose.clamped, plan.poseTarget.clamped, rate, dt)
@@ -682,28 +705,45 @@ export class BettaSim {
   frame(): BettaFrame {
     const turnProgress = this.turnT >= 0 ? clamp(this.turnT / TURN_SECONDS, 0, 1) : 0
     const total = this.pose.cruise + this.pose.flare + this.pose.clamped || 1
+    // Loop: eased 0..2pi. The sprite pitches through a full turn while the body traces a small circle.
+    let loopX = 0
+    let loopY = 0
+    let loopPitch = 0
+    if (this.loopT >= 0) {
+      const k = clamp(this.loopT / LOOP_SECONDS, 0, 1)
+      const theta = Math.PI * 2 * (k * k * (3 - 2 * k))
+      const r = this.cfg.fishWidth * 0.2
+      loopX = this.heading * Math.sin(theta) * r
+      loopY = -(1 - Math.cos(theta)) * r * this.cfg.aspect
+      loopPitch = theta
+    }
+    const gulp = this.gulpT >= 0 ? Math.sin((Math.PI * this.gulpT) / GULP_SECONDS) : 0
+    // Fins fold in while the pose crosses to clamped (and unfold on the way out).
+    const clampedW = this.pose.clamped / total
+    const fold = 1 - 0.8 * Math.sin(Math.PI * clamp(clampedW, 0, 1)) ** 2
     return {
       mode: this.mode,
-      x: this.px,
-      y: this.py,
+      x: this.px + loopX,
+      y: this.py + loopY,
       z: this.z,
       scale: 1 + (this.z - 0.5) * 0.9,
       heading: this.heading,
       facing: this.facing,
       speed: Math.hypot(this.vx, this.vy),
       turnProgress,
-      pitch: this.pitch,
+      pitch: this.pitch + loopPitch + gulp * 0.12,
       pose: {
         cruise: this.pose.cruise / total,
         flare: this.pose.flare / total,
         clamped: this.pose.clamped / total,
       },
-      finSpread: this.finSpread,
+      finSpread: this.finSpread * fold,
       tailBeatPhase: this.tailPhase,
       pectoralPhase: this.pectoralPhase,
       breathPhase: this.breathPhase,
       accel: { forward: this.accelF, up: this.accelU },
       viewerFacing: this.viewerFacing,
+      gulp,
       pellets: this.pellets,
     }
   }

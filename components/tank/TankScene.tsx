@@ -4,12 +4,14 @@ import { useEffect, useRef, useState, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import { BettaSim, type BettaFrame, type Rect } from '@/lib/tank/betta'
 import { getEnvironment, type Environment, type Hemisphere } from '@/lib/tank/environment'
+import { FramePacer } from '@/lib/tank/pacing'
+import { isNewYearWindow } from '@/lib/tank/eggs'
 import { tankEvents } from '@/lib/tank/events'
 import { fishWidthFor, TankRenderer } from '@/lib/tank/renderer'
 import type { WaterState } from '@/lib/tank/waterState'
 
-/** Where the betta beds down at night, in plate uv (the leaf hammock, upper right). */
-const REST_PLATE: [number, number] = [0.72, 0.3]
+/** Where the betta beds down at night, in plate uv: settled against the moss on top of the big rock. */
+const REST_PLATE: [number, number] = [0.655, 0.4]
 /** Focal point of the plate. On phones the right side (where the fish lives) stays visible. */
 const FOCAL_WIDE: [number, number] = [0.5, 0.5]
 const FOCAL_NARROW: [number, number] = [0.72, 0.5]
@@ -39,6 +41,8 @@ export type TankSceneProps = {
   /** Override the clock (dev drawer). */
   environment?: Environment
   hemisphere?: Hemisphere
+  /** The clock the scene reads for time of day, season and holidays. Dev screenshots override it. */
+  clock?: () => Date
   /** Render one deterministic frame at this sim time and stop. */
   freezeAt?: number | null
   /** Events replayed into the sim before a frozen frame (dev screenshots). */
@@ -62,6 +66,7 @@ export default function TankScene({
   exclusion = null,
   environment,
   hemisphere = 'north',
+  clock,
   freezeAt = null,
   freezeScript,
   reducedMotion,
@@ -88,6 +93,7 @@ export default function TankScene({
     exclusion,
     environment,
     hemisphere,
+    clock,
     freezeAt,
     freezeScript,
     reducedMotion,
@@ -99,6 +105,7 @@ export default function TankScene({
       exclusion,
       environment,
       hemisphere,
+      clock,
       freezeAt,
       freezeScript,
       reducedMotion,
@@ -110,7 +117,7 @@ export default function TankScene({
   // The page's CSS reads data-tank-phase (fallback plate, night theme), with or without WebGL.
   useEffect(() => {
     const set = () => {
-      const e = environment ?? getEnvironment(new Date(), { hemisphere })
+      const e = environment ?? getEnvironment(clock?.() ?? new Date(), { hemisphere })
       document.documentElement.dataset.tankPhase = e.phase
     }
     set()
@@ -119,7 +126,7 @@ export default function TankScene({
       window.clearInterval(id)
       delete document.documentElement.dataset.tankPhase
     }
-  }, [environment, hemisphere])
+  }, [environment, hemisphere, clock])
 
   useEffect(() => {
     api.current?.dirty()
@@ -142,14 +149,14 @@ export default function TankScene({
     let ripple: { x: number; y: number; t0: number } | null = null
     let width = 0
     let height = 0
-    let env: Environment = live.current.environment ?? getEnvironment(new Date(), { hemisphere })
+    let env: Environment =
+      live.current.environment ??
+      getEnvironment(live.current.clock?.() ?? new Date(), { hemisphere })
     let envStamp = 0
 
     // Adaptive frame pacing.
+    const pacer = new FramePacer()
     let level: 'full' | 'half' = 'full'
-    let skip = false
-    const deltas: number[] = []
-    let halfSince = 0
     let statFrames = 0
     let statStart = 0
     let statMs = 0
@@ -161,12 +168,24 @@ export default function TankScene({
       return window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
     }
 
+    // New Year window: a burst of bubbles from the substrate, repeated every 25 s while it lasts.
+    let lastBurst = -Infinity
+    const maybeBurst = () => {
+      if (!renderer || isStatic()) return
+      const d = live.current.clock?.() ?? new Date()
+      if (isNewYearWindow(d) && elapsed - lastBurst > 25) {
+        lastBurst = elapsed
+        renderer.startBurst(elapsed)
+      }
+    }
+
     const currentEnv = (now: number) => {
       const l = live.current
       if (l.environment) return l.environment
       if (now - envStamp > 1000 || !env) {
-        env = getEnvironment(new Date(), { hemisphere: l.hemisphere })
+        env = getEnvironment(l.clock?.() ?? new Date(), { hemisphere: l.hemisphere })
         envStamp = now
+        maybeBurst()
       }
       return env
     }
@@ -191,6 +210,7 @@ export default function TankScene({
       renderer.setPhase(e.phase)
     }
 
+    let marked = false
     const draw = () => {
       if (!renderer || width === 0) return
       const l = live.current
@@ -205,6 +225,21 @@ export default function TankScene({
         ripple,
         instant: isStatic(),
       })
+      // Fade the canvas in only once the plate and the fish are both on screen (no pop-in).
+      if (!marked && renderer.ready && renderer.hasImage('betta-cruise')) {
+        marked = true
+        canvas.dataset.ready = '1'
+        // Halloween night: the betta flares once, just after the tank fades in.
+        if (
+          !isStatic() &&
+          e.holiday === 'halloween' &&
+          (e.phase === 'night' || e.phase === 'dusk')
+        ) {
+          window.setTimeout(() => {
+            if (!disposed) sim.flare()
+          }, 900)
+        }
+      }
     }
 
     const runStatic = () => {
@@ -221,7 +256,8 @@ export default function TankScene({
         exclusion: normRect(l.exclusion),
         restSpot: { x: rest[0], y: rest[1] },
       })
-      const e = l.environment ?? getEnvironment(new Date(), { hemisphere: l.hemisphere })
+      const e =
+        l.environment ?? getEnvironment(l.clock?.() ?? new Date(), { hemisphere: l.hemisphere })
       fresh.setContext({ night: e.phase === 'night', mood: l.water.mood })
       let f = fresh.frame()
       const steps = Math.round(target * 30)
@@ -260,27 +296,13 @@ export default function TankScene({
       lastTs = ts
       rafId = requestAnimationFrame(loop)
 
-      // Pacing: 60 fps unless frames arrive slower than ~45 fps, then 30 fps. Retry full rate later.
-      deltas.push(delta * 1000)
-      if (deltas.length > 40) deltas.shift()
-      if (deltas.length >= 30) {
-        const avg = deltas.reduce((a, b) => a + b, 0) / deltas.length
-        if (level === 'full' && avg > 22) {
-          level = 'half'
-          halfSince = ts
-          deltas.length = 0
-        } else if (level === 'half' && ts - halfSince > 15_000) {
-          level = 'full'
-          deltas.length = 0
-        }
-      }
-      skip = !skip
-      if (level === 'half' && skip) return
+      const pace = pacer.next(delta, ts)
+      level = pacer.level
+      if (!pace.draw) return
 
       const t0 = performance.now()
-      const step = level === 'half' ? delta : delta
-      elapsed += step
-      frame = sim.step(step)
+      elapsed += pace.step
+      frame = sim.step(pace.step)
       draw()
       statMs = statMs * 0.9 + (performance.now() - t0) * 0.1
       statFrames++
@@ -349,6 +371,10 @@ export default function TankScene({
       )
     resize()
     api.current = { dirty: () => isStatic() && requestStatic(), configure }
+    if (process.env.NODE_ENV !== 'production') {
+      // Dev-only probe for screenshot scripts.
+      ;(window as unknown as { __tankFrame?: () => BettaFrame }).__tankFrame = () => frame
+    }
     if (controlsRef) {
       controlsRef.current = {
         flare: () => sim.flare(),
@@ -371,6 +397,8 @@ export default function TankScene({
     const offFocus = tankEvents.on('focus', ({ x, y }) => sim.focusAt(toNorm(x, y)))
     const offBlur = tankEvents.on('blur', () => sim.blur())
     const offActivity = tankEvents.on('activity', () => sim.activity())
+    const offCelebrate = tankEvents.on('celebrate', () => sim.celebrate())
+    const offShimmer = tankEvents.on('shimmer', () => renderer?.startShimmer(elapsed))
 
     function handleTap(x: number, y: number) {
       const n = toNorm(x, y)
@@ -424,6 +452,8 @@ export default function TankScene({
     window.addEventListener('deviceorientation', onOrientation, { passive: true })
     document.addEventListener('visibilitychange', onVisibility)
 
+    maybeBurst()
+
     if (isStatic()) requestStatic()
     else start()
 
@@ -452,6 +482,8 @@ export default function TankScene({
       offFocus()
       offBlur()
       offActivity()
+      offCelebrate()
+      offShimmer()
       window.removeEventListener('resize', resize)
       resizeObserver?.disconnect()
       window.removeEventListener('pointerdown', onPointerDown)

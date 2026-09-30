@@ -98,8 +98,10 @@ void main() {
   }
   if (d > 1.0) discard;
   float edge = 1.0 - smoothstep(0.82, 1.0, d);
-  float shade = 0.65 + 0.5 * (1.0 - length(v_q - vec2(-0.3, -0.35)));
-  vec3 rgb = u_color * clamp(shade, 0.35, 1.15);
+  float shade = 0.6 + 0.55 * (1.0 - length(v_q - vec2(-0.3, -0.35)));
+  vec3 rgb = u_color * clamp(shade, 0.3, 1.15) * (1.0 - 0.35 * smoothstep(0.6, 1.0, d));
+  vec2 h = v_q - vec2(-0.32, -0.38);
+  rgb += vec3(0.95, 0.85, 0.7) * exp(-dot(h, h) * 16.0) * 0.55;
   float a = edge * u_alpha;
   o_color = vec4(rgb * a, a);
 }
@@ -206,12 +208,15 @@ uniform vec2 u_origin;  // where the stream starts, normalised
 uniform float u_period;
 uniform float u_count;  // number of bubbles per burst
 uniform float u_rise;   // seconds to reach the surface
+uniform float u_stagger; // seconds between emissions
+uniform float u_spread;  // half-width of the emitter, view widths
+uniform float u_size;    // radius multiplier
 uniform vec2 u_parallax;
 out vec2 v_q;
 out float v_alpha;
 void main() {
   v_q = a_corner;
-  float emitOffset = a_k * 0.46;
+  float emitOffset = a_k * u_stagger;
   float age = mod(u_time - emitOffset, u_period);
   float alive = step(a_k, u_count - 0.5) * step(age, u_rise);
   if (alive < 0.5) { v_alpha = 0.0; gl_Position = vec4(2.0, 2.0, 0.0, 1.0); return; }
@@ -220,8 +225,8 @@ void main() {
   float f = age / u_rise;
   float y = u_origin.y - f * (u_origin.y + 0.02) * (0.9 + 0.1 * f);
   float wobble = 0.006 * sin(age * (3.0 + seed * 2.0) + seed * 20.0) * (0.4 + f);
-  float x = u_origin.x + (seed - 0.5) * 0.012 + wobble + f * 0.006;
-  float radiusPx = (2.4 + seed * 3.2) * (0.7 + 0.5 * f);
+  float x = u_origin.x + (seed - 0.5) * u_spread + wobble + f * 0.006;
+  float radiusPx = (2.4 + seed * 3.2) * (0.7 + 0.5 * f) * u_size;
   v_alpha = smoothstep(0.0, 0.06, f) * (1.0 - smoothstep(0.93, 1.0, f));
   vec2 p = vec2(x, y) + u_parallax * 1.2;
   vec2 pos = p + a_corner * radiusPx * u_px * vec2(1.0, u_aspect);

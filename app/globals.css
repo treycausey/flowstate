@@ -1056,3 +1056,17 @@ label.checkbox input {
   color: var(--muted);
   font-size: var(--step--1);
 }
+
+/* ---- Living tank canvas: fades in over the CSS plate once the scene is ready ------------ */
+#tank-canvas-slot > canvas.tank-scene {
+  opacity: 0;
+  transition: opacity 600ms ease-out;
+}
+#tank-canvas-slot > canvas.tank-scene[data-ready] {
+  opacity: 1;
+}
+@media (prefers-reduced-motion: reduce) {
+  #tank-canvas-slot > canvas.tank-scene {
+    transition-duration: 1ms;
+  }
+}

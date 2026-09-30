@@ -1,0 +1,153 @@
+'use client'
+
+import dynamic from 'next/dynamic'
+import { useEffect, useMemo, useState } from 'react'
+import { useTanks } from '@/components/TankProvider'
+import { useTankReadings } from '@/lib/useTankReadings'
+import { getEnvironment } from '@/lib/tank/environment'
+import { devClockFromSearch } from '@/lib/tank/devOverrides'
+import { reportActivity } from '@/lib/tank/events'
+import { waterFromReadings } from '@/lib/tank/fromReadings'
+import { DEFAULT_PREFS, loadTankPrefs, onTankPrefsChanged, type TankPrefs } from '@/lib/tank/prefs'
+import type { PanelRect } from '@/components/tank/TankScene'
+
+// The engine (WebGL, shaders, sim) loads only after first paint, so logging stays fast.
+const TankScene = dynamic(() => import('@/components/tank/TankScene'), { ssr: false })
+
+type IdleWindow = Window & {
+  requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number
+  cancelIdleCallback?: (id: number) => void
+}
+
+/** Measure the panel. On phones it is a bottom sheet, so the fish keeps to the hero band above it. */
+export function usePanelRect(enabled: boolean): PanelRect | null {
+  const [rect, setRect] = useState<PanelRect | null>(null)
+  useEffect(() => {
+    if (!enabled) return
+    const panel = document.querySelector<HTMLElement>('.app-panel')
+    if (!panel) return
+    const measure = () => {
+      const r = panel.getBoundingClientRect()
+      const sheet = window.innerWidth < 900
+      const next: PanelRect = sheet
+        ? // Never let the band collapse to nothing when the sheet is scrolled up.
+          {
+            left: 0,
+            right: window.innerWidth,
+            top: Math.max(r.top, window.innerHeight * 0.3),
+            bottom: window.innerHeight * 2,
+          }
+        : { left: r.left, right: r.right, top: r.top, bottom: r.bottom }
+      setRect((prev) =>
+        prev &&
+        Math.abs(prev.left - next.left) < 1 &&
+        Math.abs(prev.right - next.right) < 1 &&
+        Math.abs(prev.top - next.top) < 1 &&
+        Math.abs(prev.bottom - next.bottom) < 1
+          ? prev
+          : next,
+      )
+    }
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(panel)
+    window.addEventListener('resize', measure)
+    window.addEventListener('scroll', measure, { passive: true })
+    return () => {
+      ro.disconnect()
+      window.removeEventListener('resize', measure)
+      window.removeEventListener('scroll', measure)
+    }
+  }, [enabled])
+  return rect
+}
+
+export default function TankHost() {
+  const { activeTankId } = useTanks()
+  const { readings } = useTankReadings(activeTankId)
+  const [prefs, setPrefs] = useState<TankPrefs>(DEFAULT_PREFS)
+  const [prefsLoaded, setPrefsLoaded] = useState(false)
+  const [armed, setArmed] = useState(false)
+  const [now, setNow] = useState(() => new Date())
+  const [clock] = useState(() =>
+    typeof window === 'undefined' ? null : devClockFromSearch(window.location.search),
+  )
+
+  useEffect(() => {
+    let cancelled = false
+    loadTankPrefs()
+      .then((p) => !cancelled && setPrefs(p))
+      .catch((err) => console.error('Failed to load tank settings', err))
+      .finally(() => !cancelled && setPrefsLoaded(true))
+    const off = onTankPrefsChanged(setPrefs)
+    return () => {
+      cancelled = true
+      off()
+    }
+  }, [])
+
+  // Load the engine after first paint.
+  const enabled = prefsLoaded && prefs.livingTank
+  useEffect(() => {
+    if (!enabled) return
+    const w = window as IdleWindow
+    let id: number
+    if (w.requestIdleCallback) {
+      id = w.requestIdleCallback(() => setArmed(true), { timeout: 1500 })
+      return () => w.cancelIdleCallback?.(id)
+    }
+    id = window.setTimeout(() => setArmed(true), 300)
+    return () => window.clearTimeout(id)
+  }, [enabled])
+
+  // "Days since last test" changes at midnight; refresh the derived water every few minutes.
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(new Date()), 5 * 60_000)
+    return () => window.clearInterval(id)
+  }, [])
+
+  // The page CSS reads the phase for its night theme, with the scene on, off, or not loaded yet.
+  useEffect(() => {
+    const set = () => {
+      const e = getEnvironment(clock?.() ?? new Date(), { hemisphere: prefs.hemisphere })
+      document.documentElement.dataset.tankPhase = e.phase
+    }
+    set()
+    const id = window.setInterval(set, 60_000)
+    return () => {
+      window.clearInterval(id)
+      delete document.documentElement.dataset.tankPhase
+    }
+  }, [enabled, prefs.hemisphere, clock])
+
+  // Any key or pointer press counts as activity (idle timer for the look-at-you egg).
+  useEffect(() => {
+    if (!enabled) return
+    let last = 0
+    const tick = () => {
+      const t = performance.now()
+      if (t - last < 500) return
+      last = t
+      reportActivity()
+    }
+    window.addEventListener('keydown', tick, { passive: true })
+    window.addEventListener('pointerdown', tick, { passive: true })
+    return () => {
+      window.removeEventListener('keydown', tick)
+      window.removeEventListener('pointerdown', tick)
+    }
+  }, [enabled])
+
+  const water = useMemo(() => waterFromReadings(readings ?? [], now), [readings, now])
+  const exclusion = usePanelRect(enabled && armed)
+
+  if (!enabled || !armed) return null
+  return (
+    <TankScene
+      water={water}
+      exclusion={exclusion}
+      hemisphere={prefs.hemisphere}
+      clock={clock ?? undefined}
+    />
+  )
+}

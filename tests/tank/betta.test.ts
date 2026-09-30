@@ -154,4 +154,30 @@ describe('BettaSim', () => {
     }
     expect(maxZ).toBeLessThan(0.7)
   })
+
+  it('celebrates with a full loop: the sprite pitches through a whole turn and ends level', () => {
+    const sim = new BettaSim(3, { aspect: 1.6, fishWidth: 0.3 })
+    run(sim, 2)
+    const before = sim.frame()
+    sim.celebrate()
+    let maxPitch = 0
+    let sawFlare = false
+    run(sim, 1.0, (f) => {
+      maxPitch = Math.max(maxPitch, f.pitch)
+      sawFlare ||= f.mode === 'flare'
+    })
+    expect(sawFlare).toBe(true)
+    expect(maxPitch).toBeGreaterThan(Math.PI * 1.5)
+    const after = run(sim, 0.5)
+    expect(Math.abs(after.pitch)).toBeLessThan(0.3)
+    expect(Math.abs(after.x - before.x)).toBeLessThan(0.2)
+  })
+
+  it('drops a pellet just ahead of the fish when no spot is given', () => {
+    const sim = new BettaSim(5, { aspect: 1.6, fishWidth: 0.3 })
+    const f = run(sim, 3)
+    sim.dropPellet()
+    const p = sim.frame().pellets[0]
+    expect(Math.abs(p.x - f.x)).toBeLessThan(0.3)
+  })
 })

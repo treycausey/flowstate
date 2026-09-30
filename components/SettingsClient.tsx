@@ -8,6 +8,13 @@ import { BackupFormatError } from '@/lib/backup'
 import { downloadText } from '@/lib/export'
 import { emitReadingsChanged } from '@/lib/events'
 import { useTanks } from '@/components/TankProvider'
+import {
+  DEFAULT_PREFS,
+  loadTankPrefs,
+  onTankPrefsChanged,
+  saveTankPrefs,
+  type TankPrefs,
+} from '@/lib/tank/prefs'
 
 type DbInfo = { dir: string; file: string }
 
@@ -16,6 +23,24 @@ export default function SettingsClient() {
   const [tauri, setTauri] = useState(false)
   const [message, setMessage] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null)
   const { refresh, tanks } = useTanks()
+  const [prefs, setPrefs] = useState<TankPrefs>(DEFAULT_PREFS)
+
+  useEffect(() => {
+    loadTankPrefs()
+      .then(setPrefs)
+      .catch((err) => console.error('Failed to load tank settings', err))
+    return onTankPrefsChanged(setPrefs)
+  }, [])
+
+  const updatePrefs = async (patch: Partial<TankPrefs>) => {
+    setPrefs((current) => ({ ...current, ...patch }))
+    try {
+      await saveTankPrefs(patch)
+    } catch (err) {
+      console.error('Failed to save tank settings', err)
+      setMessage({ kind: 'error', text: 'Couldn’t save that setting.' })
+    }
+  }
 
   useEffect(() => {
     ;(async () => {
@@ -117,6 +142,40 @@ export default function SettingsClient() {
 
   return (
     <div className="stack" style={{ gap: 16 }}>
+      <section aria-labelledby="living-tank-heading">
+        <h2 id="living-tank-heading" className="section-title">
+          Living tank
+        </h2>
+        <div className="stack" style={{ gap: 12 }}>
+          <label className="inline checkbox">
+            <input
+              type="checkbox"
+              checked={prefs.livingTank}
+              onChange={(e) => updatePrefs({ livingTank: e.target.checked })}
+            />
+            <span>Show living tank</span>
+          </label>
+          <div className="field field--row">
+            <label htmlFor="tank-hemisphere">Hemisphere</label>
+            <select
+              id="tank-hemisphere"
+              value={prefs.hemisphere}
+              onChange={(e) =>
+                updatePrefs({ hemisphere: e.target.value === 'south' ? 'south' : 'north' })
+              }
+            >
+              <option value="north">Northern</option>
+              <option value="south">Southern</option>
+            </select>
+          </div>
+          <p className="muted small">
+            The tank follows the time of day, the season, and your latest water tests. It also
+            follows your system’s Reduce Motion setting. Turn it off to save battery: the page then
+            shows a still picture and never starts WebGL.
+          </p>
+        </div>
+      </section>
+
       <section>
         <h2 className="section-title">Storage</h2>
         {tauri ? (
