@@ -125,9 +125,6 @@ export class Livestock {
   private build() {
     const plan = this.plan
     this.key = planKey(plan)
-    this.pellets.floorY = this.cfg.floorY
-    this.pellets.aspect = this.cfg.aspect
-
     if (plan.betta && !this.betta) {
       const b = new BettaSim(this.seed, this.bettaConfig(this.cfg.fishWidth))
       b.usePelletField(this.pellets)
@@ -138,6 +135,7 @@ export class Livestock {
     }
 
     const world = this.world()
+    // A group is kept for its species whatever the count: the count only changes how many are drawn.
     const oldGroups = new Map([...this.groupKeys].map(([g, k]) => [k, g]))
     this.groupKeys = new Map()
     const oldSolos = new Map(this.solos.map((s) => [s.key, s]))
@@ -164,23 +162,30 @@ export class Livestock {
         }
         continue
       }
-      const reuseKey = g.profile.id + ':' + g.render
+      const reuseKey = g.profile.id
       let group = oldGroups.get(reuseKey)
       if (!group) {
+        // Built for the most it can ever show, so the frame budget can change the count in place.
+        const capacity = g.profile.maxRender
         if (g.profile.model === 'school') {
-          const n = Math.max(1, schools.length)
-          const lane: [number, number] = [laneIndex / n, (laneIndex + 1) / n]
-          group = new SchoolSim(g.profile, g.render, seed, this.pellets, lane)
+          const lane: [number, number] = [0, 1]
+          group = new SchoolSim(g.profile, capacity, seed, this.pellets, lane)
         } else if (g.profile.model === 'bottom') {
-          group = new CorySim(g.profile, g.render, seed, this.pellets)
+          group = new CorySim(g.profile, capacity, seed, this.pellets)
         } else if (g.profile.model === 'kuhli') {
-          group = new KuhliSim(g.profile, g.render, seed, this.pellets)
+          group = new KuhliSim(g.profile, capacity, seed, this.pellets)
         } else {
-          group = new CrawlerSim(g.profile, g.render, seed, this.pellets)
+          group = new CrawlerSim(g.profile, capacity, seed, this.pellets)
         }
       }
-      if (g.profile.model === 'school') laneIndex++
+      if (group instanceof SchoolSim) {
+        // Lanes follow the set of schools, so they stay apart as schools come and go.
+        const n = Math.max(1, schools.length)
+        group.setLane([laneIndex / n, (laneIndex + 1) / n])
+        laneIndex++
+      }
       group.setContext(this.ctx)
+      group.setVisible(g.render)
       group.configure(world)
       this.groups.push(group)
       this.groupKeys.set(group, reuseKey)
@@ -189,6 +194,15 @@ export class Livestock {
       s.sim.configure(this.bettaConfig(spriteWidth(s.profile, this.cfg.fishWidth)))
       s.sim.setContext({ night: this.ctx.night, mood: this.ctx.mood })
     }
+    this.syncPellets()
+  }
+
+  /** A lone betta keeps the old rules for its food; with other stock food sinks to the substrate. */
+  private syncPellets() {
+    const only = this.plan.betta && this.plan.groups.length === 0 && this.betta !== null
+    this.pellets.bettaOnly = only
+    this.pellets.floorY = only && this.betta ? this.betta.reachFloor() : this.cfg.floorY
+    this.pellets.aspect = this.cfg.aspect
   }
 
   // ---- config ----
@@ -203,6 +217,7 @@ export class Livestock {
     }
     const world = this.world()
     for (const g of this.groups) g.configure(world)
+    this.syncPellets()
   }
 
   setContext(ctx: { night: boolean; mood: Mood; dusk?: boolean }) {

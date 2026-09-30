@@ -462,6 +462,11 @@ export class BettaSim {
   }
 
   /** Mouth distance ahead of the sprite centre, viewport widths. */
+  /** Lowest y (normalised) a pellet can rest at and still be within reach of the mouth. */
+  reachFloor() {
+    return this.geo.bounds.y1 + PELLET_FLOOR_GAP * this.cfg.aspect
+  }
+
   mouthOffset() {
     return this.cfg.fishWidth * MOUTH_REACH * this.drawnScale()
   }

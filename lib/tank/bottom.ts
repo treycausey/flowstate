@@ -34,7 +34,6 @@ type CoryMode = 'pause' | 'hop' | 'food' | 'up' | 'hold' | 'down'
 
 type Cory = {
   key: string
-  offset: number
   ph: number
   z: number
   speedK: number
@@ -97,7 +96,6 @@ export class CorySim implements Group {
       const dir: 1 | -1 = this.rng() < 0.5 ? 1 : -1
       this.corys.push({
         key: `${profile.id}-${i}`,
-        offset: (i / Math.max(1, count - 1) - 0.5) * 2,
         ph: this.rng() * TAU,
         z: 0.49 + this.rng() * 0.04,
         speedK: 0.85 + this.rng() * 0.3,
@@ -154,11 +152,17 @@ export class CorySim implements Group {
     if (first) {
       this.gx = lerp(this.band.x0, this.band.x1, 0.5)
       for (const c of this.corys) {
-        c.x = clamp(this.gx + c.offset * this.spread(), this.band.x0, this.band.x1)
+        c.x = clamp(this.gx + this.offsetOf(c) * this.spread(), this.band.x0, this.band.x1)
         c.baseY = this.rng()
         c.y = this.bandY(c)
       }
     }
+  }
+
+  /** Place in the group, -1 (left) to 1 (right), for however many are drawn. */
+  private offsetOf(c: Cory) {
+    const n = this.visible
+    return n > 1 ? (this.corys.indexOf(c) / (n - 1) - 0.5) * 2 : 0
   }
 
   private bandY(c: Cory) {
@@ -197,7 +201,7 @@ export class CorySim implements Group {
       tx = forced.x
       ty = clamp(forced.y, b.y0, b.y1)
     } else {
-      tx = clamp(this.gx + c.offset * this.spread() + (this.rng() - 0.5) * 0.08, b.x0, b.x1)
+      tx = clamp(this.gx + this.offsetOf(c) * this.spread() + (this.rng() - 0.5) * 0.08, b.x0, b.x1)
       // A short hop, not a run.
       const maxHop = this.bl * lerp(1.2, 3.2, this.rng())
       tx = clamp(tx, c.x - maxHop, c.x + maxHop)
@@ -385,6 +389,8 @@ export class CorySim implements Group {
   }
 
   private assignFood() {
+    // A group the panel hides neither claims nor eats food.
+    if (!this.ok) return
     for (const c of this.corys) {
       if (c.food && !this.pellets.pellets.includes(c.food)) c.food = null
     }
@@ -516,6 +522,12 @@ export class KuhliSim implements Group {
     this.x0 = i0 + hw
     this.x1 = Math.max(this.x0, i1 - hw)
     this.ok = i1 - i0 > 2 * hw + 0.02
+    // A slither under way is pulled into the new free area.
+    for (const l of this.loaches) {
+      l.sx = clamp(l.sx, this.x0, this.x1)
+      l.ex = clamp(l.ex, this.x0, this.x1)
+      l.x = clamp(l.x, this.x0, this.x1)
+    }
     this.y = world.floorY - 0.014
   }
 

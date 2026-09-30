@@ -245,7 +245,27 @@ export class SchoolSim implements Group {
   setVisible(n: number) {
     const v = clamp(Math.round(n), 1, this.fish.length)
     if (v === this.wanted) return
+    const before = this.visible
     this.wanted = v
+    if (this.world) this.configure(this.world)
+    // Fish that were not drawn join the school at their places instead of where they last were.
+    if (this.world) {
+      for (let i = before; i < this.visible; i++) {
+        const f = this.fish[i]
+        const s = this.slot(f, this.time)
+        f.x = clamp(s.x, this.fishBox.x0, this.fishBox.x1)
+        f.y = clamp(s.y, this.fishBox.y0, this.fishBox.y1)
+        f.vx = 0
+        f.vy = 0
+        f.food = null
+      }
+    }
+  }
+
+  /** Move to another band of the open water (when the set of schools changes). */
+  setLane(lane: [number, number]) {
+    if (lane[0] === this.lane[0] && lane[1] === this.lane[1]) return
+    this.lane = lane
     if (this.world) this.configure(this.world)
   }
 
@@ -495,17 +515,20 @@ export class SchoolSim implements Group {
 
   /** Nearest few fish go for each falling pellet they can reach. */
   private assignFood() {
-    const fr = this.fishRect
     const a = this.world.aspect
-    const taken = new Set<Fish>()
-    for (const f of this.fish) if (f.food) taken.add(f)
+    // The lowest a pellet can be and still be taken from this school's band.
+    const lowest = this.fishBox.y1 + 0.42 * this.bl * SCALE_MAX
+    const reachable = (p: Pellet) =>
+      p.alpha > 0.5 &&
+      !this.pellets.isLanded(p) &&
+      p.x >= this.fishBox.x0 - 0.5 * this.bl &&
+      p.x <= this.fishBox.x1 + 0.5 * this.bl &&
+      p.y / a <= lowest
     for (const f of this.fish) {
-      if (f.food && (f.food.alpha <= 0.5 || !this.pellets.pellets.includes(f.food))) f.food = null
+      if (f.food && (!this.pellets.pellets.includes(f.food) || !reachable(f.food))) f.food = null
     }
     for (const p of this.pellets.pellets) {
-      if (p.alpha <= 0.5 || this.pellets.isLanded(p)) continue
-      if (p.x < fr.x0 - this.bl || p.x > fr.x1 + this.bl || p.y > fr.y1 + 0.3 * this.bl * a)
-        continue
+      if (!reachable(p)) continue
       const have = this.fish.filter((f) => f.food === p).length
       if (have >= 3) continue
       const cand = this.fish

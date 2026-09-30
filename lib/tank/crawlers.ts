@@ -99,6 +99,8 @@ export const EDGES: ReadonlyArray<readonly [number, number]> = [
 ]
 
 const STEP = 1 / 30
+/** A crawler eats a pellet only from this close (view widths), the same reach used to pick its node. */
+const EAT_DISTANCE = 0.075
 const GULP_SECONDS = 0.4
 type Mode = 'rest' | 'turn' | 'walk' | 'eat' | 'fade'
 
@@ -218,8 +220,16 @@ export class CrawlerSim implements Group {
       }
     }
     for (const w of this.walkers) {
-      if (first) this.place(w)
-      else if (w.node >= 0 && !this.allowed(w.node)) w.mode = 'fade'
+      if (first || w.node < 0) {
+        // Nowhere to be last time (the panel covered every anchor): start over, fading in.
+        if (!first) w.alpha = 0
+        this.place(w)
+      } else if (!this.allowed(w.node)) {
+        w.mode = 'fade'
+      } else if (w.to >= 0 && (!this.allowed(w.to) || !this.adj[w.node].includes(w.to))) {
+        // Walking towards a node the panel just took: fade out there and start again elsewhere.
+        w.mode = 'fade'
+      }
     }
   }
 
@@ -385,13 +395,16 @@ export class CrawlerSim implements Group {
                 : this.profile.model === 'grazer'
                   ? lerp(8, 35, this.rng())
                   : lerp(0.6, 4, this.rng())
-            if (w.food) this.eat(w)
+            // Only at the end of the route, and only if the pellet is really here.
+            if (w.food && w.path.length === 0) this.eat(w)
           }
           break
         }
         case 'eat':
           break
       }
+      // No anchor left to stand on (place() found none): wait for the panel to move.
+      if (w.node < 0) continue
       if (this.blocked[w.node] && w.mode !== 'fade') w.mode = 'fade'
       this.setPos(w)
       const arc = w.hop && w.to >= 0 ? Math.sin(Math.PI * w.s) * 0.008 * a : 0
@@ -419,7 +432,10 @@ export class CrawlerSim implements Group {
   private eat(w: Walker) {
     const p = w.food
     w.food = null
-    if (p && this.pellets.pellets.includes(p)) {
+    const here = this.view[w.node]
+    const close =
+      !!p && Math.hypot(here[0] - p.x, (here[1] - p.y) / this.world.aspect) <= EAT_DISTANCE
+    if (p && close && this.pellets.pellets.includes(p)) {
       this.pellets.remove(p)
       w.gulpT = 0
       w.timer = 2.2
@@ -454,7 +470,10 @@ export class CrawlerSim implements Group {
       if (have >= 2) continue
       const cand = this.walkers
         .slice(0, this.visible)
-        .filter((w) => !w.food && w.node >= 0 && w.mode === 'rest' && w.path.length === 0)
+        .filter(
+          (w) =>
+            !w.food && w.node >= 0 && w.alpha > 0.5 && w.mode === 'rest' && w.path.length === 0,
+        )
         .map((w) => {
           const path = this.route(w.node, best)
           return { w, path }

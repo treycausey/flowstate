@@ -17,6 +17,9 @@ export type Pellet = {
 export const LANDED_SECONDS = 20
 /** Fade-out over the last part of that time. */
 const FADE_SECONDS = 4
+/** A lone betta's pellets stop within its reach, fade over 8 s and at most 6 exist. */
+const BETTA_ONLY_SECONDS = 8
+const BETTA_ONLY_MAX = 6
 /** Sink speed in viewport heights per second multiplied by the aspect ratio (as the betta's pellets did). */
 const SINK = 0.045
 export const MAX_PELLETS = 12
@@ -26,10 +29,22 @@ export class PelletField {
   private nextId = 1
   floorY = 0.9
   aspect = 1.6
+  /**
+   * Betta-only tank: the floor is the fish's reach floor, pellets fade over 8 s once they stop and the
+   * field holds 6. With other stock the floor is the substrate and food stays 20 s.
+   */
+  bettaOnly = false
+
+  private get rest() {
+    return this.bettaOnly ? BETTA_ONLY_SECONDS : LANDED_SECONDS
+  }
+  private get fade() {
+    return this.bettaOnly ? BETTA_ONLY_SECONDS : FADE_SECONDS
+  }
 
   add(x: number, y: number) {
     this.pellets.push({ id: this.nextId++, x, y, age: 0, alpha: 1 })
-    if (this.pellets.length > MAX_PELLETS) this.pellets.shift()
+    if (this.pellets.length > (this.bettaOnly ? BETTA_ONLY_MAX : MAX_PELLETS)) this.pellets.shift()
   }
 
   remove(p: Pellet) {
@@ -49,7 +64,7 @@ export class PelletField {
         if (p.y >= this.floorY - 1e-9) p.landed = 0
       } else {
         p.landed += dt
-        p.alpha = Math.min(1, Math.max(0, (LANDED_SECONDS - p.landed) / FADE_SECONDS))
+        p.alpha = Math.min(1, Math.max(0, (this.rest - p.landed) / this.fade))
       }
     }
     this.pellets = this.pellets.filter((p) => p.alpha > 0)

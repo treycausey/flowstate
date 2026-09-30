@@ -213,6 +213,7 @@ export class TankRenderer {
   private patchAlpha: Record<'nest' | 'leaf', number> = { nest: 0, leaf: 0 }
   private patchReadyAt = new Map<string, number>()
   private blankTex: WebGLTexture | null = null
+  private swimScratch: CreatureFrame[] = []
   private rectBuf = new Float32Array(32)
   private alphaBuf = new Float32Array(8)
   private shiftBuf = new Float32Array(16)
@@ -731,7 +732,10 @@ export class TankRenderer {
     const creatures = input.creatures ?? []
     const view = [grade, water, activeTex, center, span, parallaxUV] as const
     for (const c of creatures) if (c.plateSpace) this.drawCreature(c, input, ...view)
-    const swimmers = creatures.filter((c) => !c.plateSpace).sort((a, b) => a.z - b.z)
+    const swimmers = this.swimScratch
+    swimmers.length = 0
+    for (const c of creatures) if (!c.plateSpace) swimmers.push(c)
+    swimmers.sort((a, b) => a.z - b.z)
     const bettaZ = input.betta ? input.betta.z : Infinity
     let k = 0
     for (; k < swimmers.length && swimmers[k].z <= bettaZ; k++) {
@@ -1010,6 +1014,15 @@ export class TankRenderer {
   /** Load the cut-outs for these species (file stems under /tank/fish). */
   loadStock(ids: Iterable<string>) {
     for (const id of ids) void this.loadImage(`fish/${id}`)
+  }
+
+  /** Load the cut-outs for these species and free the ones no longer in the stock. */
+  syncStock(ids: readonly string[]) {
+    const keep = new Set(ids.map((id) => `fish/${id}`))
+    for (const name of [...this.images.keys(), ...this.requested]) {
+      if (name.startsWith('fish/') && !keep.has(name)) this.freeImage(name)
+    }
+    this.loadStock(ids)
   }
 
   private drawCreature(

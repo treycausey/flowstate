@@ -248,7 +248,12 @@ export default function TankScene({
         dusk: e.phase === 'dusk',
         mood: l.water.mood,
       })
-      renderer.loadStock(speciesOf(l.stock ?? []))
+      renderer.syncStock(speciesOf(l.stock ?? []))
+      // A betta added to the stock later needs its poses loaded (loadImage skips what it has).
+      if (sim.hasBetta) {
+        for (const name of ['betta-cruise', 'betta-flare', 'betta-clamped'])
+          void renderer.loadImage(name)
+      }
       renderer.setPhase(e.phase)
     }
 
@@ -307,7 +312,12 @@ export default function TankScene({
       const e =
         l.environment ?? getEnvironment(l.clock?.() ?? new Date(), { hemisphere: l.hemisphere })
       fresh.setContext({ night: e.phase === 'night', dusk: e.phase === 'dusk', mood: l.water.mood })
-      renderer.loadStock(speciesOf(l.stock ?? []))
+      renderer.syncStock(speciesOf(l.stock ?? []))
+      if (fresh.hasBetta) {
+        for (const name of ['betta-cruise', 'betta-flare', 'betta-clamped']) {
+          void renderer.loadImage(name)
+        }
+      }
       let f: LivestockFrame = fresh.frame()
       const steps = Math.round(target * 30)
       const script = [...(l.freezeScript ?? [])].sort((a, b) => a.t - b.t)
