@@ -5,6 +5,7 @@
 // in any direction. z is depth for focus: 0 far, 0.5 focal plane, 1 near the glass.
 
 import type { Pellet, PelletField } from './pellets'
+import { pushOut, type Avoid } from './creature'
 import type { Mood } from './waterState'
 
 export type { Pellet }
@@ -274,6 +275,7 @@ export class BettaSim {
   /** When set (the livestock shares one pellet field), the field owns, sinks and fades the pellets. */
   private shared: PelletField | null = null
   private traits: SoloTraits = BETTA_TRAITS
+  private avoid: Avoid | null = null
   private nextPelletId = 1
   private noiseSeed: [number, number, number, number]
 
@@ -331,6 +333,11 @@ export class BettaSim {
   /** Use a pellet field shared with the rest of the livestock instead of the fish's own list. */
   usePelletField(field: PelletField | null) {
     this.shared = field
+  }
+
+  /** Keep clear of another fish's drawn ellipse (the gourami avoids the betta). */
+  setAvoid(avoid: Avoid | null) {
+    this.avoid = avoid
   }
 
   setTraits(traits: Partial<SoloTraits>) {
@@ -1034,6 +1041,19 @@ export class BettaSim {
 
   /** Move the anchor; the hard clamp is a safety net and is counted when it fires. */
   private applyPosition(nx: number, ny: number) {
+    const av = this.avoid
+    if (av && Math.abs(this.z - av.z) < 0.1) {
+      const w = this.cfg.fishWidth * this.drawnScale()
+      const [ax, ay] = pushOut(
+        nx,
+        ny / this.cfg.aspect,
+        av,
+        0.5 * w + 0.3 * this.cfg.fishWidth,
+        0.3 * w + 0.2 * this.cfg.fishWidth,
+      )
+      nx = ax
+      ny = ay * this.cfg.aspect
+    }
     const p = this.project(nx, ny)
     if (!this.easeFrom && (Math.abs(p.x - nx) > 1e-9 || Math.abs(p.y - ny) > 1e-9)) this.clampHits++
     if (p.x !== nx) this.vx = 0

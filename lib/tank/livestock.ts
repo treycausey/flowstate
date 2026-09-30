@@ -11,7 +11,7 @@ import {
 } from './betta'
 import { CorySim, KuhliSim } from './bottom'
 import { CrawlerSim } from './crawlers'
-import type { CreatureFrame, Group, StockContext, World } from './creature'
+import type { Avoid, CreatureFrame, Group, StockContext, World } from './creature'
 import { PelletField, type Pellet } from './pellets'
 import { SchoolSim } from './school'
 import { spriteWidth, type SpeciesProfile } from './species'
@@ -283,9 +283,20 @@ export class Livestock {
 
   step(dt: number): LivestockFrame {
     this.pellets.step(Math.min(dt, 0.25))
-    this.betta?.step(dt)
-    for (const s of this.solos) s.sim.step(dt)
-    for (const g of this.groups) g.step(dt)
+    const bf = this.betta ? this.betta.step(dt) : null
+    // Everyone keeps clear of the betta's drawn body.
+    const w = bf ? this.cfg.fishWidth * bf.scale : 0
+    const avoid: Avoid | null = bf
+      ? { x: bf.x, y: bf.y / this.cfg.aspect, rx: 0.5 * w, ry: 0.34 * w, z: bf.z }
+      : null
+    for (const s of this.solos) {
+      s.sim.setAvoid(avoid)
+      s.sim.step(dt)
+    }
+    for (const g of this.groups) {
+      g.setAvoid?.(avoid)
+      g.step(dt)
+    }
     return this.frame()
   }
 

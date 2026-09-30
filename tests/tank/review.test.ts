@@ -3,8 +3,8 @@ import type { CreatureFrame } from '@/lib/tank/creature'
 import { Livestock } from '@/lib/tank/livestock'
 import { PelletField } from '@/lib/tank/pellets'
 import { SchoolSim } from '@/lib/tank/school'
-import { KuhliSim } from '@/lib/tank/bottom'
-import { SPECIES } from '@/lib/tank/species'
+import { CorySim, KuhliSim } from '@/lib/tank/bottom'
+import { halfExtents, SPECIES } from '@/lib/tank/species'
 import { stockEntry } from '@/lib/tank/stock'
 import { makeWorld, WORLDS } from './stockWorlds'
 
@@ -239,5 +239,80 @@ describe('crawler heading for a node that gets blocked', () => {
     })
     sim.configure(blocking)
     expect(w!.mode).toBe('fade')
+  })
+})
+
+describe('school and betta', () => {
+  const desktop = WORLDS[0][1]
+  it('keeps the school off the betta unless they are at clearly different depths', () => {
+    for (const seed of [1, 2]) {
+      const l = new Livestock(seed, {}, [stockEntry('betta', 1), stockEntry('neon-tetra', 10)])
+      live(l, desktop)
+      let samples = 0
+      let overlaps = 0
+      let t = 0
+      run(240, (dt) => {
+        const f = l.step(dt)
+        t += dt
+        if (!f.betta || Math.round(t / dt) % 15 !== 0) return
+        const bw = desktop.fishWidth * f.betta.scale
+        const rx = 0.5 * bw
+        const ry = 0.34 * bw
+        for (const c of f.creatures) {
+          const { hw, hh } = halfExtents(SPECIES[c.species], desktop.fishWidth, c.scale)
+          // Body rect a little inside the padded quad.
+          const w = hw * 0.8
+          const h = hh * 0.7
+          const nx = Math.max(f.betta.x - rx, Math.min(c.x, f.betta.x + rx))
+          const ny = Math.max(
+            f.betta.y / desktop.aspect - ry,
+            Math.min(c.y / desktop.aspect, f.betta.y / desktop.aspect + ry),
+          )
+          const inside =
+            ((nx - c.x) / w) ** 2 + ((ny - c.y / desktop.aspect) / (h / 1)) ** 2 < 1 &&
+            Math.hypot(
+              (c.x - f.betta.x) / rx,
+              (c.y / desktop.aspect - f.betta.y / desktop.aspect) / ry,
+            ) < 1.2
+          samples++
+          if (inside && Math.abs(c.z - f.betta.z) < 0.1) overlaps++
+        }
+      })
+      expect(samples).toBeGreaterThan(100)
+      expect(overlaps / samples).toBeLessThan(0.02)
+    }
+  })
+})
+
+describe('corydoras do not stand in a stamped row', () => {
+  it('cluster unevenly, differ in size and depth, and do not all face one way', () => {
+    const world = WORLDS[3][1]
+    for (const seed of [1, 2, 3]) {
+      const sim = new CorySim(SPECIES['panda-corydoras'], 6, seed, new PelletField())
+      sim.configure(world)
+      let cvSum = 0
+      let samples = 0
+      let allSame = 0
+      let t = 0
+      const scales: number[] = []
+      run(300, (dt) => {
+        sim.step(dt)
+        t += dt
+        if (Math.round(t / dt) % 300 !== 0 || t < 30) return
+        const f = sim.frames()
+        const xs = f.map((c) => c.x).sort((a, b) => a - b)
+        const gaps = xs.slice(1).map((x, i) => x - xs[i])
+        const mean = gaps.reduce((a, b) => a + b, 0) / gaps.length
+        const sd = Math.sqrt(gaps.reduce((a, g) => a + (g - mean) ** 2, 0) / gaps.length)
+        cvSum += sd / mean
+        samples++
+        if (new Set(f.map((c) => c.heading)).size === 1) allSame++
+        scales.push(...f.map((c) => c.scale))
+      })
+      expect(samples).toBeGreaterThan(10)
+      expect(cvSum / samples).toBeGreaterThan(0.35)
+      expect(allSame / samples).toBeLessThan(0.6)
+      expect(Math.max(...scales) / Math.min(...scales)).toBeGreaterThan(1.15)
+    }
   })
 })

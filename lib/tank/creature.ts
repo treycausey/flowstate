@@ -62,6 +62,8 @@ export interface Group {
   frames(): CreatureFrame[]
   /** Fewer drawn (frame budget). Count never drops below 1. */
   setVisible(n: number): void
+  /** Keep clear of the betta (schools only). */
+  setAvoid?(avoid: Avoid | null): void
 }
 
 export const TAU = Math.PI * 2
@@ -89,4 +91,20 @@ export function overlapsPanel(world: World, x: number, y: number, hw: number, hh
   const e = world.exclusion
   if (!e) return false
   return x + hw > e.x0 && x - hw < e.x1 && y + hhNorm > e.y0 && y - hhNorm < e.y1
+}
+
+/** An obstacle the swimmers keep clear of (the betta's drawn ellipse). World units: y is normalised y over the aspect. */
+export type Avoid = { x: number; y: number; rx: number; ry: number; z: number }
+
+/** Ellipse metric: below 1 the point is inside the obstacle grown by (mx, my). */
+export function ellipseE(x: number, y: number, a: Avoid, mx: number, my: number) {
+  return Math.hypot((x - a.x) / (a.rx + mx), (y - a.y) / (a.ry + my))
+}
+
+/** The nearest point on the grown ellipse when (x, y) is inside it, otherwise the point itself. */
+export function pushOut(x: number, y: number, a: Avoid, mx: number, my: number): [number, number] {
+  const e = ellipseE(x, y, a, mx, my)
+  if (e >= 1) return [x, y]
+  if (e < 1e-6) return [a.x + a.rx + mx, a.y]
+  return [a.x + (x - a.x) / e, a.y + (y - a.y) / e]
 }

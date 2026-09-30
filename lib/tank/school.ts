@@ -12,6 +12,9 @@ import { spriteWidth, halfExtents, type SpeciesProfile } from './species'
 import {
   approach,
   clamp,
+  ellipseE,
+  pushOut,
+  type Avoid,
   lerp,
   sign,
   TAU,
@@ -27,7 +30,7 @@ export const SCHOOL_TURN_SECONDS = 0.9
 /** The whole school reverses at most this often. */
 export const SCHOOL_REVERSE_GAP = 22
 /** Largest perspective scale a school fish reaches (z 0.6). */
-const SCALE_MAX = scaleForZ(0.6) * 1.1
+const SCALE_MAX = scaleForZ(0.62) * 1.1
 const GULP_SECONDS = 0.4
 /** Steepest pitch of a school fish, radians (about 15 degrees). */
 export const SCHOOL_MAX_PITCH = 0.26
@@ -61,6 +64,8 @@ type Fish = {
   tailPhase: number
   pecPhase: number
   food: Pellet | null
+  /** Depth to move to while clear of the betta in depth is needed (null: swim at the usual depth). */
+  zPush: number | null
   satiated: number
   gulpT: number
 }
@@ -151,6 +156,7 @@ export class SchoolSim implements Group {
         tailPhase: this.rng() * TAU,
         pecPhase: this.rng() * TAU,
         food: null,
+        zPush: null,
         satiated: 0,
         gulpT: -1,
       })
@@ -235,6 +241,7 @@ export class SchoolSim implements Group {
     return Math.min(0.18 * this.bl, 0.3 * this.ry)
   }
   private breath = 0
+  private avoid: Avoid | null = null
   private rx = 0.1
   private ry = 0.05
 
@@ -259,6 +266,20 @@ export class SchoolSim implements Group {
         f.vy = 0
         f.food = null
       }
+    }
+  }
+
+  /** The betta's drawn ellipse, or null when there is none. */
+  setAvoid(avoid: Avoid | null) {
+    this.avoid = avoid
+  }
+
+  /** Clearance around the betta for a fish of this school: its own half size plus 0.4 body lengths. */
+  private margin(f: Fish) {
+    const s = scaleForZ(f.z) * f.fit
+    return {
+      mx: 0.5 * this.bl * s + 0.4 * this.bl,
+      my: 0.5 * this.profile.ratio * this.bl * s + 0.3 * this.bl,
     }
   }
 
@@ -319,9 +340,16 @@ export class SchoolSim implements Group {
     const room = dir === 1 ? b.x1 - this.cx : this.cx - b.x0
     const dist = Math.min(room, lerp(0.06, 0.28, this.rng() ** 1.3))
     const dx = dir === this.dir && room < 0.04 ? 0 : dir * Math.max(0, dist)
-    let gy = lerp(b.y0, b.y1, this.rng())
-    if (stressed) gy = lerp(b.y1 - (b.y1 - b.y0) * 0.35, b.y1, this.rng())
-    this.goal = { x: clamp(this.cx + dx, b.x0, b.x1), y: clamp(gy, b.y0, b.y1) }
+    let goal = { x: this.cx, y: this.cy }
+    for (let attempt = 0; attempt < 8; attempt++) {
+      let gy = lerp(b.y0, b.y1, this.rng())
+      if (stressed) gy = lerp(b.y1 - (b.y1 - b.y0) * 0.35, b.y1, this.rng())
+      goal = { x: clamp(this.cx + dx, b.x0, b.x1), y: clamp(gy, b.y0, b.y1) }
+      // Do not settle the school on the betta.
+      const av = this.avoid
+      if (!av || ellipseE(goal.x, goal.y, av, this.rx, this.ry) >= 1) break
+    }
+    this.goal = goal
     if (dir !== this.dir) this.reverse(dir)
   }
 
@@ -465,6 +493,30 @@ export class SchoolSim implements Group {
           vdy *= 0.4
         }
       }
+      const av = this.avoid
+      let pushZ: number | null = null
+      if (av) {
+        const { mx, my } = this.margin(f)
+        const e = ellipseE(f.x, f.y, av, mx, my)
+        const close = Math.abs(f.z - av.z) < 0.14
+        if (close && e < 1.5) {
+          // Clear of the betta in depth: one side or the other, never the same plane.
+          const side = f.z >= av.z ? 1 : -1
+          const up = av.z + 0.16
+          const down = av.z - 0.16
+          const dir = side === 1 ? (up <= 0.62 ? 1 : -1) : down >= 0.33 ? -1 : 1
+          pushZ = clamp(av.z + dir * 0.16, 0.33, 0.62)
+        }
+        if (Math.abs(f.z - av.z) < 0.12 && e < 1.3) {
+          const ox = f.x - av.x
+          const oy = f.y - av.y
+          const od = Math.hypot(ox, oy) || 1
+          const k = (1.3 - e) * vC * 4
+          vdx += (ox / od) * k
+          vdy += (oy / od) * k
+        }
+      }
+      f.zPush = pushZ
       const vm = Math.hypot(vdx, vdy)
       if (vm > vmax) {
         vdx *= vmax / vm
@@ -474,8 +526,14 @@ export class SchoolSim implements Group {
       f.vy = approach(f.vy, vdy, 1.3, dt)
       const nx = f.x + f.vx * dt
       const ny = f.y + f.vy * dt
-      const cxp = clamp(nx, fb.x0, fb.x1)
-      const cyp = clamp(ny, fb.y0, fb.y1)
+      let px = nx
+      let py = ny
+      if (av && Math.abs(f.z - av.z) < 0.1) {
+        const { mx, my } = this.margin(f)
+        ;[px, py] = pushOut(nx, ny, av, mx, my)
+      }
+      const cxp = clamp(px, fb.x0, fb.x1)
+      const cyp = clamp(py, fb.y0, fb.y1)
       if (cxp !== nx || cyp !== ny) {
         // Count only real overshoots; grazing the edge of the box is how a fish stops there.
         if (this.settled && Math.hypot(cxp - nx, cyp - ny) > 0.05 * this.bl) this.clampHits++
@@ -484,7 +542,7 @@ export class SchoolSim implements Group {
       }
       f.x = cxp
       f.y = cyp
-      f.z = approach(f.z, this.zFor(f, this.time), 0.3, dt)
+      f.z = approach(f.z, f.zPush ?? this.zFor(f, this.time), f.zPush === null ? 0.3 : 0.6, dt)
 
       const speed = Math.hypot(f.vx, f.vy)
       const idle = clamp(speed / Math.max(vC, 1e-4), 0, 1.6)
@@ -523,7 +581,9 @@ export class SchoolSim implements Group {
       !this.pellets.isLanded(p) &&
       p.x >= this.fishBox.x0 - 0.5 * this.bl &&
       p.x <= this.fishBox.x1 + 0.5 * this.bl &&
-      p.y / a <= lowest
+      p.y / a <= lowest &&
+      // Food at the betta's mouth is the betta's.
+      !(this.avoid && ellipseE(p.x, p.y / a, this.avoid, 0.4 * this.bl, 0.3 * this.bl) < 1)
     for (const f of this.fish) {
       if (f.food && (!this.pellets.pellets.includes(f.food) || !reachable(f.food))) f.food = null
     }

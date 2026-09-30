@@ -37,6 +37,9 @@ type Cory = {
   ph: number
   z: number
   speedK: number
+  /** Own size (0.9..1.1) and how deep it puts its nose down when foraging. */
+  fit: number
+  forage: number
   x: number
   y: number
   baseY: number
@@ -97,8 +100,11 @@ export class CorySim implements Group {
       this.corys.push({
         key: `${profile.id}-${i}`,
         ph: this.rng() * TAU,
-        z: 0.49 + this.rng() * 0.04,
+        // Spread in depth: sizes and focus differ a little, like fish at different distances.
+        z: 0.4 + this.rng() * 0.16,
         speedK: 0.85 + this.rng() * 0.3,
+        fit: 0.9 + this.rng() * 0.2,
+        forage: 0.5 + this.rng() * 0.5,
         x: 0.5,
         y: 0.88,
         baseY: 0.5,
@@ -107,7 +113,7 @@ export class CorySim implements Group {
         turnT: -1,
         sinceTurn: 99,
         mode: 'pause',
-        timer: 1 + this.rng() * 4,
+        timer: 0.5 + this.rng() * 9,
         dur: 1,
         sx: 0,
         sy: 0,
@@ -131,7 +137,7 @@ export class CorySim implements Group {
   configure(world: World) {
     const first = !this.world
     this.world = world
-    const { hw } = halfExtents(this.profile, world.fishWidth, scaleForZ(0.56))
+    const { hw } = halfExtents(this.profile, world.fishWidth, scaleForZ(0.56) * 1.1)
     const y1 = world.floorY - 0.005
     const y0 = y1 - BAND
     const [i0, i1] = bandInterval(world, y0 - 0.05, y1 + 0.02)
@@ -149,6 +155,7 @@ export class CorySim implements Group {
     const f = world.free
     this.dartX = [Math.max(f.x0 + hw, this.band.x0), Math.min(f.x1 - hw, this.band.x1)]
     this.dartTop = f.y0 + 0.06
+    this.layout()
     if (first) {
       this.gx = lerp(this.band.x0, this.band.x1, 0.5)
       for (const c of this.corys) {
@@ -161,9 +168,32 @@ export class CorySim implements Group {
 
   /** Place in the group, -1 (left) to 1 (right), for however many are drawn. */
   private offsetOf(c: Cory) {
-    const n = this.visible
-    return n > 1 ? (this.corys.indexOf(c) / (n - 1) - 0.5) * 2 : 0
+    return this.offs[this.corys.indexOf(c)] ?? 0
   }
+
+  /** Small clusters of 1-3 with uneven gaps, instead of an even row. */
+  private layout() {
+    const n = this.visible
+    const sizes: number[] = []
+    for (let left = n; left > 0;) {
+      const s = Math.min(left, this.rng() < 0.45 ? 3 : this.rng() < 0.7 ? 2 : 1)
+      sizes.push(s)
+      left -= s
+    }
+    const centres = sizes.map(() => this.rng() * 2 - 1).sort((a, b) => a - b)
+    // Keep clusters apart without making them regular.
+    for (let i = 1; i < centres.length; i++) centres[i] = Math.max(centres[i], centres[i - 1] + 0.3)
+    const top = centres[centres.length - 1] ?? 0
+    const k = top > 1 ? 1 / top : 1
+    const out: number[] = []
+    sizes.forEach((s, i) => {
+      for (let m = 0; m < s; m++) {
+        out.push(centres[i] * k + (m - (s - 1) / 2) * 0.13 + (this.rng() - 0.5) * 0.06)
+      }
+    })
+    this.offs = out
+  }
+  private offs: number[] = []
 
   private bandY(c: Cory) {
     return lerp(this.band.y0, this.band.y1, c.baseY)
@@ -183,6 +213,7 @@ export class CorySim implements Group {
 
   setVisible(n: number) {
     this.visible = clamp(Math.round(n), 1, this.corys.length)
+    this.layout()
   }
 
   step(dt: number) {
@@ -201,7 +232,7 @@ export class CorySim implements Group {
       tx = forced.x
       ty = clamp(forced.y, b.y0, b.y1)
     } else {
-      tx = clamp(this.gx + this.offsetOf(c) * this.spread() + (this.rng() - 0.5) * 0.08, b.x0, b.x1)
+      tx = clamp(this.gx + this.offsetOf(c) * this.spread() + (this.rng() - 0.5) * 0.12, b.x0, b.x1)
       // A short hop, not a run.
       const maxHop = this.bl * lerp(1.2, 3.2, this.rng())
       tx = clamp(tx, c.x - maxHop, c.x + maxHop)
@@ -275,7 +306,7 @@ export class CorySim implements Group {
       switch (c.mode) {
         case 'pause': {
           // Snout down, working the substrate.
-          pitchTarget = -0.15
+          pitchTarget = -0.15 * c.forage
           wiggleTarget = 1
           if (c.timer >= c.dur) {
             c.timer = 0
@@ -425,7 +456,7 @@ export class CorySim implements Group {
         x: c.x,
         y: c.y,
         z: c.z,
-        scale: scaleForZ(c.z),
+        scale: scaleForZ(c.z) * c.fit,
         fit: 1,
         heading: c.heading,
         facing: c.facing,
