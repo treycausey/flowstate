@@ -10,6 +10,8 @@ import { formatLocal } from '@/lib/time'
 import { useTanks } from '@/components/TankProvider'
 import TankFromQuery from '@/components/TankFromQuery'
 import SmallMultiples from '@/components/charts/SmallMultiples'
+import PlantsReportSection from '@/components/plants/PlantsReportSection'
+import { usePlants } from '@/lib/plants/usePlants'
 
 type Range = '30' | '90' | 'all'
 const RANGE_LABEL: Record<Range, string> = {
@@ -25,6 +27,7 @@ export default function ReportClient() {
   const [range, setRange] = useState<Range>('30')
   // Fixed at mount so the report window doesn't drift between renders
   const [now] = useState(() => new Date())
+  const { plants, checks } = usePlants(activeTank?.id ?? null)
 
   useEffect(() => {
     if (!activeTank) return
@@ -162,6 +165,8 @@ export default function ReportClient() {
           <SmallMultiples series={series} xDomain={xDomain} chartHeight={110} />
         )}
       </section>
+
+      {plants && checks && <PlantsReportSection plants={plants} checks={checks} />}
     </>
   )
 }

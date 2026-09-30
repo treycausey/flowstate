@@ -1,4 +1,4 @@
-import type { Reading, Settings, Tank, Dump } from './models'
+import type { Dump, Plant, PlantCheck, Reading, Settings, Tank } from './models'
 import { invoke } from '@tauri-apps/api/tauri'
 
 function uuid() {
@@ -73,6 +73,35 @@ export async function listReadingsWithinHour(tankId: string, tsISO: string): Pro
   const start = new Date(center - 30 * 60 * 1000).toISOString()
   const end = new Date(center + 30 * 60 * 1000).toISOString()
   return listReadingsByTankInRange(tankId, start, end)
+}
+
+// Plants
+export async function listPlantsByTank(tankId: string): Promise<Plant[]> {
+  return (await invoke('sqlite_list_plants_by_tank', { tankId })) as Plant[]
+}
+
+export async function addPlant(input: Omit<Plant, 'id'> & { id?: string }): Promise<Plant> {
+  const plant: Plant = { ...input, id: input.id ?? uuid() }
+  return (await invoke('sqlite_add_plant', { plant })) as Plant
+}
+
+export async function updatePlant(plant: Plant): Promise<void> {
+  await invoke('sqlite_update_plant', { plant })
+}
+
+export async function deletePlant(id: string): Promise<void> {
+  await invoke('sqlite_delete_plant', { id })
+}
+
+export async function listPlantChecksByTank(tankId: string): Promise<PlantCheck[]> {
+  return (await invoke('sqlite_list_plant_checks_by_tank', { tankId })) as PlantCheck[]
+}
+
+export async function addPlantCheck(
+  input: Omit<PlantCheck, 'id'> & { id?: string },
+): Promise<PlantCheck> {
+  const check: PlantCheck = { ...input, id: input.id ?? uuid() }
+  return (await invoke('sqlite_add_plant_check', { check })) as PlantCheck
 }
 
 // Settings

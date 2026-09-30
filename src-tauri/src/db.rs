@@ -8,7 +8,8 @@ use serde::{Deserialize, Serialize};
 /// Schema version stored in `PRAGMA user_version`.
 /// 0: original schema (metric columns NOT NULL; the version was never set).
 /// 2: metric columns nullable, so a reading can leave metrics untested.
-pub const SCHEMA_VERSION: i64 = 2;
+/// 3: `plants` and `plant_checks` tables. Only adds tables; existing rows are untouched.
+pub const SCHEMA_VERSION: i64 = 3;
 
 /// Failure to open or migrate the database.
 #[derive(Debug)]
@@ -68,6 +69,39 @@ pub struct Reading {
     pub note: Option<String>,
 }
 
+/// A plant in a tank. `species_id` is None for a custom plant.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct Plant {
+    pub id: String,
+    #[serde(rename = "tankId")]
+    pub tank_id: String,
+    #[serde(rename = "speciesId")]
+    pub species_id: Option<String>,
+    pub name: String,
+    pub placement: String,
+    #[serde(rename = "plantedAt")]
+    pub planted_at: String,
+    #[serde(rename = "removedAt")]
+    pub removed_at: Option<String>,
+    pub note: Option<String>,
+}
+
+/// One health check of one plant. `symptoms` is stored as a JSON array in a TEXT column.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct PlantCheck {
+    pub id: String,
+    #[serde(rename = "plantId")]
+    pub plant_id: String,
+    #[serde(rename = "tankId")]
+    pub tank_id: String,
+    pub ts: String,
+    pub health: String,
+    #[serde(default)]
+    pub symptoms: Vec<String>,
+    pub action: Option<String>,
+    pub note: Option<String>,
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Settings {
     pub units: Option<String>,
@@ -84,6 +118,11 @@ pub struct Settings {
 pub struct Dump {
     pub tanks: Vec<Tank>,
     pub readings: Vec<Reading>,
+    /// Absent in backups made before plants existed.
+    #[serde(default)]
+    pub plants: Vec<Plant>,
+    #[serde(default, rename = "plantChecks")]
+    pub plant_checks: Vec<PlantCheck>,
     pub settings: Option<Settings>,
 }
 
@@ -104,6 +143,35 @@ const CREATE_READINGS: &str = r#"
       note TEXT,
       FOREIGN KEY(tankId) REFERENCES tanks(id)
     )"#;
+
+const CREATE_PLANTS: &str = r#"
+    CREATE TABLE IF NOT EXISTS plants (
+      id TEXT PRIMARY KEY,
+      tankId TEXT NOT NULL,
+      speciesId TEXT,
+      name TEXT NOT NULL,
+      placement TEXT NOT NULL,
+      plantedAt TEXT NOT NULL,
+      removedAt TEXT,
+      note TEXT,
+      FOREIGN KEY(tankId) REFERENCES tanks(id)
+    );
+    CREATE TABLE IF NOT EXISTS plant_checks (
+      id TEXT PRIMARY KEY,
+      plantId TEXT NOT NULL,
+      tankId TEXT NOT NULL,
+      ts TEXT NOT NULL,
+      health TEXT NOT NULL,
+      symptoms TEXT NOT NULL DEFAULT '[]',
+      action TEXT,
+      note TEXT,
+      FOREIGN KEY(plantId) REFERENCES plants(id) ON DELETE CASCADE,
+      FOREIGN KEY(tankId) REFERENCES tanks(id)
+    );
+    CREATE INDEX IF NOT EXISTS plants_by_tank ON plants(tankId);
+    CREATE INDEX IF NOT EXISTS plant_checks_by_plant ON plant_checks(plantId);
+    CREATE INDEX IF NOT EXISTS plant_checks_by_tank_ts ON plant_checks(tankId, ts);
+"#;
 
 const CREATE_INDEXES: &str = r#"
     CREATE INDEX IF NOT EXISTS readings_by_tank ON readings(tankId);
@@ -152,7 +220,9 @@ pub fn init_schema(conn: &mut Connection) -> Result<(), DbError> {
     );
   "#,
     )?;
-    if readings_table_exists(&tx)? {
+    if !readings_table_exists(&tx)? {
+        tx.execute_batch(&format!("{};", CREATE_READINGS))?;
+    } else if version < 2 {
         // Old schema: rebuild without NOT NULL on the metric columns, keeping every row as is.
         tx.execute_batch(&format!(
             "{};",
@@ -164,10 +234,9 @@ pub fn init_schema(conn: &mut Connection) -> Result<(), DbError> {
              DROP TABLE readings;
              ALTER TABLE readings_new RENAME TO readings;",
         )?;
-    } else {
-        tx.execute_batch(&format!("{};", CREATE_READINGS))?;
     }
     tx.execute_batch(CREATE_INDEXES)?;
+    tx.execute_batch(CREATE_PLANTS)?;
     tx.execute_batch(&format!("PRAGMA user_version = {};", SCHEMA_VERSION))?;
     tx.commit()?;
     Ok(())
@@ -311,6 +380,122 @@ pub fn list_readings_by_tank_in_range(
     rows.collect()
 }
 
+fn plant_from_row(r: &rusqlite::Row) -> rusqlite::Result<Plant> {
+    Ok(Plant {
+        id: r.get(0)?,
+        tank_id: r.get(1)?,
+        species_id: r.get(2)?,
+        name: r.get(3)?,
+        placement: r.get(4)?,
+        planted_at: r.get(5)?,
+        removed_at: r.get(6)?,
+        note: r.get(7)?,
+    })
+}
+
+const PLANT_COLS: &str = "id, tankId, speciesId, name, placement, plantedAt, removedAt, note";
+
+pub fn add_plant(conn: &Connection, plant: &Plant) -> rusqlite::Result<()> {
+    conn.execute(
+        &format!("INSERT INTO plants ({PLANT_COLS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"),
+        params![
+            plant.id,
+            plant.tank_id,
+            plant.species_id,
+            plant.name,
+            plant.placement,
+            plant.planted_at,
+            plant.removed_at,
+            plant.note
+        ],
+    )?;
+    Ok(())
+}
+
+pub fn update_plant(conn: &Connection, plant: &Plant) -> rusqlite::Result<()> {
+    conn.execute(
+        "UPDATE plants SET tankId = ?, speciesId = ?, name = ?, placement = ?, plantedAt = ?, removedAt = ?, note = ? WHERE id = ?",
+        params![
+            plant.tank_id,
+            plant.species_id,
+            plant.name,
+            plant.placement,
+            plant.planted_at,
+            plant.removed_at,
+            plant.note,
+            plant.id
+        ],
+    )?;
+    Ok(())
+}
+
+/// Deletes the plant and its checks in one transaction. Does not rely on foreign keys being on.
+pub fn delete_plant(conn: &Connection, id: &str) -> rusqlite::Result<()> {
+    let tx = conn.unchecked_transaction()?;
+    tx.execute("DELETE FROM plant_checks WHERE plantId = ?", params![id])?;
+    tx.execute("DELETE FROM plants WHERE id = ?", params![id])?;
+    tx.commit()
+}
+
+/// Every plant of a tank, removed ones included, oldest planted first.
+pub fn list_plants_by_tank(conn: &Connection, tank_id: &str) -> rusqlite::Result<Vec<Plant>> {
+    let mut stmt = conn.prepare(&format!(
+        "SELECT {PLANT_COLS} FROM plants WHERE tankId = ? ORDER BY plantedAt ASC"
+    ))?;
+    let rows = stmt.query_map(params![tank_id], plant_from_row)?;
+    rows.collect()
+}
+
+fn plant_check_from_row(r: &rusqlite::Row) -> rusqlite::Result<PlantCheck> {
+    let symptoms: String = r.get(5)?;
+    let symptoms: Vec<String> = serde_json::from_str(&symptoms).map_err(|e| {
+        rusqlite::Error::FromSqlConversionFailure(5, rusqlite::types::Type::Text, Box::new(e))
+    })?;
+    Ok(PlantCheck {
+        id: r.get(0)?,
+        plant_id: r.get(1)?,
+        tank_id: r.get(2)?,
+        ts: r.get(3)?,
+        health: r.get(4)?,
+        symptoms,
+        action: r.get(6)?,
+        note: r.get(7)?,
+    })
+}
+
+const CHECK_COLS: &str = "id, plantId, tankId, ts, health, symptoms, action, note";
+
+pub fn add_plant_check(conn: &Connection, check: &PlantCheck) -> rusqlite::Result<()> {
+    let symptoms = serde_json::to_string(&check.symptoms)
+        .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
+    conn.execute(
+        &format!("INSERT INTO plant_checks ({CHECK_COLS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"),
+        params![
+            check.id,
+            check.plant_id,
+            check.tank_id,
+            check.ts,
+            check.health,
+            symptoms,
+            check.action,
+            check.note
+        ],
+    )?;
+    Ok(())
+}
+
+/// All plant checks of a tank, oldest first.
+pub fn list_plant_checks_by_tank(
+    conn: &Connection,
+    tank_id: &str,
+) -> rusqlite::Result<Vec<PlantCheck>> {
+    let mut stmt = conn.prepare(&format!(
+        "SELECT {CHECK_COLS} FROM plant_checks WHERE tankId = ? ORDER BY ts ASC"
+    ))?;
+    let rows = stmt.query_map(params![tank_id], plant_check_from_row)?;
+    rows.collect()
+}
+
 pub fn get_settings(conn: &Connection) -> Result<Option<Settings>, String> {
     let mut stmt = conn
         .prepare("SELECT value FROM settings WHERE key = 'global' LIMIT 1")
@@ -353,10 +538,28 @@ pub fn export_dump(conn: &Connection) -> Result<Dump, String> {
         .map_err(|e| e.to_string())?
         .collect::<rusqlite::Result<Vec<_>>>()
         .map_err(|e| e.to_string())?;
+    let mut sp = conn
+        .prepare(&format!("SELECT {PLANT_COLS} FROM plants"))
+        .map_err(|e| e.to_string())?;
+    let plants = sp
+        .query_map([], plant_from_row)
+        .map_err(|e| e.to_string())?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(|e| e.to_string())?;
+    let mut sc = conn
+        .prepare(&format!("SELECT {CHECK_COLS} FROM plant_checks"))
+        .map_err(|e| e.to_string())?;
+    let plant_checks = sc
+        .query_map([], plant_check_from_row)
+        .map_err(|e| e.to_string())?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(|e| e.to_string())?;
     let settings = get_settings(conn)?;
     Ok(Dump {
         tanks,
         readings,
+        plants,
+        plant_checks,
         settings,
     })
 }
@@ -378,6 +581,34 @@ pub fn import_dump(conn: &mut Connection, dump: &Dump) -> Result<(), String> {
        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
        ON CONFLICT(id) DO UPDATE SET tankId=excluded.tankId, ts=excluded.ts, pH=excluded.pH, ammonia=excluded.ammonia, nitrite=excluded.nitrite, nitrate=excluded.nitrate, note=excluded.note",
             params![r.id, r.tank_id, r.ts, r.p_h, r.ammonia, r.nitrite, r.nitrate, r.note],
+        )
+        .map_err(|e| e.to_string())?;
+    }
+    for p in dump.plants.iter() {
+        tx.execute(
+            "INSERT INTO plants (id, tankId, speciesId, name, placement, plantedAt, removedAt, note)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+       ON CONFLICT(id) DO UPDATE SET tankId=excluded.tankId, speciesId=excluded.speciesId, name=excluded.name, placement=excluded.placement, plantedAt=excluded.plantedAt, removedAt=excluded.removedAt, note=excluded.note",
+            params![
+                p.id,
+                p.tank_id,
+                p.species_id,
+                p.name,
+                p.placement,
+                p.planted_at,
+                p.removed_at,
+                p.note
+            ],
+        )
+        .map_err(|e| e.to_string())?;
+    }
+    for c in dump.plant_checks.iter() {
+        let symptoms = serde_json::to_string(&c.symptoms).map_err(|e| e.to_string())?;
+        tx.execute(
+            "INSERT INTO plant_checks (id, plantId, tankId, ts, health, symptoms, action, note)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+       ON CONFLICT(id) DO UPDATE SET plantId=excluded.plantId, tankId=excluded.tankId, ts=excluded.ts, health=excluded.health, symptoms=excluded.symptoms, action=excluded.action, note=excluded.note",
+            params![c.id, c.plant_id, c.tank_id, c.ts, c.health, symptoms, c.action, c.note],
         )
         .map_err(|e| e.to_string())?;
     }
@@ -456,7 +687,7 @@ mod tests {
              INSERT INTO settings VALUES ('global','{\"theme\":\"dark\"}');",
         )
         .unwrap();
-        let before = export_dump(&conn).unwrap().readings;
+        let before = list_readings_by_tank(&conn, "t1").unwrap();
         assert_eq!(before.len(), 2);
 
         init_schema(&mut conn).unwrap();
@@ -586,5 +817,251 @@ mod tests {
         assert_eq!(s.theme.as_deref(), Some("light"));
         assert!(s.chart_options.is_some());
         assert!(s.extra.is_empty());
+    }
+
+    // ---- Plants (schema version 3) ---------------------------------------------------------
+
+    /// A database as written by the build before plants: version 2, with data.
+    const V2_SCHEMA: &str = r#"
+    CREATE TABLE tanks (id TEXT PRIMARY KEY, name TEXT NOT NULL, createdAt TEXT NOT NULL, archivedAt TEXT, reminderCadence INTEGER);
+    CREATE TABLE readings (
+      id TEXT PRIMARY KEY, tankId TEXT NOT NULL, ts TEXT NOT NULL,
+      pH REAL, ammonia REAL, nitrite REAL, nitrate REAL,
+      note TEXT, FOREIGN KEY(tankId) REFERENCES tanks(id));
+    CREATE INDEX readings_by_tank ON readings(tankId);
+    CREATE INDEX readings_by_tank_ts ON readings(tankId, ts);
+    CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT);
+    PRAGMA user_version = 2;
+    "#;
+
+    fn plant(id: &str, planted_at: &str) -> Plant {
+        Plant {
+            id: id.into(),
+            tank_id: "t1".into(),
+            species_id: Some("anubias-nana".into()),
+            name: "Anubias nana".into(),
+            placement: "epiphyte".into(),
+            planted_at: planted_at.into(),
+            removed_at: None,
+            note: None,
+        }
+    }
+
+    fn check(id: &str, plant_id: &str, ts: &str, health: &str) -> PlantCheck {
+        PlantCheck {
+            id: id.into(),
+            plant_id: plant_id.into(),
+            tank_id: "t1".into(),
+            ts: ts.into(),
+            health: health.into(),
+            symptoms: vec!["pinholes".into(), "brown-edges".into()],
+            action: Some("trimmed".into()),
+            note: Some("edges".into()),
+        }
+    }
+
+    fn table_exists(conn: &Connection, name: &str) -> bool {
+        conn.query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?",
+            params![name],
+            |r| r.get::<_, i64>(0),
+        )
+        .unwrap()
+            > 0
+    }
+
+    #[test]
+    fn fresh_db_has_plant_tables() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        init_schema(&mut conn).unwrap();
+        assert_eq!(SCHEMA_VERSION, 3);
+        assert_eq!(user_version(&conn).unwrap(), 3);
+        assert!(table_exists(&conn, "plants"));
+        assert!(table_exists(&conn, "plant_checks"));
+    }
+
+    #[test]
+    fn migrates_v2_database_keeping_readings_and_settings() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(V2_SCHEMA).unwrap();
+        conn.execute_batch(
+            "INSERT INTO tanks VALUES ('t1','Main','2026-01-01T00:00:00Z',NULL,3);
+             INSERT INTO readings VALUES ('r1','t1','2026-01-02T10:00:00Z',7.2,NULL,0,12.5,'first');
+             INSERT INTO settings VALUES ('global','{\"theme\":\"dark\"}');",
+        )
+        .unwrap();
+        assert!(!table_exists(&conn, "plants"));
+        let before = list_readings_by_tank(&conn, "t1").unwrap();
+
+        init_schema(&mut conn).unwrap();
+
+        assert_eq!(user_version(&conn).unwrap(), 3);
+        assert!(table_exists(&conn, "plants"));
+        let after = export_dump(&conn).unwrap();
+        assert_eq!(after.readings, before);
+        assert_eq!(after.readings[0].ammonia, None);
+        assert_eq!(after.tanks[0].reminder_cadence, Some(3));
+        assert_eq!(after.settings.unwrap().theme.as_deref(), Some("dark"));
+        assert!(after.plants.is_empty() && after.plant_checks.is_empty());
+
+        // The migrated database takes plants, and a second run changes nothing.
+        add_plant(&conn, &plant("p1", "2026-02-01T00:00:00Z")).unwrap();
+        init_schema(&mut conn).unwrap();
+        assert_eq!(list_plants_by_tank(&conn, "t1").unwrap().len(), 1);
+    }
+
+    #[test]
+    fn migrates_v0_database_through_to_plants() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(OLD_SCHEMA).unwrap();
+        conn.execute_batch(
+            "INSERT INTO tanks VALUES ('t1','Main','2026-01-01T00:00:00Z',NULL,NULL);
+             INSERT INTO readings VALUES ('r1','t1','2026-01-02T10:00:00Z',7.2,0.25,0,12.5,NULL);",
+        )
+        .unwrap();
+        init_schema(&mut conn).unwrap();
+        assert_eq!(user_version(&conn).unwrap(), 3);
+        assert_eq!(list_readings_by_tank(&conn, "t1").unwrap().len(), 1);
+        assert!(table_exists(&conn, "plant_checks"));
+    }
+
+    #[test]
+    fn plants_and_checks_round_trip() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        init_schema(&mut conn).unwrap();
+        create_tank(&conn, "T".into(), None, "t1".into()).unwrap();
+
+        let mut custom = plant("p2", "2026-03-01T00:00:00Z");
+        custom.species_id = None;
+        custom.name = "Mystery stem".into();
+        custom.placement = "background".into();
+        custom.note = Some("from a friend".into());
+        let first = plant("p1", "2026-02-01T00:00:00Z");
+        add_plant(&conn, &custom).unwrap();
+        add_plant(&conn, &first).unwrap();
+        // Oldest planted first.
+        assert_eq!(
+            list_plants_by_tank(&conn, "t1").unwrap(),
+            vec![first.clone(), custom.clone()]
+        );
+        assert!(list_plants_by_tank(&conn, "other").unwrap().is_empty());
+
+        let c1 = check("c1", "p1", "2026-02-10T00:00:00Z", "ok");
+        let c2 = PlantCheck {
+            symptoms: vec![],
+            action: None,
+            note: None,
+            ..check("c2", "p1", "2026-02-05T00:00:00Z", "struggling")
+        };
+        add_plant_check(&conn, &c1).unwrap();
+        add_plant_check(&conn, &c2).unwrap();
+        // Oldest first; symptoms come back as a list.
+        assert_eq!(
+            list_plant_checks_by_tank(&conn, "t1").unwrap(),
+            vec![c2.clone(), c1.clone()]
+        );
+
+        // Removing keeps the row; restoring clears removedAt.
+        let removed = Plant {
+            removed_at: Some("2026-03-05T00:00:00Z".into()),
+            ..first.clone()
+        };
+        update_plant(&conn, &removed).unwrap();
+        assert_eq!(list_plants_by_tank(&conn, "t1").unwrap()[0], removed);
+        update_plant(&conn, &first).unwrap();
+        assert_eq!(list_plants_by_tank(&conn, "t1").unwrap()[0], first);
+
+        // JSON uses the camelCase keys the web side sends, with null for missing values.
+        let json = serde_json::to_value(&custom).unwrap();
+        assert_eq!(json["tankId"], "t1");
+        assert!(json["speciesId"].is_null() && json["removedAt"].is_null());
+        let back: Plant = serde_json::from_value(json).unwrap();
+        assert_eq!(back, custom);
+        let from_web: PlantCheck = serde_json::from_str(
+            r#"{"id":"c9","plantId":"p1","tankId":"t1","ts":"2026-02-01T00:00:00Z","health":"ok","symptoms":[]}"#,
+        )
+        .unwrap();
+        assert!(from_web.action.is_none() && from_web.note.is_none());
+    }
+
+    #[test]
+    fn deleting_a_plant_deletes_its_checks_only() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        init_schema(&mut conn).unwrap();
+        create_tank(&conn, "T".into(), None, "t1".into()).unwrap();
+        add_plant(&conn, &plant("p1", "2026-02-01T00:00:00Z")).unwrap();
+        add_plant(&conn, &plant("p2", "2026-02-02T00:00:00Z")).unwrap();
+        add_plant_check(&conn, &check("c1", "p1", "2026-02-10T00:00:00Z", "ok")).unwrap();
+        add_plant_check(&conn, &check("c2", "p2", "2026-02-11T00:00:00Z", "ok")).unwrap();
+
+        delete_plant(&conn, "p1").unwrap();
+
+        let plants = list_plants_by_tank(&conn, "t1").unwrap();
+        assert_eq!(plants.len(), 1);
+        assert_eq!(plants[0].id, "p2");
+        let checks = list_plant_checks_by_tank(&conn, "t1").unwrap();
+        assert_eq!(checks.len(), 1);
+        assert_eq!(checks[0].id, "c2");
+    }
+
+    #[test]
+    fn archiving_a_tank_keeps_its_plants_like_its_readings() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        init_schema(&mut conn).unwrap();
+        create_tank(&conn, "T".into(), None, "t1".into()).unwrap();
+        add_reading(
+            &conn,
+            &reading("r1", "2026-01-01T00:00:00Z", Some(7.0), None),
+        )
+        .unwrap();
+        add_plant(&conn, &plant("p1", "2026-02-01T00:00:00Z")).unwrap();
+        add_plant_check(&conn, &check("c1", "p1", "2026-02-10T00:00:00Z", "ok")).unwrap();
+
+        archive_tank(&conn, "t1").unwrap();
+
+        assert!(list_tanks(&conn).unwrap()[0].archived_at.is_some());
+        assert_eq!(list_readings_by_tank(&conn, "t1").unwrap().len(), 1);
+        assert_eq!(list_plants_by_tank(&conn, "t1").unwrap().len(), 1);
+        assert_eq!(list_plant_checks_by_tank(&conn, "t1").unwrap().len(), 1);
+    }
+
+    #[test]
+    fn export_and_import_carry_plants_and_older_dumps_still_import() {
+        let mut source = Connection::open_in_memory().unwrap();
+        init_schema(&mut source).unwrap();
+        create_tank(&source, "T".into(), None, "t1".into()).unwrap();
+        add_plant(&source, &plant("p1", "2026-02-01T00:00:00Z")).unwrap();
+        add_plant_check(&source, &check("c1", "p1", "2026-02-10T00:00:00Z", "ok")).unwrap();
+        let dump = export_dump(&source).unwrap();
+        assert_eq!(dump.plants.len(), 1);
+        assert_eq!(
+            dump.plant_checks[0].symptoms,
+            vec!["pinholes", "brown-edges"]
+        );
+
+        // Through JSON, as the web side sends it, into an empty database.
+        let json = serde_json::to_string(&dump).unwrap();
+        assert!(json.contains("\"plantChecks\""));
+        let parsed: Dump = serde_json::from_str(&json).unwrap();
+        let mut target = Connection::open_in_memory().unwrap();
+        init_schema(&mut target).unwrap();
+        import_dump(&mut target, &parsed).unwrap();
+        assert_eq!(list_plants_by_tank(&target, "t1").unwrap(), dump.plants);
+        assert_eq!(
+            list_plant_checks_by_tank(&target, "t1").unwrap(),
+            dump.plant_checks
+        );
+        // Importing twice upserts instead of failing.
+        import_dump(&mut target, &parsed).unwrap();
+        assert_eq!(list_plants_by_tank(&target, "t1").unwrap().len(), 1);
+
+        // A backup made before plants existed has neither key.
+        let old: Dump = serde_json::from_str(
+            r#"{"tanks":[{"id":"t9","name":"Old","createdAt":"2025-01-01T00:00:00Z","archivedAt":null,"reminderCadence":null}],"readings":[]}"#,
+        )
+        .unwrap();
+        assert!(old.plants.is_empty() && old.plant_checks.is_empty());
+        import_dump(&mut target, &old).unwrap();
+        assert_eq!(list_plants_by_tank(&target, "t1").unwrap().len(), 1);
     }
 }

@@ -1,5 +1,16 @@
 import { invoke } from '@tauri-apps/api/tauri'
-import { createTank, listReadingsByTank, listReadingsByTankInRange, addReading } from '@/lib/sqlite'
+import {
+  addPlant,
+  addPlantCheck,
+  addReading,
+  createTank,
+  deletePlant,
+  listPlantChecksByTank,
+  listPlantsByTank,
+  listReadingsByTank,
+  listReadingsByTankInRange,
+  updatePlant,
+} from '@/lib/sqlite'
 
 jest.mock('@tauri-apps/api/tauri', () => ({
   invoke: jest.fn(),
@@ -77,6 +88,57 @@ describe('lib/sqlite bridge payloads', () => {
         tankId: 'tank-123',
         pH: 7.2,
       }),
+    })
+  })
+
+  test('plant commands use camelCase keys the Rust side expects', async () => {
+    const plant = {
+      tankId: 'tank-1',
+      speciesId: 'java-fern',
+      name: 'Java fern',
+      placement: 'epiphyte' as const,
+      plantedAt: '2024-01-01T00:00:00.000Z',
+    }
+    mockInvoke.mockResolvedValueOnce([])
+    await listPlantsByTank('tank-1')
+    expect(mockInvoke).toHaveBeenLastCalledWith('sqlite_list_plants_by_tank', { tankId: 'tank-1' })
+
+    mockInvoke.mockImplementationOnce(async (_cmd, args) => (args as { plant: unknown }).plant)
+    const added = await addPlant(plant)
+    expect(added.id).toEqual(expect.any(String))
+    expect(mockInvoke).toHaveBeenLastCalledWith('sqlite_add_plant', {
+      plant: expect.objectContaining({ id: added.id, tankId: 'tank-1', speciesId: 'java-fern' }),
+    })
+
+    mockInvoke.mockResolvedValueOnce(undefined)
+    await updatePlant({ ...added, removedAt: '2024-02-01T00:00:00.000Z' })
+    expect(mockInvoke).toHaveBeenLastCalledWith('sqlite_update_plant', {
+      plant: expect.objectContaining({ id: added.id, removedAt: '2024-02-01T00:00:00.000Z' }),
+    })
+
+    mockInvoke.mockResolvedValueOnce(undefined)
+    await deletePlant('p-1')
+    expect(mockInvoke).toHaveBeenLastCalledWith('sqlite_delete_plant', { id: 'p-1' })
+  })
+
+  test('plant check commands send the check with its symptoms list', async () => {
+    mockInvoke.mockResolvedValueOnce([])
+    await listPlantChecksByTank('tank-1')
+    expect(mockInvoke).toHaveBeenLastCalledWith('sqlite_list_plant_checks_by_tank', {
+      tankId: 'tank-1',
+    })
+
+    mockInvoke.mockImplementationOnce(async (_cmd, args) => (args as { check: unknown }).check)
+    const check = await addPlantCheck({
+      plantId: 'p-1',
+      tankId: 'tank-1',
+      ts: '2024-01-02T00:00:00.000Z',
+      health: 'struggling',
+      symptoms: ['pinholes'],
+      action: null,
+    })
+    expect(mockInvoke).toHaveBeenLastCalledWith('sqlite_add_plant_check', {
+      check: expect.objectContaining({ id: check.id, plantId: 'p-1', symptoms: ['pinholes'] }),
     })
   })
 })

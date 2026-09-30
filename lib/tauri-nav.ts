@@ -1,4 +1,4 @@
-export type NavTarget = 'home' | 'charts' | 'report' | 'settings' | string
+export type NavTarget = 'home' | 'charts' | 'plants' | 'report' | 'settings' | string
 
 export function mapNavToPath(target: NavTarget, activeTankId?: string | null): string | null {
   const t = (target || '').toString().toLowerCase()
@@ -8,6 +8,8 @@ export function mapNavToPath(target: NavTarget, activeTankId?: string | null): s
       return '/'
     case 'settings':
       return '/settings'
+    case 'plants':
+      return '/plants'
     case 'charts':
       return activeTankId ? `/tanks?tankId=${activeTankId}` : '/tanks'
     case 'report':

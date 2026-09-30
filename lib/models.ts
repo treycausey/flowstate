@@ -1,3 +1,5 @@
+import type { Health, Placement, PlantAction, SymptomId } from './plants/types'
+
 export type Tank = {
   id: string
   name: string
@@ -35,9 +37,37 @@ export type Settings = {
   shimmerSeen?: string[]
 }
 
+/** A plant in a tank. `speciesId` links the built-in catalog; null is a custom plant. */
+export type Plant = {
+  id: string
+  tankId: string
+  speciesId: string | null
+  name: string
+  placement: Placement
+  plantedAt: string // UTC ISO 8601 (normalized on write)
+  /** Set when the plant is taken out. It stays in history and can be restored. */
+  removedAt?: string | null
+  note?: string | null
+}
+
+/** One health check of one plant. */
+export type PlantCheck = {
+  id: string
+  plantId: string
+  tankId: string
+  ts: string // UTC ISO 8601 (normalized on write)
+  health: Health
+  symptoms: SymptomId[]
+  action?: PlantAction | null
+  note?: string | null
+}
+
 export type Dump = {
   tanks: Tank[]
   readings: Reading[]
+  /** Absent in backups made before plants existed. */
+  plants?: Plant[]
+  plantChecks?: PlantCheck[]
   settings?: Settings
 }
 

@@ -13,6 +13,7 @@ import {
   type Trend,
 } from '@/lib/status'
 import Sparkline from '@/components/charts/Sparkline'
+import PlantsStatusLine from '@/components/plants/PlantsStatusLine'
 
 const CYCLE_LABEL: Record<CycleStatus, string> = {
   'not-started': 'Not started',
@@ -128,5 +129,10 @@ export default function TankStatus() {
       </p>
     )
   if (!readings) return null
-  return <TankStatusView readings={readings} />
+  return (
+    <>
+      <TankStatusView readings={readings} />
+      <PlantsStatusLine tankId={activeTankId} />
+    </>
+  )
 }

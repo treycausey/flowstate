@@ -1,9 +1,20 @@
-import { type Reading, type Settings, type Tank, type Dump } from './models'
+import {
+  type Dump,
+  type Plant,
+  type PlantCheck,
+  type Reading,
+  type Settings,
+  type Tank,
+} from './models'
 
 const DB_NAME = 'aquarium'
-const DB_VERSION = 1
+/**
+ * 1: tanks, readings, settings.
+ * 2: plants and plantChecks. Upgrading only adds stores, so existing data is untouched.
+ */
+const DB_VERSION = 2
 
-type Stores = 'tanks' | 'readings' | 'settings'
+type Stores = 'tanks' | 'readings' | 'settings' | 'plants' | 'plantChecks'
 
 function uuid() {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID()
@@ -39,6 +50,15 @@ function openFresh(): Promise<IDBDatabase> {
       }
       if (!db.objectStoreNames.contains('settings')) {
         db.createObjectStore('settings', { keyPath: 'key' })
+      }
+      if (!db.objectStoreNames.contains('plants')) {
+        const store = db.createObjectStore('plants', { keyPath: 'id' })
+        store.createIndex('by_tank', 'tankId', { unique: false })
+      }
+      if (!db.objectStoreNames.contains('plantChecks')) {
+        const store = db.createObjectStore('plantChecks', { keyPath: 'id' })
+        store.createIndex('by_tank', 'tankId', { unique: false })
+        store.createIndex('by_plant', 'plantId', { unique: false })
       }
     }
     req.onsuccess = () => {
@@ -242,6 +262,75 @@ export async function setSettings(value: Settings): Promise<void> {
   })
 }
 
+// Plants
+export async function listPlantsByTank(tankId: string): Promise<Plant[]> {
+  const db = await openDB()
+  return new Promise<Plant[]>((resolve, reject) => {
+    const req = tx(db, 'plants').index('by_tank').getAll(IDBKeyRange.only(tankId))
+    req.onsuccess = () => resolve(req.result as Plant[])
+    req.onerror = () => reject(req.error)
+  })
+}
+
+export async function addPlant(input: Omit<Plant, 'id'> & { id?: string }): Promise<Plant> {
+  const plant: Plant = { ...input, id: input.id ?? uuid() }
+  const db = await openDB()
+  await new Promise<void>((resolve, reject) => {
+    const req = tx(db, 'plants', 'readwrite').add(plant)
+    req.onsuccess = () => resolve()
+    req.onerror = () => reject(req.error)
+  })
+  return plant
+}
+
+export async function updatePlant(plant: Plant): Promise<void> {
+  const db = await openDB()
+  await new Promise<void>((resolve, reject) => {
+    const req = tx(db, 'plants', 'readwrite').put(plant)
+    req.onsuccess = () => resolve()
+    req.onerror = () => reject(req.error)
+  })
+}
+
+/** Deletes the plant and its checks in one transaction. */
+export async function deletePlant(id: string): Promise<void> {
+  const db = await openDB()
+  await new Promise<void>((resolve, reject) => {
+    const t = db.transaction(['plants', 'plantChecks'], 'readwrite')
+    t.oncomplete = () => resolve()
+    t.onerror = () => reject(t.error)
+    t.onabort = () => reject(t.error ?? new Error('Delete aborted'))
+    const checks = t.objectStore('plantChecks')
+    const keys = checks.index('by_plant').getAllKeys(IDBKeyRange.only(id))
+    keys.onsuccess = () => {
+      for (const key of keys.result) checks.delete(key)
+      t.objectStore('plants').delete(id)
+    }
+  })
+}
+
+export async function listPlantChecksByTank(tankId: string): Promise<PlantCheck[]> {
+  const db = await openDB()
+  return new Promise<PlantCheck[]>((resolve, reject) => {
+    const req = tx(db, 'plantChecks').index('by_tank').getAll(IDBKeyRange.only(tankId))
+    req.onsuccess = () => resolve(req.result as PlantCheck[])
+    req.onerror = () => reject(req.error)
+  })
+}
+
+export async function addPlantCheck(
+  input: Omit<PlantCheck, 'id'> & { id?: string },
+): Promise<PlantCheck> {
+  const check: PlantCheck = { ...input, id: input.id ?? uuid() }
+  const db = await openDB()
+  await new Promise<void>((resolve, reject) => {
+    const req = tx(db, 'plantChecks', 'readwrite').add(check)
+    req.onsuccess = () => resolve()
+    req.onerror = () => reject(req.error)
+  })
+  return check
+}
+
 // Seed/init: create first tank if none exists
 export async function ensureSeed(): Promise<Tank> {
   const tanks = await listTanks()
@@ -250,18 +339,23 @@ export async function ensureSeed(): Promise<Tank> {
 }
 
 export async function exportDump(): Promise<Dump> {
-  const [tanks, readings, settings] = await Promise.all([
+  const [tanks, readings, plants, plantChecks, settings] = await Promise.all([
     getAll<Tank>('tanks'),
     getAll<Reading>('readings'),
+    getAll<Plant>('plants'),
+    getAll<PlantCheck>('plantChecks'),
     getSettings(),
   ])
-  return { tanks, readings, settings }
+  return { tanks, readings, plants, plantChecks, settings }
 }
 
 export async function importDump(dump: Dump): Promise<void> {
   const db = await openDB()
   await new Promise<void>((resolve, reject) => {
-    const tx = db.transaction(['tanks', 'readings', 'settings'], 'readwrite')
+    const tx = db.transaction(
+      ['tanks', 'readings', 'plants', 'plantChecks', 'settings'],
+      'readwrite',
+    )
     tx.oncomplete = () => resolve()
     tx.onerror = () => reject(tx.error)
     tx.onabort = () => reject(tx.error ?? new Error('Import aborted'))
@@ -270,6 +364,10 @@ export async function importDump(dump: Dump): Promise<void> {
     const readings = tx.objectStore('readings')
     for (const t of dump.tanks) tanks.put(t)
     for (const r of dump.readings) readings.put(r)
+    const plants = tx.objectStore('plants')
+    const plantChecks = tx.objectStore('plantChecks')
+    for (const p of dump.plants ?? []) plants.put(p)
+    for (const c of dump.plantChecks ?? []) plantChecks.put(c)
     if (dump.settings) tx.objectStore('settings').put({ key: 'global', value: dump.settings })
   })
 }

@@ -6,7 +6,7 @@ import { getDbInfo, revealDb } from '@/lib/desktop'
 import { exportDump, importDump, listTanks } from '@/lib/idb'
 import { BackupFormatError } from '@/lib/backup'
 import { downloadText } from '@/lib/export'
-import { emitReadingsChanged } from '@/lib/events'
+import { emitPlantsChanged, emitReadingsChanged } from '@/lib/events'
 import { useTanks } from '@/components/TankProvider'
 import {
   DEFAULT_PREFS,
@@ -18,6 +18,11 @@ import {
 } from '@/lib/tank/prefs'
 
 type DbInfo = { dir: string; file: string }
+
+/** " and 3 plant(s)" when a backup carries plants, else nothing. */
+function plantsSuffix(plants: unknown) {
+  return Array.isArray(plants) && plants.length > 0 ? ` and ${plants.length} plant(s)` : ''
+}
 
 export default function SettingsClient() {
   const [db, setDb] = useState<DbInfo | null>(null)
@@ -93,7 +98,7 @@ export default function SettingsClient() {
     downloadText(defaultName, content, 'application/json')
     setMessage({
       kind: 'ok',
-      text: `Exported ${dump.tanks.length} tank(s) and ${dump.readings.length} reading(s).`,
+      text: `Exported ${dump.tanks.length} tank(s) and ${dump.readings.length} reading(s)${plantsSuffix(dump.plants)}.`,
     })
   }
 
@@ -101,14 +106,17 @@ export default function SettingsClient() {
     try {
       const data = JSON.parse(text)
       const ok = window.confirm(
-        'Import this backup? Tanks and readings with matching IDs will be overwritten; everything else is kept.',
+        'Import this backup? Tanks, readings and plants with matching IDs will be overwritten; everything else is kept.',
       )
       if (!ok) return
       await importDump(data)
       try {
         await refresh()
         await refreshTankPrefs()
-        for (const t of await listTanks()) emitReadingsChanged(t.id)
+        for (const t of await listTanks()) {
+          emitReadingsChanged(t.id)
+          emitPlantsChanged(t.id)
+        }
       } catch (err) {
         console.error('Refresh after import failed', err)
         setMessage({
@@ -119,7 +127,7 @@ export default function SettingsClient() {
       }
       setMessage({
         kind: 'ok',
-        text: `Imported ${data.tanks.length} tank(s) and ${data.readings.length} reading(s).`,
+        text: `Imported ${data.tanks.length} tank(s) and ${data.readings.length} reading(s)${plantsSuffix(data.plants)}.`,
       })
     } catch (e) {
       const reason =

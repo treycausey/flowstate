@@ -3,8 +3,8 @@
  * - /_next/static/*: cache-first (content-hashed, immutable).
  * - Other same-origin GETs: network-first with cache fallback.
  */
-const CACHE_NAME = 'flowstate-v3'
-const PAGES = ['/', '/tanks', '/tanks/report', '/settings']
+const CACHE_NAME = 'flowstate-v4'
+const PAGES = ['/', '/tanks', '/plants', '/tanks/report', '/settings']
 const ASSETS = [
   '/manifest.webmanifest',
   '/icons/icon-192.png',
