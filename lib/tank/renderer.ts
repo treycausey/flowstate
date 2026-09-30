@@ -3,11 +3,15 @@
 // far motes, bubbles, betta, pellets, near motes, glass dust, foreground stems.
 
 import type { BettaFrame } from './betta'
+import type { CreatureFrame } from './creature'
+import type { Pellet } from './pellets'
+import { BETTA_LENGTH_CM, SPECIES } from './species'
 import type { Environment, Phase } from './environment'
 import { computeGrade, type Grade } from './grade'
 import { PATCH_PROPS, patchLayers, patchMeta, patchTargets, type PatchLayer } from './patches'
 import { BACKGROUND_FRAG, FULLSCREEN_VERT } from './shaders/background'
 import { AXIS_Y, BETTA_FRAG, BETTA_VERT } from './shaders/betta'
+import { CREATURE_FRAG, CREATURE_VERT } from './shaders/creature'
 import {
   BUBBLE_FRAG,
   BUBBLE_VERT,
@@ -43,13 +47,20 @@ export type RenderInput = {
   time: number
   env: Environment
   water: WaterState
-  betta: BettaFrame
+  /** The betta's frame; null when the stock has no betta. */
+  betta: BettaFrame | null
+  /** Every other creature, drawn with the creature shader. */
+  creatures?: readonly CreatureFrame[]
+  /** Food pellets (defaults to the betta's own). */
+  pellets?: readonly Pellet[]
   /** Sprite width of the betta in view widths. */
   fishWidth: number
   /** Latest tap ripple, if any. Coordinates are normalised view space, t0 is in `time` seconds. */
   ripple: { x: number; y: number; t0: number } | null
   /** Snap slow fades (bubble nest) to their target; used for single deterministic frames. */
   instant?: boolean
+  /** Dev only: draw each creature's final coverage as white on black (the plate is black). */
+  debugAlpha?: boolean
 }
 
 type Tex = { tex: WebGLTexture; w: number; h: number }
@@ -171,6 +182,7 @@ export class TankRenderer {
   private progs!: {
     bg: Prog
     betta: Prog
+    creature: Prog
     cover: Prog
     disc: Prog
     particle: Prog
@@ -181,6 +193,8 @@ export class TankRenderer {
     fullscreen: WebGLVertexArrayObject
     betta: WebGLVertexArrayObject
     bettaCount: number
+    creature: WebGLVertexArrayObject
+    creatureCount: number
     disc: WebGLVertexArrayObject
     particles: WebGLVertexArrayObject
     bubbles: WebGLVertexArrayObject
@@ -199,6 +213,7 @@ export class TankRenderer {
   private patchAlpha: Record<'nest' | 'leaf', number> = { nest: 0, leaf: 0 }
   private patchReadyAt = new Map<string, number>()
   private blankTex: WebGLTexture | null = null
+  private swimScratch: CreatureFrame[] = []
   private rectBuf = new Float32Array(32)
   private alphaBuf = new Float32Array(8)
   private shiftBuf = new Float32Array(16)
@@ -280,6 +295,7 @@ export class TankRenderer {
       this.progs = {
         bg: new Prog(gl, FULLSCREEN_VERT, BACKGROUND_FRAG, 'background'),
         betta: new Prog(gl, BETTA_VERT, BETTA_FRAG, 'betta'),
+        creature: new Prog(gl, CREATURE_VERT, CREATURE_FRAG, 'creature'),
         cover: new Prog(gl, FULLSCREEN_VERT, COVER_FRAG, 'cover'),
         disc: new Prog(gl, DISC_VERT, DISC_FRAG, 'disc'),
         particle: new Prog(gl, PARTICLE_VERT, PARTICLE_FRAG, 'particle'),
@@ -355,6 +371,14 @@ export class TankRenderer {
     gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0)
     this.buffer(bm.idx, gl.ELEMENT_ARRAY_BUFFER)
 
+    const creature = make()
+    gl.bindVertexArray(creature)
+    const cm = this.gridMesh(40, 16, -0.56, -0.62, 0.56, 0.62)
+    this.buffer(cm.verts)
+    gl.enableVertexAttribArray(0)
+    gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0)
+    this.buffer(cm.idx, gl.ELEMENT_ARRAY_BUFFER)
+
     const disc = make()
     gl.bindVertexArray(disc)
     this.buffer(new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]))
@@ -414,6 +438,8 @@ export class TankRenderer {
       fullscreen,
       betta,
       bettaCount: bm.idx.length,
+      creature,
+      creatureCount: cm.idx.length,
       disc,
       particles,
       bubbles,
@@ -685,13 +711,38 @@ export class TankRenderer {
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4)
     gl.enable(gl.BLEND)
 
+    if (input.debugAlpha) {
+      // Coverage view: black plate, creatures as their final alpha in white, nothing else.
+      gl.clearColor(0, 0, 0, 1)
+      gl.clear(gl.COLOR_BUFFER_BIT)
+      const dview = [grade, water, activeTex, center, span, parallaxUV] as const
+      const all = [...(input.creatures ?? [])].sort(
+        (a, b) => Number(b.plateSpace) - Number(a.plateSpace) || a.z - b.z,
+      )
+      for (const c of all) this.drawCreature(c, input, ...dview)
+      return
+    }
+
     // 2. Far motes and bubbles (the props are already part of the plate).
     this.drawParticles(input, grade, water, 0, 0.5, par)
     this.drawBubbles(input, grade, par)
     this.drawBurst(input, grade, par)
 
-    // 3. Betta and pellets.
+    // 3. Plate creatures, then the swimmers and the betta back to front, then pellets.
+    const creatures = input.creatures ?? []
+    const view = [grade, water, activeTex, center, span, parallaxUV] as const
+    for (const c of creatures) if (c.plateSpace) this.drawCreature(c, input, ...view)
+    const swimmers = this.swimScratch
+    swimmers.length = 0
+    for (const c of creatures) if (!c.plateSpace) swimmers.push(c)
+    swimmers.sort((a, b) => a.z - b.z)
+    const bettaZ = input.betta ? input.betta.z : Infinity
+    let k = 0
+    for (; k < swimmers.length && swimmers[k].z <= bettaZ; k++) {
+      this.drawCreature(swimmers[k], input, ...view)
+    }
     this.drawBetta(input, grade, water, activeTex, center, span, parallaxUV)
+    for (; k < swimmers.length; k++) this.drawCreature(swimmers[k], input, ...view)
     this.drawPellets(input, grade)
 
     // 4. Near motes, glass dust, foreground.
@@ -939,13 +990,14 @@ export class TankRenderer {
   }
 
   private drawPellets(input: RenderInput, g: Grade) {
-    if (input.betta.pellets.length === 0) return
+    const pellets = input.pellets ?? input.betta?.pellets ?? []
+    if (pellets.length === 0) return
     const gl = this.gl
     const p = this.progs.disc
     p.use()
     gl.bindVertexArray(this.vao.disc)
     const l = this.lightVec(g)
-    for (const pellet of input.betta.pellets) {
+    for (const pellet of pellets) {
       const wob = 0.004 * Math.sin(pellet.age * 3.1 + pellet.id * 2.0)
       // A pellet is a few percent of the body length, so it scales with the fish.
       const r = Math.max(input.fishWidth * 0.0165 * this.width, 3) / this.width
@@ -959,6 +1011,120 @@ export class TankRenderer {
     }
   }
 
+  /** Load the cut-outs for these species (file stems under /tank/fish). */
+  loadStock(ids: Iterable<string>) {
+    for (const id of ids) void this.loadImage(`fish/${id}`)
+  }
+
+  /** Load the cut-outs for these species and free the ones no longer in the stock. */
+  syncStock(ids: readonly string[]) {
+    const keep = new Set(ids.map((id) => `fish/${id}`))
+    for (const name of [...this.images.keys(), ...this.requested]) {
+      if (name.startsWith('fish/') && !keep.has(name)) this.freeImage(name)
+    }
+    this.loadStock(ids)
+  }
+
+  private drawCreature(
+    c: CreatureFrame,
+    input: RenderInput,
+    g: Grade,
+    water: WaterState,
+    plate: Tex,
+    plateCenter: [number, number],
+    plateSpan: [number, number],
+    parallaxUV: [number, number],
+  ) {
+    const gl = this.gl
+    const profile = SPECIES[c.species]
+    if (!profile || c.alpha < 0.01) return
+    const tex = this.images.get(`fish/${c.species}`)
+    if (!tex) return
+    const fw = input.fishWidth
+    const spriteW = (fw * profile.lengthCm) / BETTA_LENGTH_CM
+    const scale = c.scale * c.fit
+    const par = c.plateSpace ? this.parallaxView(1) : this.parallaxView(1.7)
+    const shiftUV: [number, number] = c.plateSpace
+      ? [par[0] * plateSpan[0], par[1] * plateSpan[1]]
+      : parallaxUV
+    const w = spriteW * scale
+
+    // Contact shadow on the substrate, always for the grounded species.
+    if (c.shadow && !input.debugAlpha) {
+      const d = this.progs.disc
+      d.use()
+      gl.bindVertexArray(this.vao.disc)
+      const foot = c.y + 0.4 * profile.ratio * w * this.aspect
+      d.f2('u_center', c.x + par[0] * 0.6 + 0.004, foot)
+      d.f2('u_radius', w * 0.4, w * 0.07 * this.aspect)
+      d.f3('u_color', 0.01, 0.02, 0.01)
+      d.f1('u_alpha', 0.4 * c.alpha * (1 - g.darkness * 0.3))
+      d.f1('u_mode', 1)
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4)
+    }
+
+    const p = this.progs.creature
+    p.use()
+    this.bindTex(0, tex)
+    this.bindTex(3, plate)
+    p.i1('u_tex', 0)
+    p.i1('u_plate', 3)
+    const turn = c.turnProgress
+    const squash = turn > 0 ? 0.6 + 0.4 * Math.abs(Math.cos(Math.PI * turn)) : 1
+    p.f2('u_center', c.x, c.y)
+    p.f2('u_shift', par[0], par[1])
+    p.f1('u_aspect', this.aspect)
+    p.f1('u_spriteW', w * (1 + 0.05 * c.gulp))
+    p.f1('u_ratio', profile.ratio)
+    p.f1('u_facing', c.facing)
+    p.f1('u_widthScale', squash)
+    p.f1('u_rot', -c.pitch * c.facing)
+    p.f1('u_time', input.time)
+    p.f1('u_tailPhase', c.tailPhase)
+    p.f1('u_pecPhase', c.pecPhase)
+    p.f1('u_wave', c.wave)
+    p.f1('u_waveAmp', profile.wave)
+    p.f1('u_waveLag', profile.waveLag)
+    p.f1('u_headRigid', profile.headRigid)
+    p.f1('u_flow', profile.flows ? 1 : 0)
+    p.f1('u_pec', profile.pectoral ? 1 : 0)
+    p.f1('u_legs', profile.kind === 'shrimp' ? 1 : profile.kind === 'snail' ? 0.3 : 0)
+    p.f2('u_plateCenter', plateCenter[0], plateCenter[1])
+    p.f2('u_plateSpan', plateSpan[0], plateSpan[1])
+    p.f2('u_parallax', shiftUV[0], shiftUV[1])
+
+    // Focus and haze follow depth like the betta; plate creatures sit at the plate's own sharpness.
+    const far = smoothstep(0.5, 0.25, c.z)
+    const coc = c.z < 0.5 ? (0.5 - c.z) * 2 * 1.3 : (c.z - 0.5) * 2
+    p.f1('u_bias', coc * 3.2)
+    p.f1('u_far', far)
+    p.f1('u_soft', c.soft ? 1 : 0)
+    // Pale bodies (corys, otos) and everything on the plate sit deeper in the scene's light.
+    const grounded = c.shadow || c.soft
+    p.f1('u_gamma', grounded ? 1.35 : 1.1)
+    p.f1('u_scatter', grounded ? 0.34 : 0.16)
+    p.f1('u_bright', grounded ? (c.soft ? 0.6 : 0.5) + 0.4 * g.darkness : 1)
+    const px = 1 / (w * this.width)
+    p.f2('u_pxLocal', px, px / profile.ratio)
+    p.f1('u_exposure', g.exposure * (1 - 0.08 * far))
+    p.v3('u_tint', g.tint)
+    p.f1('u_darkness', g.darkness)
+    p.f1('u_saturation', (c.soft ? 0.84 : 0.88) * (1 - 0.18 * far))
+    p.f1('u_causticGain', g.causticGain)
+    p.v3('u_causticTint', g.causticTint)
+    p.v3('u_shaftTint', g.shaftTint)
+    const sun = input.env.light.sunDir
+    p.f2('u_lightLocal', sun[0] * c.facing, sun[1])
+    p.f1('u_rimGain', 0.3 * (0.4 + g.shaftGain * 1.4))
+    p.f1('u_stress', water.mood === 'stressed' ? 1 : 0)
+    p.f1('u_fishHaze', water.haze * 0.42 + 0.14 * far)
+    p.v3('u_hazeColor', g.hazeColor)
+    p.f1('u_opacity', c.alpha)
+    p.f1('u_debugAlpha', input.debugAlpha ? 1 : 0)
+    gl.bindVertexArray(this.vao.creature)
+    gl.drawElements(gl.TRIANGLES, this.vao.creatureCount, gl.UNSIGNED_SHORT, 0)
+  }
+
   private drawBetta(
     input: RenderInput,
     g: Grade,
@@ -970,6 +1136,7 @@ export class TankRenderer {
   ) {
     const gl = this.gl
     const b = input.betta
+    if (!b) return
     const cruise = this.images.get('betta-cruise')
     if (!cruise) return
     const flare = this.images.get('betta-flare')
@@ -1079,7 +1246,8 @@ export class TankRenderer {
     for (const t of this.images.values()) gl.deleteTexture(t.tex)
     for (const b of this.buffers) gl.deleteBuffer(b)
     const v = this.vao
-    for (const a of [v.fullscreen, v.betta, v.disc, v.particles, v.bubbles]) gl.deleteVertexArray(a)
+    for (const a of [v.fullscreen, v.betta, v.creature, v.disc, v.particles, v.bubbles])
+      gl.deleteVertexArray(a)
     for (const prog of Object.values(this.progs)) gl.deleteProgram(prog.program)
     this.plates.clear()
     this.images.clear()
