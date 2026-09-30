@@ -78,6 +78,7 @@ Behind the panel is a small WebGL2 aquarium with a betta. It follows the time of
 - Turn it off in Settings > Living tank (no WebGL runs; the page shows a still picture). Pick your hemisphere there for the seasons.
 - It follows the system Reduce Motion setting (one still frame).
 - The engine loads after first paint, so logging stays fast.
+- The bubble nest, autumn leaf, night shrimp and algae are image patches baked into the tank art (`public/tank/patch-*.webp`, described in `patches.json`). Each loads only when it is needed.
 - Dev only: `?tankPhase=dawn|day|dusk|night` and `?tankDate=2026-12-31T23:59:30` (local time) override the clock, and `/dev/tank` is a control drawer.
 
 There are easter eggs. Spoilers below.

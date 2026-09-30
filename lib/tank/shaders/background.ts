@@ -38,8 +38,19 @@ uniform vec3 u_causticTint;
 uniform float u_shaftGain;
 uniform vec3 u_shaftTint;
 uniform vec2 u_sunDir;
-uniform vec4 u_leaf;      // x, y, rx, ry (normalised view space); zw unused when alpha 0
-uniform float u_leafShadow;
+uniform float u_algaeCover; // 0..1 how much of the plate is already the algae variant
+// Baked prop patches: slot = side * 4 + prop (shrimp, nest, leaf, algae); side 0 sits on plate A, side 1 on B.
+uniform sampler2D u_pt0;
+uniform sampler2D u_pt1;
+uniform sampler2D u_pt2;
+uniform sampler2D u_pt3;
+uniform sampler2D u_pt4;
+uniform sampler2D u_pt5;
+uniform sampler2D u_pt6;
+uniform sampler2D u_pt7;
+uniform vec4 u_prect[8];   // plate uv rectangle x0, y0, x1, y1
+uniform float u_pa[8];     // opacity over the plate; 0 skips the slot
+uniform vec2 u_pshift[8];  // plate uv offset (surface bob)
 uniform float u_vignette;
 uniform float u_shimmer; // 0..1 progress of the golden shimmer, negative when off
 uniform float u_glow;    // halloween glow, 0..1
@@ -48,12 +59,44 @@ vec3 sample_plate(sampler2D tex, vec2 uv, float lod) {
   return textureLod(tex, uv, lod).rgb;
 }
 
+// Premultiplied patch over the plate colour, in plate space and at the plate's own blur.
+vec3 patch_over(vec3 col, sampler2D t, int k, vec2 uv, float lod) {
+  float a = u_pa[k];
+  if (a <= 0.001) return col;
+  vec4 r = u_prect[k];
+  vec2 span = r.zw - r.xy;
+  vec2 q = (uv - u_pshift[k] - r.xy) / span;
+  // The bob can slide the patch down off its own top edge; rows still inside the unshifted rectangle
+  // repeat the patch's top row, so no strip of plain plate shows above it.
+  if (q.y < 0.0 && (uv.y - r.y) / span.y >= 0.0) q.y = 0.0;
+  if (q.x < 0.0 || q.x > 1.0 || q.y < 0.0 || q.y > 1.0) return col;
+  vec4 s = textureLod(t, q, lod);
+  return col * (1.0 - s.a * a) + s.rgb * a;
+}
+
+// Algae variant first (it replaces the plate), then nest, leaf and shrimp on top.
+vec3 plate_side(sampler2D plate, int side, vec2 uv, float lod) {
+  vec3 col = sample_plate(plate, uv, lod);
+  if (side == 0) {
+    col = patch_over(col, u_pt3, 3, uv, lod);
+    col = patch_over(col, u_pt1, 1, uv, lod);
+    col = patch_over(col, u_pt2, 2, uv, lod);
+    col = patch_over(col, u_pt0, 0, uv, lod);
+  } else {
+    col = patch_over(col, u_pt7, 7, uv, lod);
+    col = patch_over(col, u_pt5, 5, uv, lod);
+    col = patch_over(col, u_pt6, 6, uv, lod);
+    col = patch_over(col, u_pt4, 4, uv, lod);
+  }
+  return col;
+}
+
 void main() {
   vec2 pv = v_uv;
   vec2 uv = u_plateCenter + (pv - 0.5) * u_plateSpan + u_parallax;
-  float lod = u_haze * 2.4 + u_algae * 0.9;
-  vec3 col = sample_plate(u_plateA, uv, lod);
-  if (u_hasB > 0.5) col = mix(col, sample_plate(u_plateB, uv, lod), u_mix);
+  float lod = u_haze * 2.4 + u_algae * 0.9 * (1.0 - u_algaeCover);
+  vec3 col = plate_side(u_plateA, 0, uv, lod);
+  if (u_hasB > 0.5) col = mix(col, plate_side(u_plateB, 1, uv, lod), u_mix);
 
   float lum = dot(col, vec3(0.299, 0.587, 0.114));
   float t = u_time;
@@ -63,28 +106,25 @@ void main() {
   float litMask = smoothstep(0.03, 0.32, lum);
   float depthFall = 1.0 - smoothstep(0.68, 1.0, pv.y);
   float surfaceBoost = 0.55 + 0.45 * (1.0 - smoothstep(0.0, 0.7, pv.y));
-  float shadow = 0.0;
-  if (u_leafShadow > 0.001) {
-    vec2 lp = u_leaf.xy + u_sunDir * 0.22 * vec2(1.0, 1.0);
-    vec2 d = (pv - lp) * vec2(u_aspect, 1.0) / max(u_leaf.zw, vec2(0.001));
-    shadow = u_leafShadow * (1.0 - smoothstep(0.55, 1.15, length(d)));
-  }
   float c = caustic(sp, t);
   vec2 lo = vec2(0.5 * u_aspect, 0.5) - normalize(u_sunDir) * 1.15;
   float lightCone = 1.0 - smoothstep(0.8, 2.7, length(sp - lo));
-  float lumBlur = dot(textureLod(u_plateA, uv, 3.5).rgb, vec3(0.299, 0.587, 0.114));
+  // Blur the composite (patches included), so a painted-in algae plate does not read as fine detail.
+  vec3 colBlur = plate_side(u_plateA, 0, uv, 3.5);
+  if (u_hasB > 0.5) colBlur = mix(colBlur, plate_side(u_plateB, 1, uv, 3.5), u_mix);
+  float lumBlur = dot(colBlur, vec3(0.299, 0.587, 0.114));
   float detail = smoothstep(0.015, 0.09, abs(lum - lumBlur));
-  float cMask = litMask * depthFall * surfaceBoost * mix(0.16, 1.0, detail) * (0.5 + 0.5 * lightCone) * (1.0 - 0.75 * shadow);
+  float cMask = litMask * depthFall * surfaceBoost * mix(0.16, 1.0, detail) * (0.5 + 0.5 * lightCone);
   vec3 causticLight = u_causticTint * c * u_causticGain * cMask;
   col *= 1.0 + causticLight * 2.6;
   col += causticLight * 0.22 * (0.3 + 0.7 * (1.0 - lum));
 
   // Grade.
   col = mix(vec3(dot(col, vec3(0.299, 0.587, 0.114))), col, u_saturation);
-  col *= u_tint * u_exposure * (1.0 - 0.18 * shadow);
+  col *= u_tint * u_exposure;
 
   // Algae: the water loses clarity in the middle distance.
-  col = mix(col, col * vec3(0.92, 1.0, 0.8) + vec3(0.01, 0.03, 0.0), u_algae * 0.35);
+  col = mix(col, col * vec3(0.92, 1.0, 0.8) + vec3(0.01, 0.03, 0.0), u_algae * 0.35 * (1.0 - u_algaeCover));
 
   // Milky haze: fog grows with distance (higher up the frame), contrast drops.
   float hz = u_haze * mix(1.0, 0.72, pv.y);
@@ -95,7 +135,7 @@ void main() {
 
   // God rays, screen-blended so they never clip.
   float sh = shaftAt(sp, normalize(u_sunDir), t, u_aspect);
-  vec3 shaftLight = u_shaftTint * sh * u_shaftGain * (1.0 - 0.6 * shadow);
+  vec3 shaftLight = u_shaftTint * sh * u_shaftGain;
   col = 1.0 - (1.0 - col) * (1.0 - shaftLight * 0.45);
 
   // Golden shimmer (100th reading): a soft diagonal band sweeps through the water once.

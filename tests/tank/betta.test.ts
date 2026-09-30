@@ -1,4 +1,4 @@
-import { BettaSim, type BettaFrame } from '@/lib/tank/betta'
+import { BettaSim, type BettaFrame, type Rect } from '@/lib/tank/betta'
 
 const DT = 1 / 30
 const run = (sim: BettaSim, seconds: number, each?: (f: BettaFrame) => void) => {
@@ -11,6 +11,235 @@ const run = (sim: BettaSim, seconds: number, each?: (f: BettaFrame) => void) => 
 }
 const dist = (f: BettaFrame, x: number, y: number, aspect = 1.6) =>
   Math.hypot(f.x - x, (f.y - y) / aspect)
+
+const FPS60 = 1 / 60
+type World = { fw: number; aspect: number; exclusion: Rect; free: Rect }
+/** Desktop 1440x900: panel covers the left 33%. */
+const DESKTOP: World = {
+  fw: 0.19,
+  aspect: 1.6,
+  exclusion: { x0: 0.01, y0: 0.02, x1: 0.33, y1: 0.98 },
+  free: { x0: 0.33, y0: 0.09, x1: 1, y1: 0.88 },
+}
+/** Phone 375x812: the sheet covers everything below 34% of the height. */
+const PHONE: World = {
+  fw: 0.34,
+  aspect: 0.46,
+  exclusion: { x0: 0, y0: 0.34, x1: 1, y1: 2 },
+  free: { x0: 0, y0: 0.09, x1: 1, y1: 0.34 },
+}
+/** Landscape phone 844x390: the sheet leaves a short, wide band (y 0.09..0.34 of the height). */
+const LANDSCAPE: World = {
+  fw: 0.212,
+  aspect: 844 / 390,
+  exclusion: { x0: 0, y0: 0.34, x1: 1, y1: 2 },
+  free: { x0: 0, y0: 0.09, x1: 1, y1: 0.34 },
+}
+/** Small desktop window 800x700: also a bottom sheet, with a squarer, still short band. */
+const WINDOW_800: World = {
+  fw: 0.2295,
+  aspect: 800 / 700,
+  exclusion: { x0: 0, y0: 0.34, x1: 1, y1: 2 },
+  free: { x0: 0, y0: 0.09, x1: 1, y1: 0.34 },
+}
+const WORLDS = [
+  ['desktop', DESKTOP],
+  ['phone', PHONE],
+  ['landscape 844x390', LANDSCAPE],
+  ['window 800x700', WINDOW_800],
+] as const
+// Default: 4 min x 3 seeds. BETTA_LONG=1 runs the original 10 min x 5 seeds.
+const LONG = process.env.BETTA_LONG === '1'
+const SEEDS = LONG ? [1, 2, 3, 4, 5] : [1, 2, 3]
+const WANDER_SECONDS = LONG ? 600 : 240
+
+/** Drawn quad half extents in fish widths (renderer.ts betta mesh: +-0.56 x +-0.46). */
+const QUAD_HALF_W = 0.56
+const QUAD_HALF_H = 0.46
+
+type Metrics = {
+  rectViolations: number
+  clampHits: number
+  turns: number
+  minTurnGap: number
+  hoverFrac: number
+  meanSpeed: number
+  maxSpeed: number
+  maxAccel: number
+  pathLength: number
+  zMin: number
+  zMax: number
+  maxDz: number
+  seconds: number
+}
+
+/** Run `wander` for `seconds` at 60 Hz and measure the motion from frame output alone. */
+function measure(world: World, seed: number, seconds: number): Metrics {
+  const sim = new BettaSim(seed, {
+    aspect: world.aspect,
+    fishWidth: world.fw,
+    exclusion: world.exclusion,
+  })
+  const w = world.free.x1 - world.free.x0
+  const insetX = 0.04 * w
+  // Vertical inset in viewport widths, from the free height (a short band must not be judged by its width).
+  const insetY = Math.max(0.04 * ((world.free.y1 - world.free.y0) / world.aspect), 0.01)
+  const m: Metrics = {
+    rectViolations: 0,
+    clampHits: 0,
+    turns: 0,
+    minTurnGap: Infinity,
+    hoverFrac: 0,
+    meanSpeed: 0,
+    maxSpeed: 0,
+    maxAccel: 0,
+    pathLength: 0,
+    zMin: 1,
+    zMax: 0,
+    maxDz: 0,
+    seconds,
+  }
+  const yLo = world.free.y0 + insetY * world.aspect
+  const yHi = world.free.y1 - insetY * world.aspect
+  // Judged at the largest wander scale (z 0.65) the sim plans for: does the quad fit vertically at all?
+  const fitsY = 2 * QUAD_HALF_H * world.fw * 1.12 * sim.fit() * world.aspect <= yHi - yLo
+  let prev: BettaFrame | null = null
+  let prevV: { x: number; y: number } | null = null
+  let lastTurnAt: number | null = null
+  let hover = 0
+  let speedSum = 0
+  const n = Math.round(seconds / FPS60)
+  for (let i = 0; i < n; i++) {
+    if (i % 60 === 0) sim.activity() // a watched tank: no idle inspect
+    const f = sim.step(FPS60)
+    const t = i * FPS60
+    const hw = QUAD_HALF_W * world.fw * f.scale
+    const hh = QUAD_HALF_H * world.fw * f.scale
+    const eps = 1e-9
+    if (
+      f.x - hw < world.free.x0 + insetX - eps ||
+      f.x + hw > world.free.x1 - insetX + eps ||
+      // Too short even at the smallest fit: the fish sits centred instead, so only the centre must be inside.
+      (fitsY
+        ? f.y - hh * world.aspect < yLo - eps || f.y + hh * world.aspect > yHi + eps
+        : f.y < world.free.y0 || f.y > world.free.y1)
+    )
+      m.rectViolations++
+    if (prev) {
+      const v = { x: (f.x - prev.x) / FPS60, y: (f.y - prev.y) / world.aspect / FPS60 }
+      const speed = Math.hypot(v.x, v.y)
+      if (speed < 0.006) hover++
+      speedSum += speed
+      m.maxSpeed = Math.max(m.maxSpeed, speed)
+      m.pathLength += speed * FPS60
+      if (prevV) {
+        const a = Math.hypot(v.x - prevV.x, v.y - prevV.y) / FPS60
+        m.maxAccel = Math.max(m.maxAccel, a)
+      }
+      prevV = v
+      m.maxDz = Math.max(m.maxDz, Math.abs(f.z - prev.z) / FPS60)
+      if (f.heading !== prev.heading) {
+        m.turns++
+        if (lastTurnAt !== null) m.minTurnGap = Math.min(m.minTurnGap, t - lastTurnAt)
+        lastTurnAt = t
+      }
+    }
+    m.zMin = Math.min(m.zMin, f.z)
+    m.zMax = Math.max(m.zMax, f.z)
+    prev = f
+  }
+  m.hoverFrac = hover / n
+  m.clampHits = sim.clampHits
+  m.meanSpeed = speedSum / n
+  return m
+}
+
+describe.each(WORLDS)('BettaSim wander behaviour (%s)', (_name, world) => {
+  const runs = SEEDS.map((seed) => measure(world, seed, WANDER_SECONDS))
+
+  it('keeps the drawn quad inside the inset free rectangle and never hits the hard clamp', () => {
+    for (const r of runs) expect(r.rectViolations).toBe(0)
+    for (const r of runs) expect(r.clampHits).toBe(0)
+  })
+
+  it('actually swims: real speed, distance covered and turns in every world', () => {
+    for (const r of runs) {
+      expect(r.maxSpeed).toBeGreaterThan(0.01)
+      // A fish that relocates every 4-14 s covers well over 1 viewport width in 10 minutes.
+      expect(r.pathLength).toBeGreaterThan(WANDER_SECONDS / 600)
+      expect(r.turns).toBeGreaterThanOrEqual(2)
+      expect(Number.isFinite(r.minTurnGap)).toBe(true)
+    }
+  })
+
+  it('turns rarely: at most 3 per minute and never two within 9 s', () => {
+    for (const r of runs) {
+      expect(r.turns / (r.seconds / 60)).toBeLessThanOrEqual(3)
+      expect(r.minTurnGap).toBeGreaterThanOrEqual(9)
+    }
+  })
+
+  it('hovers most of the time and never darts', () => {
+    for (const r of runs) {
+      expect(r.hoverFrac).toBeGreaterThanOrEqual(0.55)
+      expect(r.meanSpeed).toBeLessThanOrEqual(0.012)
+      expect(r.maxSpeed).toBeLessThanOrEqual(0.046)
+      expect(r.maxAccel).toBeLessThanOrEqual(0.03)
+    }
+  })
+
+  it('drifts in depth slowly', () => {
+    for (const r of runs) {
+      expect(r.zMin).toBeGreaterThanOrEqual(0.2)
+      expect(r.zMax).toBeLessThanOrEqual(0.7)
+      expect(r.maxDz).toBeLessThanOrEqual(0.05)
+    }
+  })
+})
+
+describe('BettaSim placement', () => {
+  it('approach stops at least 0.6 fish widths from the panel edge, slowly, facing it', () => {
+    const sim = new BettaSim(2, {
+      aspect: DESKTOP.aspect,
+      fishWidth: DESKTOP.fw,
+      exclusion: DESKTOP.exclusion,
+    })
+    sim.focusAt({ x: 0.3, y: 0.4 })
+    let maxSpeed = 0
+    let f = sim.frame()
+    for (let i = 0; i < 60 * 60; i++) {
+      f = sim.step(FPS60)
+      maxSpeed = Math.max(maxSpeed, f.speed)
+    }
+    expect(f.mode).toBe('approach')
+    expect(f.x - DESKTOP.exclusion.x1).toBeGreaterThanOrEqual(0.6 * DESKTOP.fw)
+    expect(f.heading).toBe(-1)
+    expect(maxSpeed).toBeLessThanOrEqual(0.045)
+  })
+
+  it('shrinks the fish in a narrow free rectangle instead of clipping it', () => {
+    const narrow: World = {
+      fw: 0.19,
+      aspect: 1.6,
+      exclusion: { x0: 0, y0: 0, x1: 0.8, y1: 1 },
+      free: { x0: 0.8, y0: 0.09, x1: 1, y1: 0.88 },
+    }
+    const r = measure(narrow, 3, 120)
+    expect(r.rectViolations).toBe(0)
+    const sim = new BettaSim(3, {
+      aspect: narrow.aspect,
+      fishWidth: narrow.fw,
+      exclusion: narrow.exclusion,
+    })
+    let maxScale = 0
+    for (let i = 0; i < 120 * 60; i++) maxScale = Math.max(maxScale, sim.step(FPS60).scale)
+    expect(maxScale).toBeLessThan(0.75)
+    const wide = new BettaSim(3, { aspect: 1.6, fishWidth: 0.19, exclusion: DESKTOP.exclusion })
+    let wideMax = 0
+    for (let i = 0; i < 120 * 60; i++) wideMax = Math.max(wideMax, wide.step(FPS60).scale)
+    expect(wideMax).toBeGreaterThan(1)
+  })
+})
 
 describe('BettaSim', () => {
   it('wanders inside the bounds and out of the exclusion zone for 10k steps', () => {
@@ -43,8 +272,8 @@ describe('BettaSim', () => {
   })
 
   it('approaches a focus point, stops about a body length away, and faces it', () => {
-    const sim = new BettaSim(2)
-    const fw = 0.3
+    const fw = 0.19
+    const sim = new BettaSim(2, { fishWidth: fw })
     const point = { x: 0.3, y: 0.4 }
     sim.focusAt(point)
     const f = run(sim, 40)
@@ -173,11 +402,115 @@ describe('BettaSim', () => {
     expect(Math.abs(after.x - before.x)).toBeLessThan(0.2)
   })
 
+  it.each(WORLDS)('keeps the celebrate loop inside the free rect (%s)', (_name, world) => {
+    for (const seed of [1, 2, 3, 4, 5, 6]) {
+      const sim = new BettaSim(seed, {
+        aspect: world.aspect,
+        fishWidth: world.fw,
+        exclusion: world.exclusion,
+      })
+      run(sim, 3 + seed * 4)
+      // The sim centres the fish vertically when its range collapsed; only the centre is checked then.
+      const collapsedY = sim.bounds().y1 - sim.bounds().y0 < 1e-9
+      sim.celebrate()
+      run(sim, 2.5, (f) => {
+        const hw = QUAD_HALF_W * world.fw * f.scale
+        const hh = QUAD_HALF_H * world.fw * f.scale * world.aspect
+        expect(f.x - hw).toBeGreaterThanOrEqual(world.free.x0 - 0.005)
+        expect(f.x + hw).toBeLessThanOrEqual(world.free.x1 + 0.005)
+        // A band shorter than the fish at its minimum size can only contain the centre.
+        const fitsY = !collapsedY && 2 * hh <= world.free.y1 - world.free.y0
+        expect(f.y - (fitsY ? hh : 0)).toBeGreaterThanOrEqual(world.free.y0 - 0.005)
+        expect(f.y + (fitsY ? hh : 0)).toBeLessThanOrEqual(world.free.y1 + 0.005)
+      })
+    }
+  })
+
   it('drops a pellet just ahead of the fish when no spot is given', () => {
     const sim = new BettaSim(5, { aspect: 1.6, fishWidth: 0.3 })
     const f = run(sim, 3)
     sim.dropPellet()
     const p = sim.frame().pellets[0]
     expect(Math.abs(p.x - f.x)).toBeLessThan(0.3)
+  })
+})
+
+describe('BettaSim pellets', () => {
+  const PELLET_WORLDS = [
+    ['desktop', DESKTOP],
+    ['phone', PHONE],
+    ['landscape', LANDSCAPE],
+  ] as const
+  const PELLET_SEEDS = Array.from({ length: 20 }, (_, i) => i + 1)
+
+  /** Steps `seconds`, pinging activity each second; returns true once a gulp is seen. */
+  const eatsWithin = (sim: BettaSim, seconds: number) => {
+    for (let i = 0; i < seconds * 60; i++) {
+      if (sim.step(FPS60).gulp > 0) return true
+    }
+    return false
+  }
+
+  const make = (world: World, seed: number) =>
+    new BettaSim(seed, {
+      aspect: world.aspect,
+      fishWidth: world.fw,
+      exclusion: world.exclusion,
+    })
+
+  describe.each(PELLET_WORLDS)('production dropPellet (%s)', (_name, world) => {
+    it.each([
+      ['right wall', 1.1],
+      ['left wall', -0.1],
+    ])('is eaten with the fish parked at the %s heading toward it', (_wall, focusX) => {
+      for (const seed of PELLET_SEEDS) {
+        const sim = make(world, seed)
+        sim.focusAt({ x: focusX, y: 0.2 })
+        for (let i = 0; i < 40 * 60; i++) sim.step(FPS60)
+        sim.blur()
+        sim.dropPellet()
+        expect(eatsWithin(sim, 25)).toBe(true)
+      }
+    })
+
+    it('is eaten with the fish at random positions', () => {
+      for (const seed of PELLET_SEEDS) {
+        const sim = make(world, seed)
+        for (let i = 0; i < (5 + (seed % 7) * 8) * 60; i++) {
+          if (i % 60 === 0) sim.activity()
+          sim.step(FPS60)
+        }
+        sim.dropPellet()
+        expect(eatsWithin(sim, 25)).toBe(true)
+      }
+    })
+  })
+})
+
+describe('BettaSim degenerate viewport', () => {
+  it.each([Infinity, 0, NaN, -1])('stays finite when the aspect is %s', (aspect) => {
+    const sim = new BettaSim(3)
+    sim.configure({ aspect })
+    sim.configure({ aspect, fishWidth: NaN })
+    sim.dropPellet()
+    for (let i = 0; i < 600; i++) {
+      const f = sim.step(1 / 60)
+      for (const v of [f.x, f.y, f.z, f.scale, f.speed, f.pitch])
+        expect(Number.isFinite(v)).toBe(true)
+    }
+  })
+})
+
+describe('BettaSim reconfigure', () => {
+  it('eases into new bounds over about 0.6 s instead of snapping', () => {
+    const sim = new BettaSim(2)
+    for (let i = 0; i < 600; i++) sim.step(1 / 60)
+    const before = sim.frame().x
+    sim.configure({ exclusion: { x0: 0, y0: 0, x1: 0.9, y1: 1 } })
+    const first = sim.step(1 / 60).x
+    expect(Math.abs(first - before)).toBeLessThan(0.05)
+    let f = first
+    for (let i = 0; i < 60; i++) f = sim.step(1 / 60).x
+    expect(f).toBeGreaterThan(0.9)
   })
 })
