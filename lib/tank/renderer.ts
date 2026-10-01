@@ -8,6 +8,7 @@ import type { Pellet } from './pellets'
 import { BETTA_LENGTH_CM, SPECIES } from './species'
 import type { Environment, Phase } from './environment'
 import { computeGrade, type Grade } from './grade'
+import { TextureLoadTracker } from './loadTracker'
 import { PATCH_PROPS, patchLayers, patchMeta, patchTargets, type PatchLayer } from './patches'
 import { BACKGROUND_FRAG, FULLSCREEN_VERT } from './shaders/background'
 import { AXIS_Y, BETTA_FRAG, BETTA_VERT } from './shaders/betta'
@@ -171,6 +172,7 @@ export function mulberry(seed: number) {
 export class TankRenderer {
   private gl!: WebGL2RenderingContext
   private lost = false
+  private loads = new TextureLoadTracker()
   private width = 1
   private height = 1
   private aspect = 1
@@ -254,9 +256,11 @@ export class TankRenderer {
   private handleLost = (e: Event) => {
     e.preventDefault()
     this.lost = true
+    this.loads.invalidate()
   }
 
   private handleRestored = () => {
+    this.loads.invalidate()
     this.plates.clear()
     this.images.clear()
     this.patchReadyAt.clear()
@@ -271,7 +275,7 @@ export class TankRenderer {
         this.fade.t0 = null
         void this.loadPlate(this.fade.to)
       }
-      for (const key of again) if (!key.startsWith('plate')) void this.loadImage(key)
+      for (const key of again) void this.loadImage(key)
       this.onAsset()
     }
   }
@@ -533,8 +537,14 @@ export class TankRenderer {
   async loadImage(name: string): Promise<void> {
     if (this.images.has(name) || this.requested.has(name)) return
     this.requested.add(name)
+    const token = this.loads.begin(`image:${name}`)
     const img = await this.decode(`${ASSET_BASE}/${name}.webp`)
-    if (!img || this.lost) return
+    if (!img) {
+      // Failed decode: allow a retry, unless the key was freed or reloaded meanwhile.
+      if (this.loads.isCurrent(token)) this.requested.delete(name)
+      return
+    }
+    if (this.lost || !this.loads.isCurrent(token)) return
     const t = this.upload(img)
     if (t) {
       // A re-load (algae plate) must not leak the texture it replaces.
@@ -551,6 +561,7 @@ export class TankRenderer {
     this.images.delete(name)
     this.requested.delete(name)
     this.patchReadyAt.delete(name)
+    this.loads.cancel(`image:${name}`)
   }
 
   private plateEntry(phase: Phase) {
@@ -566,12 +577,14 @@ export class TankRenderer {
   async loadPlate(phase: Phase): Promise<void> {
     const e = this.plateEntry(phase)
     const load = async (size: 'sm' | 'lg') => {
-      if (e[size] || e.loading.has(size)) return
+      // A superseded loader (entry freed or replaced) must not start new loads.
+      if (this.plates.get(phase) !== e || e[size] || e.loading.has(size)) return
       e.loading.add(size)
       const url = `${ASSET_BASE}/plate-${phase}${size === 'sm' ? '-sm' : ''}.webp`
+      const token = this.loads.begin(`plate:${phase}:${size}`)
       const img = await this.decode(url)
       e.loading.delete(size)
-      if (!img || this.lost) return
+      if (!img || this.lost || this.plates.get(phase) !== e || !this.loads.isCurrent(token)) return
       const t = this.upload(img)
       if (t) {
         e[size] = t
@@ -613,6 +626,7 @@ export class TankRenderer {
     if (e.sm) this.gl.deleteTexture(e.sm.tex)
     if (e.lg) this.gl.deleteTexture(e.lg.tex)
     this.plates.delete(phase)
+    this.loads.cancelPrefix(`plate:${phase}:`)
   }
 
   /** True once the current plate has a texture to draw. */
@@ -1237,6 +1251,7 @@ export class TankRenderer {
   destroy() {
     this.canvas.removeEventListener('webglcontextlost', this.handleLost)
     this.canvas.removeEventListener('webglcontextrestored', this.handleRestored)
+    this.loads.invalidate()
     if (this.lost || !this.gl) return
     const gl = this.gl
     for (const e of this.plates.values()) {
