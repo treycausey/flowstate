@@ -1,7 +1,7 @@
 import { TankRenderer } from '@/lib/tank/renderer'
 import { TextureLoadTracker } from '@/lib/tank/loadTracker'
 
-type Pending = { url: string; resolve: () => void }
+type Pending = { url: string; resolve: () => void; reject: () => void }
 let pending: Pending[] = []
 
 class FakeImage {
@@ -10,7 +10,9 @@ class FakeImage {
   naturalHeight = 4
   src = ''
   decode() {
-    return new Promise<void>((resolve) => pending.push({ url: this.src, resolve }))
+    return new Promise<void>((resolve, reject) =>
+      pending.push({ url: this.src, resolve, reject: () => reject(new Error('decode failed')) }),
+    )
   }
 }
 
@@ -80,6 +82,21 @@ async function resolveAll() {
   await flush()
 }
 
+async function resolveOne(i: number) {
+  const [p] = pending.splice(i, 1)
+  p.resolve()
+  await flush()
+}
+
+async function drain() {
+  for (let i = 0; i < 6; i++) await resolveAll()
+}
+
+type PlateEntry = { sm: object | null; lg: object | null }
+const platesOf = (r: TankRenderer) => (r as unknown as { plates: Map<string, PlateEntry> }).plates
+const referenced = (r: TankRenderer) =>
+  [...platesOf(r).values()].reduce((n, e) => n + (e.sm ? 1 : 0) + (e.lg ? 1 : 0), 0)
+
 const loss = (c: HTMLCanvasElement) => c.dispatchEvent(new Event('webglcontextlost'))
 const restore = (c: HTMLCanvasElement) => c.dispatchEvent(new Event('webglcontextrestored'))
 
@@ -113,6 +130,41 @@ describe('TankRenderer texture loads across context loss', () => {
     expect(live.size).toBe(1)
     await resolveAll() // lg
     expect(live.size).toBe(2)
+  })
+
+  it('a stale small-plate decode finishing last does not start a large load that supersedes the current one', async () => {
+    const { r, canvas, live } = setup()
+    r.setPhase('day')
+    loss(canvas)
+    restore(canvas)
+    expect(pending).toHaveLength(2) // [old sm, new sm]
+    await resolveOne(1) // new sm uploads, new loader begins lg
+    await resolveOne(0) // old sm resolves stale; old loader must stop
+    await drain()
+    const entry = platesOf(r).get('day')!
+    expect(entry.sm).not.toBeNull()
+    expect(entry.lg).not.toBeNull()
+    expect(live.size).toBe(referenced(r))
+  })
+
+  it('two quick phase changes during a crossfade leave no orphaned plate textures', async () => {
+    const { r, live } = setup()
+    r.setPhase('day')
+    r.setPhase('dusk') // fade day -> dusk
+    r.setPhase('night') // mid-fade: day is freed while its sm decodes
+    await drain()
+    expect(platesOf(r).has('day')).toBe(false)
+    expect(live.size).toBe(referenced(r))
+    expect(platesOf(r).get('night')!.lg).not.toBeNull()
+  })
+
+  it('a failed decode can be retried', async () => {
+    const { r } = setup()
+    void r.loadImage('fish/neon')
+    pending.shift()!.reject()
+    await flush()
+    void r.loadImage('fish/neon')
+    expect(pending).toHaveLength(1)
   })
 
   it('freeImage while in flight does not upload', async () => {

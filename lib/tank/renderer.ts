@@ -275,7 +275,7 @@ export class TankRenderer {
         this.fade.t0 = null
         void this.loadPlate(this.fade.to)
       }
-      for (const key of again) if (!key.startsWith('plate')) void this.loadImage(key)
+      for (const key of again) void this.loadImage(key)
       this.onAsset()
     }
   }
@@ -539,7 +539,12 @@ export class TankRenderer {
     this.requested.add(name)
     const token = this.loads.begin(`image:${name}`)
     const img = await this.decode(`${ASSET_BASE}/${name}.webp`)
-    if (!img || this.lost || !this.loads.isCurrent(token)) return
+    if (!img) {
+      // Failed decode: allow a retry, unless the key was freed or reloaded meanwhile.
+      if (this.loads.isCurrent(token)) this.requested.delete(name)
+      return
+    }
+    if (this.lost || !this.loads.isCurrent(token)) return
     const t = this.upload(img)
     if (t) {
       // A re-load (algae plate) must not leak the texture it replaces.
@@ -572,13 +577,14 @@ export class TankRenderer {
   async loadPlate(phase: Phase): Promise<void> {
     const e = this.plateEntry(phase)
     const load = async (size: 'sm' | 'lg') => {
-      if (e[size] || e.loading.has(size)) return
+      // A superseded loader (entry freed or replaced) must not start new loads.
+      if (this.plates.get(phase) !== e || e[size] || e.loading.has(size)) return
       e.loading.add(size)
       const url = `${ASSET_BASE}/plate-${phase}${size === 'sm' ? '-sm' : ''}.webp`
       const token = this.loads.begin(`plate:${phase}:${size}`)
       const img = await this.decode(url)
       e.loading.delete(size)
-      if (!img || this.lost || !this.loads.isCurrent(token)) return
+      if (!img || this.lost || this.plates.get(phase) !== e || !this.loads.isCurrent(token)) return
       const t = this.upload(img)
       if (t) {
         e[size] = t
