@@ -1,12 +1,13 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { isTauri } from '@/lib/tauri'
-import { getDbInfo, revealDb } from '@/lib/desktop'
+import { isIos, isTauri } from '@/lib/tauri'
+import { getBuildInfo, getDbInfo, revealDb } from '@/lib/desktop'
+import type { BuildInfo } from '@/lib/desktop'
 import { exportDump, importDump, listTanks } from '@/lib/idb'
 import { BackupFormatError } from '@/lib/backup'
 import { errorText } from '@/lib/errors'
-import { downloadText } from '@/lib/export'
+import { confirmAction, saveTextFile } from '@/lib/saveFile'
 import { emitPlantsChanged, emitReadingsChanged, emitStockChanged } from '@/lib/events'
 import VolumeField from '@/components/stock/VolumeField'
 import { useTanks } from '@/components/TankProvider'
@@ -34,6 +35,8 @@ function stockSuffix(stock: unknown) {
 export default function SettingsClient() {
   const [db, setDb] = useState<DbInfo | null>(null)
   const [tauri, setTauri] = useState(false)
+  const [ios, setIos] = useState(false)
+  const [build, setBuild] = useState<BuildInfo | null>(null)
   const [message, setMessage] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null)
   const { refresh, activeTank } = useTanks()
   const [prefs, setPrefs] = useState<TankPrefs>(DEFAULT_PREFS)
@@ -67,9 +70,13 @@ export default function SettingsClient() {
   useEffect(() => {
     ;(async () => {
       // Prefer runtime detection first so UI shows even if API import fails
-      setTauri(isTauri())
+      const inTauri = isTauri()
+      setTauri(inTauri)
+      setIos(isIos())
+      if (!inTauri) return
       const info = await getDbInfo()
       if (info) setDb(info)
+      setBuild(await getBuildInfo())
     })()
   }, [])
 
@@ -95,31 +102,25 @@ export default function SettingsClient() {
     const content = JSON.stringify(dump, null, 2)
     const date = new Date().toISOString().slice(0, 10)
     const defaultName = `flowstate-export-${date}.json`
-    if (isTauri()) {
-      try {
-        const dialog = await import('@tauri-apps/api/dialog')
-        const fs = await import('@tauri-apps/api/fs')
-        const target = await dialog.save({ defaultPath: defaultName })
-        if (target) {
-          await fs.writeTextFile(target, content)
-          setMessage({ kind: 'ok', text: `Backup saved to ${target}` })
-        }
-        return
-      } catch {
-        // fall through to web method
-      }
+    try {
+      const result = await saveTextFile(defaultName, content, 'application/json')
+      if (result.kind === 'cancelled') return
+      const counts = `${dump.tanks.length} tank(s) and ${dump.readings.length} reading(s)${plantsSuffix(dump.plants)}${stockSuffix(dump.stock)}`
+      setMessage({
+        kind: 'ok',
+        text:
+          result.kind === 'saved' ? `Exported ${counts} to ${result.where}` : `Exported ${counts}.`,
+      })
+    } catch (err) {
+      console.error('Export failed', err)
+      setMessage({ kind: 'error', text: `Export failed: ${errorText(err)}` })
     }
-    downloadText(defaultName, content, 'application/json')
-    setMessage({
-      kind: 'ok',
-      text: `Exported ${dump.tanks.length} tank(s) and ${dump.readings.length} reading(s)${plantsSuffix(dump.plants)}${stockSuffix(dump.stock)}.`,
-    })
   }
 
   const applyImport = async (text: string) => {
     try {
       const data = JSON.parse(text)
-      const ok = window.confirm(
+      const ok = await confirmAction(
         'Import this backup? Tanks, readings, plants and stock with matching IDs will be overwritten; everything else is kept.',
       )
       if (!ok) return
@@ -150,16 +151,18 @@ export default function SettingsClient() {
           ? 'the file is not valid JSON'
           : e instanceof BackupFormatError
             ? e.message
-            : String(e)
+            : errorText(e)
       setMessage({ kind: 'error', text: `Import failed: ${reason}. Nothing was changed.` })
     }
   }
 
   const onImportJson = async () => {
-    if (isTauri()) {
+    // Desktop uses the native open dialog. iOS and the web use a file input: the iOS picker
+    // hands the webview a File, which avoids security-scoped URL access from Rust.
+    if (isTauri() && !isIos()) {
       try {
-        const dialog = await import('@tauri-apps/api/dialog')
-        const fs = await import('@tauri-apps/api/fs')
+        const dialog = await import('@tauri-apps/plugin-dialog')
+        const fs = await import('@tauri-apps/plugin-fs')
         const selected = await dialog.open({
           multiple: false,
           filters: [{ name: 'JSON', extensions: ['json'] }],
@@ -168,17 +171,37 @@ export default function SettingsClient() {
         if (path && typeof path === 'string') {
           await applyImport(await fs.readTextFile(path))
         }
-        return
-      } catch {
-        // fall through to web method
+      } catch (err) {
+        console.error('Import failed', err)
+        setMessage({
+          kind: 'error',
+          text: `Import failed: ${errorText(err)}. Nothing was changed.`,
+        })
       }
+      return
     }
     const input = document.createElement('input')
     input.type = 'file'
     input.accept = 'application/json,.json'
+    // Keep the input in the document until the picker answers: WKWebView can drop a detached
+    // input before it fires `change`, and the import then never starts.
+    input.style.display = 'none'
+    document.body.appendChild(input)
+    const cleanup = () => input.remove()
+    input.oncancel = cleanup
     input.onchange = async () => {
-      const file = input.files?.[0]
-      if (file) await applyImport(await file.text())
+      try {
+        const file = input.files?.[0]
+        if (file) await applyImport(await file.text())
+      } catch (err) {
+        console.error('Import failed', err)
+        setMessage({
+          kind: 'error',
+          text: `Import failed: ${errorText(err)}. Nothing was changed.`,
+        })
+      } finally {
+        cleanup()
+      }
     }
     input.click()
   }
@@ -237,13 +260,11 @@ export default function SettingsClient() {
               <div>Data Folder:</div>
               <code style={{ display: 'block', wordBreak: 'break-all' }}>{db?.dir ?? '…'}</code>
               <div className="cluster" style={{ marginTop: 8 }}>
-                <button
-                  type="button"
-                  className="button button--ghost"
-                  onClick={() => revealDb('folder')}
-                >
-                  Reveal in Finder/Explorer
-                </button>
+                {!ios && (
+                  <button type="button" className="button button--ghost" onClick={() => revealDb()}>
+                    Reveal in Finder/Explorer
+                  </button>
+                )}
                 <button
                   type="button"
                   className="button button--ghost"
@@ -257,13 +278,11 @@ export default function SettingsClient() {
               <div>Database File:</div>
               <code style={{ display: 'block', wordBreak: 'break-all' }}>{db?.file ?? '…'}</code>
               <div className="cluster" style={{ marginTop: 8 }}>
-                <button
-                  type="button"
-                  className="button button--ghost"
-                  onClick={() => revealDb('file')}
-                >
-                  Open DB Path
-                </button>
+                {!ios && (
+                  <button type="button" className="button button--ghost" onClick={() => revealDb()}>
+                    Open DB Path
+                  </button>
+                )}
                 <button
                   type="button"
                   className="button button--ghost"
@@ -281,6 +300,17 @@ export default function SettingsClient() {
           </p>
         )}
       </section>
+
+      {build && (
+        <section aria-labelledby="about-heading">
+          <h2 id="about-heading" className="section-title">
+            About
+          </h2>
+          <p className="muted small">
+            Build {build.build} · {build.hash}
+          </p>
+        </section>
+      )}
 
       <section>
         <h2 className="section-title">Backup & Migrate</h2>

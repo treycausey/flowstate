@@ -6,6 +6,16 @@ const hiddenImg = () => document.querySelector('.plant-thumb img')
 const glyph = () => document.querySelector('.plant-thumb svg')
 
 describe('PlantThumb', () => {
+  it('loads the photo eagerly (lazy images stay blank in a fresh modal in the iOS webview)', () => {
+    render(
+      <PlantImagesContext.Provider value={new Set(['java-fern'])}>
+        <PlantThumb speciesId="java-fern" placement="epiphyte" />
+      </PlantImagesContext.Provider>,
+    )
+    expect(hiddenImg()).not.toHaveAttribute('loading')
+    expect(hiddenImg()).not.toHaveAttribute('decoding')
+  })
+
   it('falls back to the placement glyph when the photo fails to load', () => {
     render(
       <PlantImagesContext.Provider value={new Set(['java-fern'])}>
@@ -27,11 +37,11 @@ function renderPhoto() {
 }
 
 describe('SpeciesPhoto', () => {
-  it('shows a lazy, sized photo named for the plant', () => {
+  it('shows an eager, sized photo named for the plant', () => {
     renderPhoto()
     const img = screen.getByRole('img', { name: 'Java fern' })
     expect(img).toHaveAttribute('src', '/plants/java-fern.webp')
-    expect(img).toHaveAttribute('loading', 'lazy')
+    expect(img).not.toHaveAttribute('loading')
     expect(img).toHaveAttribute('width', '720')
     expect(img).toHaveAttribute('height', '720')
   })

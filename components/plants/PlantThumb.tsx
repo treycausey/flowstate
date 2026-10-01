@@ -41,8 +41,8 @@ export default function PlantThumb({ speciesId, placement, size = 'sm' }: Props)
         <img
           src={`/plants/${speciesId}.webp`}
           alt=""
-          loading="lazy"
-          decoding="async"
+          // No loading="lazy" / decoding="async": WKWebView (Tauri, iOS) leaves lazy images in a
+          // freshly mounted modal blank for seconds. The lists are short and the files small.
           onError={() => setBroken((prev) => new Set(prev).add(speciesId))}
         />
       ) : (
@@ -83,8 +83,6 @@ export function SpeciesPhoto({
       alt={name}
       width={PHOTO_PX}
       height={PHOTO_PX}
-      loading="lazy"
-      decoding="async"
       onError={() => setBroken(true)}
     />
   )

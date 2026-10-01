@@ -38,8 +38,8 @@ export default function StockThumb({ speciesId, kind, size = 'sm' }: Props) {
         <img
           src={stockImageSrc(speciesId)}
           alt=""
-          loading="lazy"
-          decoding="async"
+          // No loading="lazy" / decoding="async": WKWebView (Tauri, iOS) leaves lazy images in a
+          // freshly mounted modal blank for seconds.
           onError={() => setBroken((prev) => new Set(prev).add(speciesId))}
         />
       ) : (

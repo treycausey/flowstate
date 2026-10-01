@@ -36,6 +36,8 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
+  // Edge-to-edge under the notch and home indicator (iOS app); CSS pads with env(safe-area-inset-*)
+  viewportFit: 'cover',
   themeColor: [
     { media: '(prefers-color-scheme: light)', color: '#dfe6dc' },
     { media: '(prefers-color-scheme: dark)', color: '#0b141b' },

@@ -1,31 +1,41 @@
 {
-  "$schema": "https://schema.tauri.app/config/1",
-  "package": {
-    "productName": "Flowstate",
-    "version": "0.1.0"
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Flowstate",
+  "version": "0.1.0",
+  "identifier": "dev.flowstate.app",
+  "build": {
+    "beforeDevCommand": "next dev -H 127.0.0.1 -p 4040",
+    "devUrl": "http://127.0.0.1:4040",
+    "beforeBuildCommand": "next build",
+    "frontendDist": "../out"
   },
-  "tauri": {
-    "bundle": {
-      "active": true,
-      "identifier": "dev.flowstate.app",
-      "targets": "all",
-      "icon": ["icons/icon.png", "icons/icon.icns", "icons/icon.ico"]
-    },
+  "app": {
     "windows": [
       {
+        "label": "main",
         "title": "Flowstate",
         "width": 1200,
         "height": 800
       }
     ],
-    "allowlist": {
-      "all": true
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; font-src 'self' data:; media-src 'self' blob:; worker-src 'self' blob:; connect-src 'self' ipc: http://ipc.localhost blob: data:; object-src 'none'; base-uri 'self'; form-action 'none'",
+      "devCsp": null
     }
   },
-  "build": {
-    "beforeDevCommand": "next dev -H 127.0.0.1 -p 4040",
-    "devPath": "http://127.0.0.1:4040",
-    "beforeBuildCommand": "next build",
-    "distDir": "../out"
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "iOS": {
+      "minimumSystemVersion": "15.0",
+      "developmentTeam": "VT79RNNS2U"
+    }
   }
 }

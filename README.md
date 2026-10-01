@@ -1,9 +1,9 @@
-# Flowstate (PWA + Tauri Desktop)
+# Flowstate (PWA + Tauri Desktop + iOS)
 
 Local-first app to log freshwater aquarium chemistry and visualize trends with minimalist charts.
 
 - Browser/PWA: IndexedDB + Service Worker; no accounts or cloud.
-- Desktop (Tauri): Real SQLite database file stored in the OS app data directory.
+- Desktop and iOS (Tauri 2): Real SQLite database file stored in the OS app data directory.
 
 ## Quick Start (Web)
 
@@ -169,6 +169,8 @@ Conventions
 
 - Headers: `tank,name,ts,pH,ammonia_ppm,nitrite_ppm,nitrate_ppm,note`
 - Source: `lib/export.ts` and UI in `components/ReportClient.tsx`
+- Saving goes through `lib/saveFile.ts`: a web download in the browser, the save dialog on desktop, and the
+  app's Documents folder on iOS (see Where data lives).
 
 ## Testing
 
@@ -196,16 +198,52 @@ pipeline file is in git history before that date.
 - System notifications only fire while the app is open (there's no push server by design), and
   depend on browser support and permission. The in-app reminder always works.
 
-## Desktop (Tauri)
+## Desktop and iOS (Tauri 2)
 
-- Prereqs: Rust toolchain (`@tauri-apps/cli` is already a devDependency, installed via `bun install`)
-- Dev: `bun run tauri:dev` (spawns Next dev and Tauri window)
-- Build: `bun run tauri:build` (embeds `next export` output)
+One Tauri 2 project (`src-tauri/`) builds the macOS app and the iOS app. The frontend is the static
+export (`out/`). The service worker is not registered inside Tauri.
 
-Storage on desktop
+- Prereqs: Rust toolchain, Xcode and `xcodegen` (iOS). `@tauri-apps/cli` is a devDependency.
+- Desktop dev: `bun run tauri:dev` (starts `next dev` on 127.0.0.1:4040 and a window)
+- Desktop build: `bun run tauri:build -- --bundles app` produces
+  `src-tauri/target/release/bundle/macos/Flowstate.app`
+- Rust tests: `cargo test` in `src-tauri`
 
-- SQLite file is created under the app’s local data directory (platform-specific path) with filename `flowstate.db`.
-- The web code detects Tauri at runtime and routes all storage calls to SQLite via Rust `invoke('sqlite_*', ...)` commands (implemented with `rusqlite` in `src-tauri/src/db.rs`, wired up as Tauri commands in `src-tauri/src/main.rs`).
+### iOS
+
+- Bundle id `dev.flowstate.app`, team `VT79RNNS2U`, minimum iOS 15. The generated Xcode project is in
+  `src-tauri/gen/apple`.
+- Simulator: `bunx tauri ios dev "iPhone 17 Pro Max"` (live reload from the Next dev server).
+- Device: `scripts/ios-build-device.sh` picks a development provisioning profile (exact bundle id over
+  wildcard, with devices) and the keychain identity named in it, then builds a release app, stamps `CFBundleVersion` with
+  `git rev-list --count HEAD`, and packages `tmp/Flowstate.ipa` (it avoids
+  `xcodebuild -exportArchive`). Install with airship. The script prints the `.ipa` path and checks the
+  stamp and the embedded provisioning profile. The keychain must be unlocked.
+- Settings, About shows `Build <n> · <hash>`, read from the `app_build_info` command.
+- Version pins: the Tauri crates (`~2.11`) and the `@tauri-apps/*` packages must share major.minor versions
+  (`tauri ios build` refuses mismatches). `Cargo.lock` keeps `swift-rs` at 1.0.7 so the vendored patch applies.
+- Xcode 27 workarounds: `src-tauri/vendor/` holds patched copies of `swift-rs` and `tao` (same as the
+  Stash app). Remove them when upstream releases cover the fixes.
+
+Where data lives
+
+| Platform  | Storage   | Location                                                                        |
+| --------- | --------- | ------------------------------------------------------------------------------- |
+| Web / PWA | IndexedDB | The browser profile (clearing site data deletes it)                             |
+| macOS app | SQLite    | `~/Library/Application Support/dev.flowstate.app/flowstate.db`                  |
+| iOS app   | SQLite    | The app container, `Library/Application Support/dev.flowstate.app/flowstate.db` |
+
+- The web code detects Tauri at runtime (`window.__TAURI_INTERNALS__`) and routes all storage calls to
+  SQLite via Rust `invoke('sqlite_*', ...)` commands (implemented with `rusqlite` in
+  `src-tauri/src/db.rs`, wired up as Tauri commands in `src-tauri/src/lib.rs`). Desktop and iOS share
+  that path. Settings, Storage shows the path the app opened.
+- Move data between devices with a JSON backup (Settings, Backup & Migrate). Desktop: export uses the
+  native save dialog and import uses the open dialog. iOS: export writes
+  `flowstate-export-<date>.json` to the app's Documents folder (the app sets `UIFileSharingEnabled` and
+  `LSSupportsOpeningDocumentsInPlace`), so the file appears in Files, On My iPhone, Flowstate; import
+  opens the system file picker. Inside the app a failed save shows `Export failed: <reason>`; it never
+  falls back to a browser download (the webview drops those). Write access is scoped to `$DOCUMENT`
+  plus dialog-chosen paths in `src-tauri/capabilities/default.json`.
 
 Schema migration
 

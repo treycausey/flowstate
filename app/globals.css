@@ -213,7 +213,7 @@ body {
   box-shadow: var(--panel-shadow);
   -webkit-backdrop-filter: blur(18px) saturate(1.15);
   backdrop-filter: blur(18px) saturate(1.15);
-  padding: 0 var(--panel-pad) var(--space-6);
+  padding: 0 var(--panel-pad) calc(var(--space-6) + env(safe-area-inset-bottom, 0px));
 }
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   .app-panel {
@@ -236,6 +236,7 @@ body {
     border-radius: 22px 22px 0 0;
     border-bottom: 0;
     --panel-pad: 1.25rem;
+    margin-inline: env(safe-area-inset-left, 0px) env(safe-area-inset-right, 0px);
   }
   .app-panel::before {
     content: '';
@@ -252,8 +253,8 @@ body {
 @media (min-width: 900px) {
   .app-panel {
     position: fixed;
-    top: 32px;
-    left: 32px;
+    top: max(32px, env(safe-area-inset-top, 0px));
+    left: max(32px, env(safe-area-inset-left, 0px));
     width: 440px;
     max-height: calc(100dvh - 64px);
     overflow: auto;
@@ -700,12 +701,20 @@ table.summary {
   background: color-mix(in oklab, #000 42%, transparent);
   display: grid;
   place-items: center;
-  padding: var(--space-5);
+  /* Keep the dialog clear of the notch, home indicator and landscape side insets */
+  padding-top: max(var(--space-5), env(safe-area-inset-top, 0px));
+  padding-right: max(var(--space-5), env(safe-area-inset-right, 0px));
+  padding-bottom: max(var(--space-5), env(safe-area-inset-bottom, 0px));
+  padding-left: max(var(--space-5), env(safe-area-inset-left, 0px));
   z-index: 50;
 }
 .modal {
-  width: min(92vw, 520px);
-  max-height: calc(100dvh - 3rem);
+  width: min(100%, 520px);
+  /* Overlay padding (at least the safe-area inset or --space-5) is taken off the top and bottom */
+  max-height: calc(
+    100dvh - max(var(--space-5), env(safe-area-inset-top, 0px)) -
+      max(var(--space-5), env(safe-area-inset-bottom, 0px))
+  );
   overflow: auto;
   background: var(--panel-solid);
   color: var(--ink);

@@ -1,6 +1,6 @@
 declare global {
   interface Window {
-    __TAURI_IPC__?: unknown
+    __TAURI_INTERNALS__?: unknown
   }
 }
 export {}

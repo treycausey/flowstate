@@ -1,26 +1,34 @@
 export type DbInfo = { dir: string; file: string }
+export type BuildInfo = { build: string; hash: string }
 
+/** Database location as resolved by the Rust side (the path the app really opened). */
 export async function getDbInfo(): Promise<DbInfo | null> {
   try {
-    const path = await import('@tauri-apps/api/path')
-    const base = await path.appLocalDataDir()
-    // Build file path robustly without relying on join signature differences
-    const sep = base.includes('\\') ? '\\' : '/'
-    const file = base.endsWith(sep) ? `${base}flowstate.db` : `${base}${sep}flowstate.db`
-    return { dir: base, file }
+    const { invoke } = await import('@tauri-apps/api/core')
+    const file = await invoke<string>('app_db_path')
+    const cut = Math.max(file.lastIndexOf('/'), file.lastIndexOf('\\'))
+    return { dir: cut > 0 ? file.slice(0, cut) : file, file }
   } catch {
     return null
   }
 }
 
-export async function revealDb(target: 'folder' | 'file' = 'folder'): Promise<void> {
+export async function getBuildInfo(): Promise<BuildInfo | null> {
   try {
-    const shell = await import('@tauri-apps/api/shell')
+    const { invoke } = await import('@tauri-apps/api/core')
+    return await invoke<BuildInfo>('app_build_info')
+  } catch {
+    return null
+  }
+}
+
+export async function revealDb(): Promise<void> {
+  try {
+    const opener = await import('@tauri-apps/plugin-opener')
     const info = await getDbInfo()
     if (!info) return
-    const toOpen = target === 'file' ? info.file : info.dir
-    await shell.open(toOpen)
-  } catch {
-    // noop
+    await opener.revealItemInDir(info.file)
+  } catch (err) {
+    console.error('Could not reveal the database location', err)
   }
 }
