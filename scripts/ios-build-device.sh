@@ -105,6 +105,11 @@ if [[ -z "$PROFILE_PATH" || ! -f "$PROFILE_PATH" ]]; then
   echo "Build the app once from Xcode with automatic signing, or set PROFILE_PATH." >&2
   exit 1
 fi
+# An override must pass the same development-profile checks as an auto-picked profile.
+if [[ -z "$(profile_score "$PROFILE_PATH" || true)" ]]; then
+  echo "error: $PROFILE_PATH is not a valid development profile (get-task-allow, devices, unexpired) for $TEAM_ID.$BUNDLE_ID" >&2
+  exit 1
+fi
 PROFILE_NAME="$(security cms -D -i "$PROFILE_PATH" | plutil -extract Name raw -o - - 2>/dev/null || echo unknown)"
 echo "==> Provisioning profile: $PROFILE_NAME ($PROFILE_PATH)"
 
@@ -180,12 +185,12 @@ rm -f "$OUT_IPA"
 
 # 5. Verify the packaged result, not the working copy.
 CHECK="$(mktemp -d)"
+trap 'rm -rf "$WORKDIR" "$CHECK"' EXIT
 unzip -q "$OUT_IPA" -d "$CHECK"
 CHECK_APP="$CHECK/Payload/$APP_NAME.app"
 STAMPED="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$CHECK_APP/Info.plist")"
 SHORT="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$CHECK_APP/Info.plist")"
 BID="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$CHECK_APP/Info.plist")"
-trap 'rm -rf "$WORKDIR" "$CHECK"' EXIT
 if [[ "$STAMPED" != "$BUILD_NUMBER" ]]; then
   echo "error: CFBundleVersion in the IPA is '$STAMPED', expected '$BUILD_NUMBER'" >&2
   exit 1

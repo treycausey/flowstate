@@ -151,7 +151,7 @@ export default function SettingsClient() {
           ? 'the file is not valid JSON'
           : e instanceof BackupFormatError
             ? e.message
-            : String(e)
+            : errorText(e)
       setMessage({ kind: 'error', text: `Import failed: ${reason}. Nothing was changed.` })
     }
   }

@@ -709,7 +709,7 @@ table.summary {
   z-index: 50;
 }
 .modal {
-  width: min(92vw, 520px);
+  width: min(100%, 520px);
   /* Overlay padding (at least the safe-area inset or --space-5) is taken off the top and bottom */
   max-height: calc(
     100dvh - max(var(--space-5), env(safe-area-inset-top, 0px)) -
