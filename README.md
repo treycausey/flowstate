@@ -242,8 +242,10 @@ Where data lives
   `flowstate-export-<date>.json` to the app's Documents folder (the app sets `UIFileSharingEnabled` and
   `LSSupportsOpeningDocumentsInPlace`), so the file appears in Files, On My iPhone, Flowstate; import
   opens the system file picker. Inside the app a failed save shows `Export failed: <reason>`; it never
-  falls back to a browser download (the webview drops those). Write access is scoped to `$DOCUMENT`
-  plus dialog-chosen paths in `src-tauri/capabilities/default.json`.
+  falls back to a browser download (the webview drops those). Write access is least-privilege:
+  `src-tauri/capabilities/default.json` grants `fs:allow-write-text-file` with no static scope (desktop
+  can only write the path the user picks in the save dialog), and `src-tauri/capabilities/ios.json`
+  (`platforms: ["iOS"]`) adds `$DOCUMENT` for the iOS export.
 
 Schema migration
 

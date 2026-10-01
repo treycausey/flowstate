@@ -1,0 +1,20 @@
+{
+  "$schema": "../gen/schemas/iOS-schema.json",
+  "identifier": "ios-documents",
+  "description": "iOS only: lets the main window write backup exports into the app's Documents folder (visible in Files, On My iPhone, Flowstate).",
+  "platforms": ["iOS"],
+  "windows": ["main"],
+  "permissions": [
+    {
+      "identifier": "fs:allow-write-text-file",
+      "allow": [
+        {
+          "path": "$DOCUMENT"
+        },
+        {
+          "path": "$DOCUMENT/*"
+        }
+      ]
+    }
+  ]
+}
