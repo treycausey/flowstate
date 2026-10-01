@@ -19,6 +19,14 @@ fn main() {
         std::env::var("FLOWSTATE_HASH").unwrap_or_else(|_| git(&["rev-parse", "--short", "HEAD"]));
     println!("cargo:rustc-env=FLOWSTATE_BUILD={build}");
     println!("cargo:rustc-env=FLOWSTATE_HASH={hash}");
+    // Re-run when HEAD moves (commit, checkout) so About shows the current build. `--git-path`
+    // resolves the right files in worktrees, where .git is a file.
+    for rel in ["HEAD", "logs/HEAD"] {
+        let path = git(&["rev-parse", "--git-path", rel]);
+        if path != "unknown" {
+            println!("cargo:rerun-if-changed={path}");
+        }
+    }
     println!("cargo:rerun-if-env-changed=FLOWSTATE_BUILD");
     println!("cargo:rerun-if-env-changed=FLOWSTATE_HASH");
     tauri_build::build()

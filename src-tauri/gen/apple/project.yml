@@ -59,6 +59,10 @@ targets:
           - UIInterfaceOrientationLandscapeRight
         CFBundleShortVersionString: 0.1.0
         CFBundleVersion: "0.1.0"
+        # Export writes backups to the app's Documents folder; these make it show up in Files ->
+        # On My iPhone -> Flowstate.
+        UIFileSharingEnabled: true
+        LSSupportsOpeningDocumentsInPlace: true
         # The iOS 27 SDK traps at launch unless the app adopts the UIScene lifecycle; tao installs its
         # scene delegate only when this is true (see the tao patch in ../../Cargo.toml).
         UIApplicationSceneManifest:
@@ -91,6 +95,7 @@ targets:
       - sdk: WebKit.framework
     preBuildScripts:
       - script: |
+          export PATH="$HOME/.bun/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
           bun tauri ios xcode-script -v --platform "${PLATFORM_DISPLAY_NAME:?}" --sdk-root "${SDKROOT:?}" --framework-search-paths "${FRAMEWORK_SEARCH_PATHS:?}" --header-search-paths "${HEADER_SEARCH_PATHS:?}" --gcc-preprocessor-definitions "${GCC_PREPROCESSOR_DEFINITIONS:-}" --configuration "${CONFIGURATION:?}" ${FORCE_COLOR} ${ARCHS:?}
         name: Build Rust Code
         basedOnDependencyAnalysis: false

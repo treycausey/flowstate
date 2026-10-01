@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { listReadingsByTank } from '@/lib/idb'
-import { downloadText, readingsToCsv, safeFilePart } from '@/lib/export'
+import { readingsToCsv, safeFilePart } from '@/lib/export'
+import { saveTextFile } from '@/lib/saveFile'
 import { filterReadingsByDays, summarizeOutOfRange, summarizeTested } from '@/lib/report'
 import { readingsToSeries } from '@/lib/series'
 import { METRICS, METRIC_LABEL, type Reading } from '@/lib/models'
@@ -38,6 +39,9 @@ export default function ReportClient() {
     [loadedReadings, activeTank?.id],
   )
   const [range, setRange] = useState<Range>('30')
+  const [exportMessage, setExportMessage] = useState<{ kind: 'ok' | 'error'; text: string } | null>(
+    null,
+  )
   // Fixed at mount so the report window doesn't drift between renders
   const [now] = useState(() => new Date())
   const { plants, checks, failed: plantsFailed } = usePlants(activeTank?.id ?? null)
@@ -100,14 +104,20 @@ export default function ReportClient() {
 
   const date = now.toISOString().slice(0, 10)
   const base = `flowstate-${safeFilePart(activeTank.name)}`
+  const saveCsv = async (filename: string, rows: Reading[]) => {
+    try {
+      const result = await saveTextFile(filename, readingsToCsv(activeTank, rows), 'text/csv')
+      if (result.kind === 'saved')
+        setExportMessage({ kind: 'ok', text: `Saved to ${result.where}` })
+      else setExportMessage(null)
+    } catch (err) {
+      console.error('CSV export failed', err)
+      setExportMessage({ kind: 'error', text: `Export failed: ${errorText(err)}` })
+    }
+  }
   const exportRange = () =>
-    downloadText(
-      `${base}-${range === 'all' ? 'all' : `${range}d`}-${date}.csv`,
-      readingsToCsv(activeTank, filtered),
-      'text/csv',
-    )
-  const exportAll = () =>
-    downloadText(`${base}-all-${date}.csv`, readingsToCsv(activeTank, readings), 'text/csv')
+    saveCsv(`${base}-${range === 'all' ? 'all' : `${range}d`}-${date}.csv`, filtered)
+  const exportAll = () => saveCsv(`${base}-all-${date}.csv`, readings)
 
   return (
     <>
@@ -145,6 +155,13 @@ export default function ReportClient() {
           <button type="button" className="button button--ghost" onClick={exportAll}>
             Export all readings
           </button>
+        )}
+      </div>
+      <div role="status" aria-live="polite" className="no-print">
+        {exportMessage && (
+          <span className={exportMessage.kind === 'error' ? 'danger' : undefined}>
+            {exportMessage.text}
+          </span>
         )}
       </div>
 

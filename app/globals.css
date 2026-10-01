@@ -701,12 +701,20 @@ table.summary {
   background: color-mix(in oklab, #000 42%, transparent);
   display: grid;
   place-items: center;
-  padding: var(--space-5);
+  /* Keep the dialog clear of the notch, home indicator and landscape side insets */
+  padding-top: max(var(--space-5), env(safe-area-inset-top, 0px));
+  padding-right: max(var(--space-5), env(safe-area-inset-right, 0px));
+  padding-bottom: max(var(--space-5), env(safe-area-inset-bottom, 0px));
+  padding-left: max(var(--space-5), env(safe-area-inset-left, 0px));
   z-index: 50;
 }
 .modal {
   width: min(92vw, 520px);
-  max-height: calc(100dvh - 3rem);
+  /* Overlay padding (at least the safe-area inset or --space-5) is taken off the top and bottom */
+  max-height: calc(
+    100dvh - max(var(--space-5), env(safe-area-inset-top, 0px)) -
+      max(var(--space-5), env(safe-area-inset-bottom, 0px))
+  );
   overflow: auto;
   background: var(--panel-solid);
   color: var(--ink);

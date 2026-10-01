@@ -169,6 +169,8 @@ Conventions
 
 - Headers: `tank,name,ts,pH,ammonia_ppm,nitrite_ppm,nitrate_ppm,note`
 - Source: `lib/export.ts` and UI in `components/ReportClient.tsx`
+- Saving goes through `lib/saveFile.ts`: a web download in the browser, the save dialog on desktop, and the
+  app's Documents folder on iOS (see Where data lives).
 
 ## Testing
 
@@ -212,7 +214,8 @@ export (`out/`). The service worker is not registered inside Tauri.
 - Bundle id `dev.flowstate.app`, team `VT79RNNS2U`, minimum iOS 15. The generated Xcode project is in
   `src-tauri/gen/apple`.
 - Simulator: `bunx tauri ios dev "iPhone 17 Pro Max"` (live reload from the Next dev server).
-- Device: `scripts/ios-build-device.sh` builds a release app, stamps `CFBundleVersion` with
+- Device: `scripts/ios-build-device.sh` picks a development provisioning profile (exact bundle id over
+  wildcard, with devices) and the keychain identity named in it, then builds a release app, stamps `CFBundleVersion` with
   `git rev-list --count HEAD`, and packages `tmp/Flowstate.ipa` (it avoids
   `xcodebuild -exportArchive`). Install with airship. The script prints the `.ipa` path and checks the
   stamp and the embedded provisioning profile. The keychain must be unlocked.
@@ -234,8 +237,13 @@ Where data lives
   SQLite via Rust `invoke('sqlite_*', ...)` commands (implemented with `rusqlite` in
   `src-tauri/src/db.rs`, wired up as Tauri commands in `src-tauri/src/lib.rs`). Desktop and iOS share
   that path. Settings, Storage shows the path the app opened.
-- Move data between devices with a JSON backup (Settings, Backup & Migrate). On iOS the save dialog
-  is not available, so export falls back to the web download path.
+- Move data between devices with a JSON backup (Settings, Backup & Migrate). Desktop: export uses the
+  native save dialog and import uses the open dialog. iOS: export writes
+  `flowstate-export-<date>.json` to the app's Documents folder (the app sets `UIFileSharingEnabled` and
+  `LSSupportsOpeningDocumentsInPlace`), so the file appears in Files, On My iPhone, Flowstate; import
+  opens the system file picker. Inside the app a failed save shows `Export failed: <reason>`; it never
+  falls back to a browser download (the webview drops those). Write access is scoped to `$DOCUMENT`
+  plus dialog-chosen paths in `src-tauri/capabilities/default.json`.
 
 Schema migration
 

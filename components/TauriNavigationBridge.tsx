@@ -14,6 +14,7 @@ export default function TauriNavigationBridge() {
   useEffect(() => {
     if (!isTauri()) return
     let unlisten: null | (() => void) = null
+    let cancelled = false
     ;(async () => {
       try {
         const { listen } = await import('@tauri-apps/api/event')
@@ -22,12 +23,14 @@ export default function TauriNavigationBridge() {
           const path = mapNavToPath(target, activeTankId)
           if (path) router.push(path as Route)
         })
-        unlisten = off
+        if (cancelled) off()
+        else unlisten = off
       } catch {
         // ignore: running in web or failed to load tauri api
       }
     })()
     return () => {
+      cancelled = true
       try {
         if (unlisten) unlisten()
       } catch {}

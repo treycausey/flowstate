@@ -7,8 +7,8 @@
 #      src-tauri/build.rs through FLOWSTATE_BUILD / FLOWSTATE_HASH so Settings -> About matches.
 #   3. Unzip the unsigned .ipa, stamp CFBundleVersion = `git rev-list --count HEAD`
 #      (`tauri ios build` overwrites it with the static tauri.conf.json version).
-#   4. Re-sign with the local "Apple Development" identity and a team provisioning profile
-#      (wildcard profile under ~/Library/Developer/Xcode/UserData/Provisioning Profiles).
+#   4. Re-sign with the keychain identity named in the profile's DeveloperCertificates
+#      (development profile (exact bundle id preferred over wildcard) under ~/Library/Developer/Xcode/UserData/Provisioning Profiles).
 #      This avoids `xcodebuild -exportArchive`, which fails on this machine's Xcode.
 #   5. Zip Payload/ to tmp/Flowstate.ipa and verify the stamp and embedded.mobileprovision.
 #
@@ -22,7 +22,6 @@ ROOT="$(pwd)"
 
 TEAM_ID="VT79RNNS2U"
 BUNDLE_ID="dev.flowstate.app"
-SIGN_IDENTITY="Apple Development"
 APP_NAME="Flowstate"
 OUT_IPA="$ROOT/tmp/$APP_NAME.ipa"
 UNSIGNED_IPA="$ROOT/src-tauri/gen/apple/build/arm64/$APP_NAME.ipa"
@@ -39,24 +38,60 @@ export FLOWSTATE_BUILD="$BUILD_NUMBER"
 export FLOWSTATE_HASH="$BUILD_HASH"
 echo "==> Build $BUILD_NUMBER ($BUILD_HASH)"
 
-# 1. Pick a provisioning profile: explicit override, else a valid wildcard team profile with devices.
+# 1. Pick a development provisioning profile and the signing identity inside it.
+# A usable profile is unexpired, matches the team (exact bundle id or wildcard), is a development
+# profile (get-task-allow true) and lists devices (ProvisionedDevices). The exact bundle id profile
+# wins over the wildcard. The identity is the keychain certificate whose SHA-1 is in the profile's
+# DeveloperCertificates; signing by SHA-1 avoids picking a certificate the profile does not trust.
+profile_score() {
+  local f="$1" plist appid expiry task devices
+  plist="$(mktemp)"
+  if ! security cms -D -i "$f" > "$plist" 2>/dev/null; then rm -f "$plist"; return 1; fi
+  appid="$(plutil -extract Entitlements.application-identifier raw "$plist" 2>/dev/null || true)"
+  expiry="$(plutil -extract ExpirationDate raw "$plist" 2>/dev/null || true)"
+  task="$(plutil -extract Entitlements.get-task-allow raw "$plist" 2>/dev/null || true)"
+  devices="$(plutil -extract ProvisionedDevices raw "$plist" 2>/dev/null || true)"
+  rm -f "$plist"
+  [[ "$task" == "true" ]] || return 1
+  [[ "$devices" =~ ^[0-9]+$ && "$devices" -gt 0 ]] || return 1
+  [[ -n "$expiry" && "$(date -u +%Y-%m-%dT%H:%M:%SZ)" < "$expiry" ]] || return 1
+  if [[ "$appid" == "$TEAM_ID.$BUNDLE_ID" ]]; then echo 2
+  elif [[ "$appid" == "$TEAM_ID.*" ]]; then echo 1
+  else return 1
+  fi
+}
+
 pick_profile() {
-  local f plist
+  local f score best="" best_score=0
   for f in "$PROFILES_DIR"/*.mobileprovision; do
     [[ -f "$f" ]] || continue
-    plist="$(mktemp)"
-    security cms -D -i "$f" > "$plist" 2>/dev/null || { rm -f "$plist"; continue; }
-    local appid expiry
-    appid="$(plutil -extract Entitlements.application-identifier raw "$plist" 2>/dev/null || true)"
-    expiry="$(plutil -extract ExpirationDate raw "$plist" 2>/dev/null || true)"
-    rm -f "$plist"
-    if [[ "$appid" == "$TEAM_ID.*" || "$appid" == "$TEAM_ID.$BUNDLE_ID" ]]; then
-      if [[ -n "$expiry" && "$(date -u +%Y-%m-%dT%H:%M:%SZ)" < "$expiry" ]]; then
-        echo "$f"
-        return 0
-      fi
+    score="$(profile_score "$f" || true)"
+    if [[ -n "$score" && "$score" -gt "$best_score" ]]; then
+      best="$f"
+      best_score="$score"
     fi
   done
+  [[ -n "$best" ]] || return 1
+  echo "$best"
+}
+
+# SHA-1 of every certificate in the profile whose private key is a valid codesigning identity.
+pick_identity() {
+  local profile="$1" plist idx der sha identities
+  identities="$(security find-identity -p codesigning -v)"
+  plist="$(mktemp)"
+  security cms -D -i "$profile" > "$plist"
+  idx=0
+  while der="$(plutil -extract "DeveloperCertificates.$idx" raw -o - "$plist" 2>/dev/null)"; do
+    sha="$(printf '%s' "$der" | base64 -D | openssl dgst -sha1 | awk '{print toupper($NF)}')"
+    if [[ "$identities" == *"$sha"* ]]; then
+      rm -f "$plist"
+      echo "$sha"
+      return 0
+    fi
+    idx=$((idx + 1))
+  done
+  rm -f "$plist"
   return 1
 }
 
@@ -65,17 +100,20 @@ if [[ -z "$PROFILE_PATH" ]]; then
   PROFILE_PATH="$(pick_profile || true)"
 fi
 if [[ -z "$PROFILE_PATH" || ! -f "$PROFILE_PATH" ]]; then
-  echo "error: no valid provisioning profile for team $TEAM_ID found in:" >&2
+  echo "error: no valid development provisioning profile (get-task-allow, with devices) for team $TEAM_ID in:" >&2
   echo "  $PROFILES_DIR" >&2
   echo "Build the app once from Xcode with automatic signing, or set PROFILE_PATH." >&2
   exit 1
 fi
-echo "==> Provisioning profile: $PROFILE_PATH"
+PROFILE_NAME="$(security cms -D -i "$PROFILE_PATH" | plutil -extract Name raw -o - - 2>/dev/null || echo unknown)"
+echo "==> Provisioning profile: $PROFILE_NAME ($PROFILE_PATH)"
 
-if ! security find-identity -p codesigning -v | grep -q "$SIGN_IDENTITY"; then
-  echo "error: no \"$SIGN_IDENTITY\" codesigning identity in the keychain (is it unlocked?)." >&2
+SIGN_SHA1="$(pick_identity "$PROFILE_PATH" || true)"
+if [[ -z "$SIGN_SHA1" ]]; then
+  echo "error: no codesigning identity in the keychain matches a certificate in the profile (is the keychain unlocked?)." >&2
   exit 1
 fi
+echo "==> Signing identity SHA-1: $SIGN_SHA1"
 
 # 2. SwiftPM repository cache fix.
 SWIFTPM_REPO_CACHE="${HOME:?HOME is not set}/Library/Caches/org.swift.swiftpm/repositories"
@@ -132,7 +170,7 @@ PLIST
 
 cp "$PROFILE_PATH" "$APP_PATH/embedded.mobileprovision"
 echo "==> Signing $APP_NAME.app"
-codesign --force --sign "$SIGN_IDENTITY" --timestamp=none --entitlements "$ENTITLEMENTS" "$APP_PATH"
+codesign --force --sign "$SIGN_SHA1" --timestamp=none --entitlements "$ENTITLEMENTS" "$APP_PATH"
 codesign --verify --strict "$APP_PATH"
 
 # 4. Package.
@@ -152,7 +190,7 @@ if [[ "$STAMPED" != "$BUILD_NUMBER" ]]; then
   echo "error: CFBundleVersion in the IPA is '$STAMPED', expected '$BUILD_NUMBER'" >&2
   exit 1
 fi
-if ! unzip -l "$OUT_IPA" | grep -q "Payload/$APP_NAME.app/embedded.mobileprovision"; then
+if [[ ! -f "$CHECK_APP/embedded.mobileprovision" ]]; then
   echo "error: embedded.mobileprovision missing from $OUT_IPA" >&2
   exit 1
 fi
@@ -162,5 +200,6 @@ echo "==> Done"
 echo "    bundle id:        $BID"
 echo "    CFBundleVersion:  $STAMPED (short version $SHORT)"
 echo "    build hash:       $BUILD_HASH"
-echo "    profile:          $PROFILE_PATH"
+echo "    profile:          $PROFILE_NAME ($PROFILE_PATH)"
+echo "    identity SHA-1:   $SIGN_SHA1"
 echo "    IPA:              $OUT_IPA"
