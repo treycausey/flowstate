@@ -1,12 +1,20 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 1024 1024">
   <defs>
-    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#0ea5e9"/>
-      <stop offset="100%" stop-color="#0284c7"/>
+    <linearGradient id="water" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#205d64"/>
+      <stop offset="1" stop-color="#082f3c"/>
+    </linearGradient>
+    <linearGradient id="fish" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#eff9df"/>
+      <stop offset="1" stop-color="#9de0cc"/>
     </linearGradient>
   </defs>
-  <rect width="512" height="512" rx="64" fill="#0ea5e9"/>
-  <rect x="36" y="36" width="440" height="440" rx="56" fill="#e0f2fe"/>
-  <path d="M56 240c44 0 66-66 132-66s88 66 154 66 88-66 110-66" fill="none" stroke="url(#g)" stroke-width="24" stroke-linecap="round"/>
-  <path d="M56 304c44 0 66-66 132-66s88 66 154 66 88-66 110-66" fill="none" stroke="url(#g)" stroke-width="24" stroke-linecap="round"/>
+  <rect width="1024" height="1024" fill="url(#water)"/>
+  <!-- The long fins echo both a betta and the movement of water. -->
+  <path d="M575 416C464 320 338 301 220 374C257 433 298 474 373 492C293 516 243 566 220 644C371 708 512 651 585 555Z" fill="#5ab8ad"/>
+  <path d="M570 445C446 380 350 390 280 420C350 477 426 492 502 494C404 518 325 564 286 612C416 622 518 575 580 530Z" fill="#8cd8bf"/>
+  <path d="M384 491C458 467 496 397 570 393C654 389 741 444 797 498C742 562 657 608 577 593C505 579 465 520 384 491Z" fill="url(#fish)"/>
+  <path d="M539 405C533 361 554 323 605 302C607 346 630 374 659 412Z" fill="#bdebd0"/>
+  <path d="M547 581C544 628 571 666 621 686C615 638 634 618 655 586Z" fill="#90d7be"/>
+  <circle cx="713" cy="484" r="13" fill="#123e47"/>
 </svg>

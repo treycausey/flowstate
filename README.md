@@ -272,6 +272,18 @@ Migration from PWA
 - Keep components small; move logic into `lib/` with tests.
 - Use `tasks/prd-aquarium-water-tracker.md` for scope; the task checklist in `tasks/` is historical.
 
+### App icons
+
+`assets/flowstate-icon.svg` is the source for the fish mark. Regenerate all web,
+macOS and iOS assets with `uv run scripts/generate_icons.py` (requires Bun and uv).
+The script installs its pinned Python dependencies in uv's cache, makes opaque
+icons for iOS and the PWA, and adds transparent margins and rounded corners for
+macOS. Its intermediate files go in ignored `tmp/icons/`.
+
+After regeneration, rebuild each native app. For a reachable paired iPhone, the
+signed app extracted from `tmp/Flowstate.ipa` can also be installed with
+`xcrun devicectl device install app --device <device-id> <path-to-Flowstate.app>`.
+
 ## License
 
 MIT © 2025 Trey Causey. See `LICENSE` for details.
