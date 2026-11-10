@@ -205,8 +205,12 @@ export (`out/`). The service worker is not registered inside Tauri.
 
 - Prereqs: Rust toolchain, Xcode and `xcodegen` (iOS). `@tauri-apps/cli` is a devDependency.
 - Desktop dev: `bun run tauri:dev` (starts `next dev` on 127.0.0.1:4040 and a window)
-- Desktop build: `bun run tauri:build -- --bundles app` produces
+- Desktop build: `bun run tauri:build --bundles app` produces
   `src-tauri/target/release/bundle/macos/Flowstate.app`
+- macOS packaging uses an existing Apple Development certificate. Select an exact
+  name or SHA-1 with `APPLE_SIGNING_IDENTITY` if necessary. Verify with
+  `codesign --verify --deep --strict` before installing at `/Applications/Flowstate.app`.
+  Keep that path, bundle ID, and signing team stable; do not override signing with `-`.
 - Rust tests: `cargo test` in `src-tauri`
 
 ### iOS
